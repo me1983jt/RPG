@@ -215,6 +215,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   placeBunker(world);
   world.gates = layExits(world, mouths, null);
   finishFarm(world);
+  finishCal(world);
   world.questBandits = world.enemies.filter((e) => e.quest).length;
 
   const cot = world.props.find((p) => p.kind === "cot");
@@ -610,8 +611,49 @@ function placeLeblanc(world: World): void {
 
 function placeCal(world: World): void {
   const spot = at(66, 68);
-  const tx = spot[0];
-  const ty = spot[1];
+  placeCalAt(world, spot[0], spot[1]);
+}
+
+/** Exit roads are laid after the camps and can cut straight through Jack's stall. If the stall
+ *  did not survive, move the whole camp to the nearest dry, road-free spot so he isn't left
+ *  standing on the gravel with no stand. */
+function finishCal(world: World): void {
+  const jack = world.npcs.find((n) => n.role === "cal");
+  const stall = world.props.find((p) => p.kind === "cache");
+  const by = (kind: PropKind) => !!stall && world.props.some((p) => p.kind === kind && Math.hypot(p.tx - stall.tx, p.ty - stall.ty) < 4);
+  if (jack && stall && by("campfire") && by("logs") && by("crates")) return;
+  const home = at(66, 68);
+  const near = (tx: number, ty: number) => (tx - home[0]) ** 2 + (ty - home[1]) ** 2 <= 36;
+  world.npcs = world.npcs.filter((n) => n.role !== "cal");
+  world.props = world.props.filter((p) => {
+    if ((p.kind === "cache" || p.kind === "crates" || p.kind === "campfire" || p.kind === "logs") && near(p.tx, p.ty)) {
+      vacate(world, p);
+      return false;
+    }
+    return true;
+  });
+  const clearOf = (tx: number, ty: number) => {
+    for (let y = ty - 3; y <= ty + 3; y++) for (let x = tx - 3; x <= tx + 3; x++) {
+      if (!inMap(x, y) || !inHex(x, y)) return false;
+      const t = world.tiles[idx(x, y)];
+      if (t === VOID || t === ROAD) return false;
+    }
+    return !world.gates.some((g) => (tx - g.arriveTx) ** 2 + (ty - g.arriveTy) ** 2 < 49 || (tx - g.tx) ** 2 + (ty - g.ty) ** 2 < 49);
+  };
+  for (let r = 1; r <= 14; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (!clearOf(home[0] + dx, home[1] + dy)) continue;
+        placeCalAt(world, home[0] + dx, home[1] + dy);
+        return;
+      }
+    }
+  }
+  placeCalAt(world, home[0], home[1]);
+}
+
+function placeCalAt(world: World, tx: number, ty: number): void {
   clearPad(world, tx, ty, 4);
   addProp(world, "cache", tx - 1, ty);
   addProp(world, "campfire", tx + 1, ty + 2);
