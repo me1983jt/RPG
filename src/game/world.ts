@@ -614,10 +614,26 @@ function placeCal(world: World): void {
   const ty = spot[1];
   clearPad(world, tx, ty, 4);
   addProp(world, "cache", tx - 1, ty);
-  addProp(world, "campfire", tx + 1, ty + 1);
-  addProp(world, "crates", tx, ty + 2);
+  addProp(world, "campfire", tx + 1, ty + 2);
+  // crates sit beside the stall, not in front of Jack, so nothing is drawn over him
+  addProp(world, "crates", tx - 2, ty + 1);
   addProp(world, "logs", tx + 2, ty);
   addNpc(world, "cal", "Jack Ready", tx, ty + 1);
+  clearSightline(world, tx, ty + 1);
+}
+
+/** Tall trees on the camera side (south-east in screen terms) of a spot would be drawn over
+ *  whoever stands there. Drop the ones in that wedge so the stall and trader stay in view. */
+function clearSightline(world: World, tx: number, ty: number): void {
+  world.props = world.props.filter((p) => {
+    if (!p.kind.startsWith("tree-") && p.kind !== "orchard" && p.kind !== "maple") return true;
+    const dx = p.tx - tx;
+    const dy = p.ty - ty;
+    const depth = dx + dy;
+    if (depth <= 0 || depth > 10 || Math.abs(dx - dy) > 3) return true;
+    vacate(world, p);
+    return false;
+  });
 }
 
 function placeBunker(world: World): void {

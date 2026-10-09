@@ -3636,7 +3636,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			npc.path = pathTo(world, npc.x, npc.y, npc.homeX, npc.homeY);
 			npc.pause = 0;
 		} else if (npc.pause <= 0 && (!npc.path || !npc.path.length)) {
-			if (Math.random() < .45) {
+			// Jack Ready minds his stall: he stays put instead of wandering behind the crates
+			if (npc.role !== "cal" && Math.random() < .45) {
 				const ang = Math.random() * Math.PI * 2;
 				const dist = 36 + Math.random() * 80;
 				npc.path = pathTo(world, npc.x, npc.y, npc.homeX + Math.cos(ang) * dist, npc.homeY + Math.sin(ang) * dist);
@@ -3797,7 +3798,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillRect(o.x, o.y, 320, 20);
 		ctx.fillStyle = "#e6c56a";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Jack Ready's bunker. Shut it when you leave.", o.x + 10, o.y + 14);
+		ctx.fillText("Jack's cache. Shut it when you leave.", o.x + 10, o.y + 14);
 		ctx.fillStyle = "#3a3228";
 		ctx.fillRect(o.x + 14, o.y + 32, 102, 128);
 		ctx.fillStyle = "#5a4834";
