@@ -501,7 +501,7 @@ function finishFarm(world: World): void {
       const ps = PROP_SPEC[p.kind];
       return tx < p.tx + ps.w + 1 && tx + w + 1 > p.tx && ty < p.ty + ps.h + 1 && ty + h + 1 > p.ty;
     });
-  const restore = (kind: PropKind, home: [number, number]) => {
+  const restore = (kind: PropKind, home: [number, number], extra?: Partial<Prop>) => {
     if (world.props.some((p) => p.kind === kind && inFarm(p.tx, p.ty))) return;
     const spec = PROP_SPEC[kind];
     for (let r = 0; r <= 6; r++) {
@@ -511,7 +511,7 @@ function finishFarm(world: World): void {
           const tx = home[0] + dx;
           const ty = home[1] + dy;
           if (!inFarm(tx, ty) || nearGate(tx, ty, spec.w, spec.h) || overlapsProp(tx, ty, spec.w, spec.h)) continue;
-          if (addProp(world, kind, tx, ty)) return;
+          if (addProp(world, kind, tx, ty, extra)) return;
         }
       }
     }
@@ -520,13 +520,8 @@ function finishFarm(world: World): void {
   restore("barn", at(40, 13));
   restore("cot", at(33, 16));
   restore("press", at(37, 16));
-  const pile = at(42, 16);
-  for (let r = 0; r <= 6; r++) {
-    const tx = pile[0] + (r % 2 ? -r : r);
-    const ty = pile[1] + (r % 3);
-    if (overlapsProp(tx, ty, 1, 1)) continue;
-    if (addProp(world, "logs", tx, ty, { resource: "wood", amount: 4 })) break;
-  }
+  // woodpile by the barn for "First Snow on Cambridge Road"
+  restore("logs", at(42, 16), { resource: "wood", amount: 4 });
   addNpc(world, "justin", "Justin", ...at(35, 15), 30);
   addNpc(world, "sarah", "Sarah", ...at(37, 15), 30);
   addNpc(world, "cyndal", "Cyndal", ...at(34, 18), 30);
