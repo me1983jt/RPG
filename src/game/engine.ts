@@ -4158,7 +4158,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							jy = work.shake > 0 ? Math.cos(work.shake * 64) * 3 : 0;
 						}
 					}
+					// see-through: a tall prop drawn in front of the hero fades so the hero never vanishes behind it
+					let seeThrough = false;
+					if (player && !inside && h > 140 && c.x + c.y > player.x + player.y) {
+						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
+						const ps = zoomPoint(pr.sx, pr.sy);
+						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
+						const hs = zoomPoint(hr.sx, hr.sy);
+						const ph = h * scale * zoom;
+						const pw = ph * (tree ? .62 : .9);
+						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy && hs.sy - HERO_H * zoom * .6 > ps.sy - ph;
+					}
+					if (seeThrough) ctx.globalAlpha = .42;
 					blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					if (seeThrough) ctx.globalAlpha = 1;
 					if (work && work.id === prop.id && bitten > 0 && fall < .55) {
 						if (work.mode === "chop") paintNotch(c.x, c.y, bitten, drawCamX, drawCamY);
 						else paintCracks(c.x, c.y, bitten, drawCamX, drawCamY);
