@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "
 import {
   Axe,
   Backpack,
+  BookOpen,
   Columns3,
   Flame,
   Hammer,
@@ -36,6 +37,7 @@ export function RPG() {
   const [trait, setTrait] = useState<TraitId | null>(null);
   const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
+  const [journalOpen, setJournalOpen] = useState(false);
   const playing = hud.phase !== "menu";
   const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
   const base = roleStats(role);
@@ -311,6 +313,34 @@ export function RPG() {
               </section>
             ) : null}
 
+            {journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
+              <section className="pointer-events-auto mx-auto max-h-[18rem] w-full max-w-lg overflow-y-auto plank border border-border bg-surface p-3 short:max-h-[14rem]" aria-label="Quest journal">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="font-display text-xl">Journal</p>
+                  <button type="button" className="text-sm text-primary" onClick={() => setJournalOpen(false)}>
+                    Close
+                  </button>
+                </div>
+                {(["active", "done"] as const).map((group) => {
+                  const list = hud.journal.filter((entry) => (group === "done") === entry.done);
+                  if (!list.length) return null;
+                  return (
+                    <div key={group} className="mt-2">
+                      <p className="text-xs uppercase tracking-widest text-primary">{group === "active" ? "Active" : "Completed"}</p>
+                      <ul className="mt-1 space-y-1">
+                        {list.map((entry) => (
+                          <li key={entry.id} className={`plank border border-border bg-bg px-3 py-2 ${entry.done ? "opacity-70" : ""}`}>
+                            <p className="font-semibold">{entry.done ? "✓ " : ""}{entry.title}</p>
+                            <p className="text-sm text-muted">{entry.text}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </section>
+            ) : null}
+
             {hud.statsOpen ? (
               <section className="pointer-events-auto mx-auto max-h-[18rem] w-full max-w-lg overflow-y-auto plank border border-border bg-surface p-3 short:max-h-[14rem]">
                 <div className="flex items-baseline justify-between gap-2">
@@ -491,7 +521,7 @@ export function RPG() {
                   </ActionButton>
                 </div>
               </div>
-              <div className="grid grid-cols-5 gap-1 short:w-60 short:shrink-0">
+              <div className="grid grid-cols-6 gap-1 short:w-72 short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
                   <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />
@@ -514,6 +544,21 @@ export function RPG() {
                   <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
                     <Backpack className="size-4" aria-hidden />
                     Pack
+                  </span>
+                </ActionButton>
+                <ActionButton
+                  wide
+                  label="Journal"
+                  pressed={journalOpen && !hud.statsOpen && !hud.packOpen}
+                  onClick={() => {
+                    if (hud.statsOpen) apiRef.current?.toggleStats();
+                    if (hud.packOpen) apiRef.current?.togglePack();
+                    setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen));
+                  }}
+                >
+                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                    <BookOpen className="size-4" aria-hidden />
+                    Journal
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Stats" pressed={hud.statsOpen} onClick={() => apiRef.current?.toggleStats()}>

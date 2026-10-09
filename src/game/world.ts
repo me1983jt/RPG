@@ -214,6 +214,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   placeCal(world);
   placeBunker(world);
   world.gates = layExits(world, mouths, null);
+  finishFarm(world);
   world.questBandits = world.enemies.filter((e) => e.quest).length;
 
   const cot = world.props.find((p) => p.kind === "cot");
@@ -482,6 +483,56 @@ function placeHomestead(world: World): void {
   }
 }
 
+/**
+ * Runs after layExits. An exit road can land on the farmhouse (layExits drops props near a gate),
+ * so put any lost farm building back next to its spot, then add the woodpile for the
+ * "First Snow on Cambridge Road" quest and the family who live here.
+ */
+function finishFarm(world: World): void {
+  const nearGate = (tx: number, ty: number, w: number, h: number) =>
+    world.gates.some((g) => {
+      const cx = tx + w / 2;
+      const cy = ty + h / 2;
+      return (cx - g.arriveTx) ** 2 + (cy - g.arriveTy) ** 2 < 16 || (cx - g.tx) ** 2 + (cy - g.ty) ** 2 < 20;
+    });
+  // Non-blocking props (cot, campfire) don't mark tiles blocked, so check footprints too.
+  const overlapsProp = (tx: number, ty: number, w: number, h: number) =>
+    world.props.some((p) => {
+      const ps = PROP_SPEC[p.kind];
+      return tx < p.tx + ps.w + 1 && tx + w + 1 > p.tx && ty < p.ty + ps.h + 1 && ty + h + 1 > p.ty;
+    });
+  const restore = (kind: PropKind, home: [number, number]) => {
+    if (world.props.some((p) => p.kind === kind && inFarm(p.tx, p.ty))) return;
+    const spec = PROP_SPEC[kind];
+    for (let r = 0; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const tx = home[0] + dx;
+          const ty = home[1] + dy;
+          if (!inFarm(tx, ty) || nearGate(tx, ty, spec.w, spec.h) || overlapsProp(tx, ty, spec.w, spec.h)) continue;
+          if (addProp(world, kind, tx, ty)) return;
+        }
+      }
+    }
+  };
+  restore("farmhouse", at(31, 13));
+  restore("barn", at(40, 13));
+  restore("cot", at(33, 16));
+  restore("press", at(37, 16));
+  const pile = at(42, 16);
+  for (let r = 0; r <= 6; r++) {
+    const tx = pile[0] + (r % 2 ? -r : r);
+    const ty = pile[1] + (r % 3);
+    if (overlapsProp(tx, ty, 1, 1)) continue;
+    if (addProp(world, "logs", tx, ty, { resource: "wood", amount: 4 })) break;
+  }
+  addNpc(world, "justin", "Justin", ...at(35, 15), 30);
+  addNpc(world, "sarah", "Sarah", ...at(37, 15), 30);
+  addNpc(world, "cyndal", "Cyndal", ...at(34, 18), 30);
+  addNpc(world, "loki", "Loki", ...at(39, 18), 30);
+}
+
 function placeOrchard(world: World): void {
   const spot = pullIn(HEX_CX - 52, HEX_CY - 6);
   const tx = spot[0];
@@ -526,10 +577,7 @@ function placeOrchard(world: World): void {
       world.blocked[idx(x, y)] = 0;
     }
   }
-  addNpc(world, "cyndal", "Cyndal", tx + 1, stand, 30);
-  addNpc(world, "justin", "Justin", tx + 3, stand, 30);
-  addNpc(world, "sarah", "Sarah", tx + 5, stand, 30);
-  addNpc(world, "loki", "Loki", tx + 7, stand, 30);
+  // Justin, Sarah, Cyndal and Loki now live at the Cambridge Road farm (finishFarm, map 0).
 }
 
 function clearPad(world: World, tx: number, ty: number, r: number): void {
@@ -574,7 +622,7 @@ function placeCal(world: World): void {
   addProp(world, "campfire", tx + 1, ty + 1);
   addProp(world, "crates", tx, ty + 2);
   addProp(world, "logs", tx + 2, ty);
-  addNpc(world, "cal", "Cal MacInnis", tx, ty + 1);
+  addNpc(world, "cal", "Jack Ready", tx, ty + 1);
 }
 
 function placeBunker(world: World): void {

@@ -19,6 +19,7 @@ export const useHud = create<HudSnapshot>(() => ({
   quest: 0,
   questKills: 0,
   questText: questText(0, 0),
+  journal: [],
   log: [],
   buildOpen: false,
   recipe: 0,

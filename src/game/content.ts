@@ -17,7 +17,64 @@ export function objectiveTile(quest: number): { tx: number; ty: number } {
   return { tx: 18, ty: 22 };
 }
 
-export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiven = false): Dialogue {
+/** Side-quest state the dialogue needs (combined beta v2 additions). */
+export interface TalkState {
+  /** First Snow on Cambridge Road: 0 not started, 1 bringing wood, 2 see Sarah, 3 done. */
+  snow: number;
+  wood: number;
+  /** Purchases made from Jack Ready. One is enough to earn his trust. */
+  jackTrust: number;
+  bunkerSeen: boolean;
+}
+
+export const SNOW_WOOD = 3;
+export const JACK_SIGNOFF = "The strong endure, but the ready prosper. Jack Ready out.";
+
+export interface JournalEntry {
+  id: string;
+  title: string;
+  text: string;
+  done: boolean;
+}
+
+/** Quest journal: active quests first, then completed ones. */
+export function journalEntries(quest: number, kills: number, t: TalkState & { jackMet: boolean }): JournalEntry[] {
+  const out: JournalEntry[] = [];
+  out.push({
+    id: "snow",
+    title: "First Snow on Cambridge Road",
+    done: t.snow >= 3,
+    text:
+      t.snow <= 0
+        ? "Justin is at the Cambridge Road farm. He wants a word before the snow comes in."
+        : t.snow === 1
+          ? `Bring Justin ${SNOW_WOOD} armloads of wood for the stove. You have ${Math.min(t.wood, SNOW_WOOD)} of ${SNOW_WOOD}. There is a woodpile by the barn.`
+          : t.snow === 2
+            ? "Justin has his wood. Go see Sarah at the farm."
+            : "The Cambridge Road farm is your base. You wake on the cot under the eave, and Sarah's kitchen keeps hot cider and cider donuts.",
+  });
+  out.push({
+    id: "chopping",
+    title: "The Chopping",
+    done: quest >= 3,
+    text: quest >= 3 ? "The Chopping is cleared. Mira gave you Ada's hatchet." : questText(quest, kills),
+  });
+  if (t.jackMet || t.bunkerSeen) {
+    out.push({
+      id: "jack",
+      title: "Jack Ready's Bunker",
+      done: t.bunkerSeen,
+      text: t.bunkerSeen
+        ? "You found the bunker under the birch log. Scopes, armor, and real medical kits."
+        : t.jackTrust > 0
+          ? "Jack trusts you now. His bunker is a hatch under a birch log in the woods southwest of Attean."
+          : "Jack Ready keeps a stand south of Attean. Trade with him to earn his trust.",
+    });
+  }
+  return [...out.filter((e) => !e.done), ...out.filter((e) => e.done)];
+}
+
+export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiven = false, t: TalkState = { snow: 3, wood: 0, jackTrust: 0, bunkerSeen: false }): Dialogue {
   if (role === "villager") {
     return {
       speaker: "Villager",
@@ -69,15 +126,20 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     };
   }
   if (role === "cal") {
+    const trusted = t.jackTrust > 0;
     return {
       speaker: name,
-      text: "Cal MacInnis. I came down from the Saint John with more than a pack, and I keep the rest on the table. I don't haggle. Eight shells are 10. A clean bandage is 10. A quilted jacket is 16. A good carbine is 26. South of the Attean road there is a birch log I laid myself. If you get under it, take what keeps you breathing and shut the hatch.",
+      text: trusted
+        ? (t.bunkerSeen
+            ? "Good to see you again, friend. Same table, best gear in the county. " + JACK_SIGNOFF
+            : "Good to see you again, friend. Since you trade fair: there's a birch log in the woods southwest of Attean that isn't a log. Lift the hatch and take what keeps you breathing. " + JACK_SIGNOFF)
+        : "Jack Ready. Came down from the Saint John with a full pack and a plan. Best gear in the county, fair prices, no haggling. " + JACK_SIGNOFF,
       choices: [
-        { label: "Eight shells — 10 iron", id: "buy-cal-shells" },
-        { label: "Clean bandage — 10 iron", id: "buy-cal-wrap" },
-        { label: "Quilted jacket — 16 iron", id: "buy-cal-coat" },
-        { label: "Good carbine — 26 iron", id: "buy-cal-gun" },
-        { label: "That's all", id: "close" },
+        { label: "Ten shells — 10 iron", id: "buy-cal-shells" },
+        { label: "Trauma kit — 18 iron", id: "buy-cal-wrap" },
+        { label: "Plate rig — 34 iron", id: "buy-cal-coat" },
+        { label: "Scoped carbine — 42 iron", id: "buy-cal-gun" },
+        { label: "That's all", id: "jack-bye" },
       ],
     };
   }
@@ -95,17 +157,61 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     };
   }
   if (role === "justin") {
+    if (t.snow <= 0) {
+      return {
+        speaker: name,
+        text: "Justin. This is our ground on Cambridge Road: the farmhouse, the barn, the orchard, and the sugar maples. First snow is coming in tonight and the stove is down to kindling. Bring me three armloads of wood from the pile by the barn and you've got a place here.",
+        choices: [
+          { label: "I'll bring the wood", id: "snow-accept" },
+          { label: "Another time", id: "close" },
+        ],
+      };
+    }
+    if (t.snow === 1) {
+      return t.wood >= SNOW_WOOD
+        ? {
+            speaker: name,
+            text: "That's good dry wood. Stack it by the stove.",
+            choices: [{ label: `Hand over the wood (${SNOW_WOOD})`, id: "snow-wood" }],
+          }
+        : {
+            speaker: name,
+            text: `Three armloads. You have ${t.wood}. The woodpile is by the barn.`,
+            choices: [{ label: "On it", id: "close" }],
+          };
+    }
+    if (t.snow === 2) {
+      return {
+        speaker: name,
+        text: "Stove's going. Go see Sarah. She's got the kitchen and the press.",
+        choices: [{ label: "I will", id: "close" }],
+      };
+    }
     return {
       speaker: name,
-      text: "This is our ground on the Chain of Ponds road. Twelve apple trees, two rows, and a lane between them. Sarah runs the press at the end of the row. The road you came in on goes back to Moose River.",
+      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing.",
       choices: [{ label: "I'll leave the rows standing", id: "close" }],
     };
   }
   if (role === "sarah") {
+    if (t.snow === 2) {
+      return {
+        speaker: name,
+        text: "You got Justin his wood. Here: hot cider in a tin cup, and cider donuts from the kitchen. The cot under the eave is yours. This farm is your home now. Come back when you're hurt.",
+        choices: [{ label: "Thank you, Sarah", id: "snow-done" }],
+      };
+    }
+    if (t.snow < 2) {
+      return {
+        speaker: name,
+        text: "Sarah. I run the kitchen and the cider press. First snow tonight. Help Justin with the wood, then come see me and we'll warm you up.",
+        choices: [{ label: "I'll help him", id: "close" }],
+      };
+    }
     if (!ciderGiven) {
       return {
         speaker: name,
-        text: "The press at the end of the row ran this week. Hot cider and cider donuts from these trees. I can put some in your pack.",
+        text: "The press ran this week. Hot cider and cider donuts from these trees. I can put some in your pack.",
         choices: [
           { label: "I'll take them", id: "cider" },
           { label: "I'll sit a minute", id: "close" },
@@ -114,7 +220,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     }
     return {
       speaker: name,
-      text: "Leave the two rows standing. They're why the cups stay full.",
+      text: "The kitchen restocks every morning. Leave the two rows standing. They're why the cups stay full.",
       choices: [{ label: "I will", id: "close" }],
     };
   }

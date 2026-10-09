@@ -1,7 +1,21 @@
 import type { BagStack, LookId, RoleId, TraitId } from "@/game/gear";
 import type { BeastKind, Player, PropKind } from "@/game/types";
 
-export const SAVE_KEY = "tote-road-save-v2";
+export const SAVE_KEY = "maine-rpg-save-v2";
+/** Storage key used by beta v1 and the Grok Build exports; read once and moved to SAVE_KEY. */
+const OLD_SAVE_KEY = "tote-road-save-v2";
+
+function migrateKey(): void {
+  try {
+    if (localStorage.getItem(SAVE_KEY)) return;
+    const old = localStorage.getItem(OLD_SAVE_KEY);
+    if (!old) return;
+    localStorage.setItem(SAVE_KEY, old);
+    localStorage.removeItem(OLD_SAVE_KEY);
+  } catch {
+    /* private mode */
+  }
+}
 
 export interface SavedRegion {
   id: number;
@@ -113,9 +127,15 @@ export interface SaveData {
   rep?: Record<string, number>;
   party?: SavedParty | null;
   partyReturn?: SavedParty | null;
+  snow?: number;
+  jackTrust?: number;
+  jackMet?: boolean;
+  bunkerSeen?: boolean;
+  kitchenDay?: number;
 }
 
 export function hasSave(): boolean {
+  migrateKey();
   try {
     return !!localStorage.getItem(SAVE_KEY);
   } catch {
@@ -124,6 +144,7 @@ export function hasSave(): boolean {
 }
 
 export function readSave(): SaveData | null {
+  migrateKey();
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
