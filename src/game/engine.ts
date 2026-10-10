@@ -1931,10 +1931,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return "hero";
 	}
 	const LOOK_RGB = {
-		wool: [146, 96, 58],
-		spruce: [52, 118, 64],
-		linen: [222, 206, 170],
-		soot: [58, 62, 70]
+		wool: [140, 98, 66],
+		spruce: [70, 104, 72],
+		linen: [206, 192, 160],
+		soot: [66, 68, 74]
 	};
 	const PIECE_RGB = {
 		shirt: [196, 168, 122],
@@ -1957,15 +1957,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		bracers: [122, 78, 46]
 	};
 	const tinted = /* @__PURE__ */ new Map();
-	function dye(r, g, b, target, amt, lift = 0) {
+	/** Natural cloth dye. The pixel keeps its shading relative to the region's average brightness
+	 * (ref), but the region as a whole lands near the dye's own brightness, so a bright tan coat
+	 * dyed spruce becomes a dark forest green instead of lime. A little greying keeps it muted. */
+	function dye(r, g, b, target, amt, ref = 0, mute = .18) {
 		const lum = r * .3 + g * .59 + b * .11;
 		const tl = target[0] * .3 + target[1] * .59 + target[2] * .11 || 1;
-		const nl = lum + (tl - lum) * lift;
-		const scale = nl / tl;
+		const rel = ref > 0 ? lum / ref : lum / tl;
+		// soften the source's contrast a little so sparse masks (vest, plate) don't turn speckly
+		const scale = Math.max(.4, Math.min(1.35, 1 + (rel - 1) * .75));
+		let nr = target[0] * scale, ng = target[1] * scale, nb = target[2] * scale;
+		const top = Math.max(nr, ng, nb);
+		if (top > 228) { const k = 228 / top; nr *= k; ng *= k; nb *= k; }
+		const gl = nr * .3 + ng * .59 + nb * .11;
+		nr += (gl - nr) * mute; ng += (gl - ng) * mute; nb += (gl - nb) * mute;
 		return [
-			r + (Math.max(0, Math.min(255, target[0] * scale)) - r) * amt,
-			g + (Math.max(0, Math.min(255, target[1] * scale)) - g) * amt,
-			b + (Math.max(0, Math.min(255, target[2] * scale)) - b) * amt
+			r + (Math.max(0, Math.min(255, nr)) - r) * amt,
+			g + (Math.max(0, Math.min(255, ng)) - g) * amt,
+			b + (Math.max(0, Math.min(255, nb)) - b) * amt
 		];
 	}
 	function wornColors() {
@@ -2088,18 +2097,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 				mask.set(grow);
 			}
+			const lumSum = [0, 0, 0, 0, 0, 0], lumN = [0, 0, 0, 0, 0, 0];
+			for (let y = box.top; y <= box.bottom; y++) for (let x = box.left; x <= box.right; x++) {
+				const tag = mask[y * cw + x];
+				if (!tag) continue;
+				const i = ((y0 + y) * stamp.width + (x0 + x)) * 4;
+				lumSum[tag] += px[i] * .3 + px[i + 1] * .59 + px[i + 2] * .11;
+				lumN[tag]++;
+			}
+			const ref = lumSum.map((v, k) => lumN[k] ? v / lumN[k] : 0);
 			for (let y = box.top; y <= box.bottom; y++) for (let x = box.left; x <= box.right; x++) {
 				const tag = mask[y * cw + x];
 				if (!tag) continue;
 				const i = ((y0 + y) * stamp.width + (x0 + x)) * 4;
 				const r = px[i], gg = px[i + 1], b = px[i + 2];
 				let next = null;
-				if (tag === 1 && colors.shirt) next = dye(r, gg, b, colors.shirt, .92, 0);
-				else if (tag === 2 && colors.plate) next = dye(r, gg, b, colors.plate, .94, .6);
-				else if (tag === 2 && colors.vest) next = dye(r, gg, b, colors.vest, .88, 0);
-				else if (tag === 3 && colors.legs) next = dye(r, gg, b, colors.legs, .9, 0);
-				else if (tag === 4 && colors.head) next = dye(r, gg, b, colors.head, .78, colors.helm ? .45 : .12);
-				else if (tag === 5 && colors.hands) next = dye(r, gg, b, colors.hands, .82, 0);
+				if (tag === 1 && colors.shirt) next = dye(r, gg, b, colors.shirt, .9, ref[1]);
+				else if (tag === 2 && colors.plate) next = dye(r, gg, b, colors.plate, .92, ref[2], .6);
+				else if (tag === 2 && colors.vest) next = dye(r, gg, b, colors.vest, .86, ref[2]);
+				else if (tag === 3 && colors.legs) next = dye(r, gg, b, colors.legs, .88, ref[3]);
+				else if (tag === 4 && colors.head) next = dye(r, gg, b, colors.head, .78, ref[4], colors.helm ? .6 : .18);
+				else if (tag === 5 && colors.hands) next = dye(r, gg, b, colors.hands, .8, ref[5]);
 				if (!next) continue;
 				px[i] = next[0];
 				px[i + 1] = next[1];
@@ -5927,6 +5945,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (player) player.hp = n;
 		},
 		farmProps: () => world ? world.props.filter((p) => inFarm(p.tx, p.ty)).map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, x: propCenter(p).x, y: propCenter(p).y })) : [],
+		setLook: (look) => {
+			if (player) player.look = look;
+		},
+		wear: (slot, id) => {
+			if (player) player[slot] = id;
+		},
+		setHour: (h) => {
+			const span = DAY_LENGTH_SEC;
+			clock = Math.floor(clock / span) * span + (h / 24) * span;
+			sync(true);
+		},
+		heroSheet: (name) => {
+			const img = images.get(name);
+			if (!img) return "";
+			const src = heroSource(name, img);
+			if (src.toDataURL) return src.toDataURL();
+			const c = document.createElement("canvas");
+			c.width = img.width; c.height = img.height;
+			c.getContext("2d").drawImage(img, 0, 0);
+			return c.toDataURL();
+		},
 		revealMap: () => {
 			if (!world) return;
 			for (let i = 0; i < explored.length; i++) if (world.tiles[i] !== 5) explored[i] = 1;

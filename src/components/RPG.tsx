@@ -685,7 +685,7 @@ export function RPG() {
                     >
                       <span
                         className="mb-1 block h-3 w-full border border-border"
-                        style={{ background: item.id === "wool" ? "#8a6244" : item.id === "spruce" ? "#3d6a42" : item.id === "linen" ? "#e6d7b8" : "#3a3c42" }}
+                        style={{ background: item.id === "wool" ? "#8c6242" : item.id === "spruce" ? "#46684a" : item.id === "linen" ? "#cec0a0" : "#42444a" }}
                       />
                       <span className="block text-sm font-semibold">{item.label}</span>
                       <span className="block text-xs text-muted">{item.hint}</span>
