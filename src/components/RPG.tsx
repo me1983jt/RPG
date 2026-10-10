@@ -38,6 +38,8 @@ export function RPG() {
   const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
+  const [confirmExit, setConfirmExit] = useState(false);
+  const short = useShortScreen();
   const playing = hud.phase !== "menu";
   const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
   const base = roleStats(role);
@@ -51,6 +53,39 @@ export function RPG() {
     apiRef.current = api;
     return () => api.destroy();
   }, []);
+
+  // Android back button (Capacitor App plugin): close the open panel or open/close the pause menu.
+  // The app only exits from the main menu, after a confirm.
+  const onBack = useRef<() => void>(() => {});
+  onBack.current = () => {
+    if (confirmExit) return setConfirmExit(false);
+    if (hud.phase === "menu") {
+      if (confirmNew) return setConfirmNew(false);
+      if (step === "trait") return setStep("points");
+      if (step === "points") return setStep("trade");
+      return setConfirmExit(true);
+    }
+    if (journalOpen && hud.phase === "play" && !hud.dialogue) return setJournalOpen(false);
+    apiRef.current?.back();
+  };
+  useEffect(() => {
+    const cap = (window as unknown as { Capacitor?: CapBridge }).Capacitor;
+    if (!cap?.isNativePlatform?.() || typeof cap.addListener !== "function") return;
+    const sub = cap.addListener("App", "backButton", () => onBack.current());
+    return () => {
+      void sub?.remove?.();
+    };
+  }, []);
+
+  function exitApp(): void {
+    const cap = (window as unknown as { Capacitor?: CapBridge }).Capacitor;
+    try {
+      (window as unknown as { __maineSave?: () => void }).__maineSave?.();
+    } catch {
+      /* nothing to save on the main menu */
+    }
+    cap?.nativeCallback?.("App", "exitApp", {});
+  }
 
   function worldPointer(e: PointerEvent<HTMLCanvasElement>, type: "move" | "down" | "up") {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -130,7 +165,7 @@ export function RPG() {
 
       {playing ? (
         <div className="pointer-events-none absolute inset-0 z-30 flex flex-col p-2 short:p-1.5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
-          <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-16 short:px-2 short:py-1">
+          <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
               {hud.region}
@@ -156,9 +191,17 @@ export function RPG() {
               </button>
             ) : null}
             {hud.log.length > 0 ? (
-              <ul className="pointer-events-none max-w-md space-y-1 self-center text-center text-base font-semibold">
-                {hud.log.map((line, i) => (
-                  <li key={`${line}-${i}`} className="plank bg-bg/95 px-3 py-1.5 text-fg">
+              // On short (phone landscape) screens the hero stands mid-screen right above this list, so show
+              // only the two newest lines, smaller, at the left edge instead of centred over the hero.
+              <ul
+                className={
+                  short
+                    ? "pointer-events-none max-w-[38%] space-y-0.5 self-start text-left text-xs font-semibold"
+                    : "pointer-events-none max-w-md space-y-1 self-center text-center text-base font-semibold"
+                }
+              >
+                {(short ? hud.log.slice(-2) : hud.log).map((line, i) => (
+                  <li key={`${line}-${i}`} className={short ? "plank bg-bg/90 px-2 py-1 text-fg" : "plank bg-bg/95 px-3 py-1.5 text-fg"}>
                     {line}
                   </li>
                 ))}
@@ -576,7 +619,7 @@ export function RPG() {
         width={132}
         height={132}
         aria-label="Minimap"
-        className={playing ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg short:h-12 short:w-12" : "hidden"}
+        className={playing ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
       />
 
       {hud.phase === "menu" ? (
@@ -770,6 +813,18 @@ export function RPG() {
         </div>
       ) : null}
 
+      {confirmExit ? (
+        <Overlay title="Leave Maine?">
+          <p className="text-sm leading-relaxed text-muted">Close the game? Your packer is saved on this device.</p>
+          <button type="button" className="plank bg-accent px-4 py-3 font-semibold text-fg" onClick={exitApp}>
+            Exit
+          </button>
+          <button type="button" className="plank border border-border px-4 py-3" onClick={() => setConfirmExit(false)}>
+            Stay
+          </button>
+        </Overlay>
+      ) : null}
+
       {hud.phase === "pause" ? (
         <Overlay title="Paused">
           <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.tap("resume")}>
@@ -800,6 +855,26 @@ export function RPG() {
       ) : null}
     </div>
   );
+}
+
+type CapBridge = {
+  isNativePlatform?: () => boolean;
+  addListener?: (plugin: string, event: string, cb: () => void) => { remove?: () => unknown } | undefined;
+  nativeCallback?: (plugin: string, method: string, options: object) => unknown;
+};
+
+/** Matches the `short:` Tailwind variant (max-height 520px): phones held sideways. */
+function useShortScreen(): boolean {
+  const [short, setShort] = useState(false);
+  useEffect(() => {
+    if (typeof matchMedia === "undefined") return;
+    const mq = matchMedia("(max-height: 520px)");
+    const on = () => setShort(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return short;
 }
 
 function Overlay({ title, children }: { title: string; children: ReactNode }) {

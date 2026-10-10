@@ -6,7 +6,7 @@ export function xpNeed(level: number): number {
 
 export function questText(quest: number, kills: number): string {
   if (quest <= 0) return "Speak with Mira Pelletier in Lowelltown, west along Cambridge Road.";
-  if (quest === 1) return `Clear the choppers at the Chopping. ${Math.min(kills, 6)} of 6 down.`;
+  if (quest === 1) return `Put down the Chopping's three bosses: Harland Poulin, René Gallant, Gil Michaud. ${Math.min(kills, 3)} of 3 down.`;
   if (quest === 2) return "The chopping is quiet. Return to Mira Pelletier in Lowelltown.";
   return "The road is open. Holeb still stands to the southeast. Raise a lean-to if you mean to stay.";
 }
@@ -255,7 +255,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     if (quest <= 0) {
       return {
         speaker: name,
-        text: "The Chopping took the old Canada Road east. Six choppers in patched dusters, with lever rifles and single-action revolvers, sitting on Ada Ladd's gravel. Clear them and Lowelltown can pack to Attean again.",
+        text: "The Chopping took the old Canada Road east. Six choppers in patched dusters, with lever rifles and single-action revolvers, sitting on Ada Ladd's gravel. Three of them run it: Harland Poulin in the fur coat, René Gallant behind the mask, and Gil Michaud with the saw. Put those three down and the Chopping breaks. Then Lowelltown can pack to Attean again.",
         choices: [
           { label: "I'll clear the chopping", id: "accept" },
           { label: "Tell me how they sit", id: "mira-brief", check: { skill: "speech", dc: 48 } },

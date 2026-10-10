@@ -87,6 +87,8 @@ export interface GameApi {
   setTurnBased: (on: boolean) => void;
   endTurn: () => void;
   takeLoot: (key: string) => void;
+  /** Android back button: close the open panel, else open/close the pause menu. False on the main menu. */
+  back: () => boolean;
 }
 
 assertIso();
@@ -399,6 +401,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	};
 	const LURE = new Set(["scarecrow", "bait"]);
 	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
+	/** A night raider. The Chopping's named bosses (quest enemies) use the same boss art but stay home. */
+	const isRaider = (e) => !!e && RAID_VAR.has(e.variant) && !e.quest;
 	const GUARD_ROLES = new Set(["sarah", "justin", "cyndal", "loki", "adele", "pete", "sera", "holt"]);
 	let raidClock = 10;
 	let piles = [];
@@ -2616,10 +2620,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
 		if (enemy.quest && quest === 1) {
 			questKills += 1;
-			if (questKills >= questTotal) {
+			const left = questTotal - questKills;
+			if (left <= 0) {
 				quest = 2;
-				pushLog("The chopping is quiet. Mira Pelletier will want the news.");
-			}
+				pushLog("That was the last of them. The chopping is quiet. Mira Pelletier will want the news.");
+			} else pushLog(left === 1 ? "One of the Chopping's bosses still stands." : `${left} of the Chopping's bosses still stand.`);
 		}
 		saveGame();
 	}
@@ -3605,7 +3610,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				enemy.frame = enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 				continue;
 			}
-			if (enemy.aggro && homeDist > 520 && !RAID_VAR.has(enemy.variant)) enemy.aggro = false;
+			if (enemy.aggro && homeDist > 520 && !isRaider(enemy)) enemy.aggro = false;
 			const sight = enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 : 190;
 			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight)) {
 				enemy.aggro = true;
@@ -3628,7 +3633,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			} else if (enemy.aggro) {
 				let goalX = player.x;
 				let goalY = player.y;
-				if (RAID_VAR.has(enemy.variant) && dist > 90) {
+				if (isRaider(enemy) && dist > 90) {
 					let lure = null;
 					let lureD = 460;
 					for (const p of world.props) {
@@ -3672,7 +3677,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						}
 					}
 				}
-				if (enemy.variant && RAID_VAR.has(enemy.variant) && enemy.variant !== "jumper" && enemy.cooldown <= 0) {
+				if (isRaider(enemy) && enemy.variant !== "jumper" && enemy.cooldown <= 0) {
 					for (const p of world.props) {
 						if (!BROKEN[p.kind] || String(p.kind).endsWith("-x")) continue;
 						const c = propCenter(p);
@@ -3994,7 +3999,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			bossThisNight = false;
 		}
 		const night = dark && onFarm;
-		const raiders = world.enemies.filter((e) => !e.dead && RAID_VAR.has(e.variant));
+		const raiders = world.enemies.filter((e) => !e.dead && isRaider(e));
 		if (night && tractorReady) {
 			const tractor = world.props.find((p) => p.kind === "tractor");
 			if (tractor) {
@@ -4089,7 +4094,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			let best = null;
 			let bestD = spec.range;
 			for (const e of world.enemies) {
-				if (e.dead || !RAID_VAR.has(e.variant)) continue;
+				if (e.dead || !isRaider(e)) continue;
 				const d = Math.hypot(e.x - c.x, e.y - c.y);
 				if (d < bestD) {
 					best = e;
@@ -4800,7 +4805,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			let near = 9999;
 			for (const e of world.enemies) {
-				if (e.dead || !RAID_VAR.has(e.variant)) continue;
+				if (e.dead || !isRaider(e)) continue;
 				near = Math.min(near, Math.hypot(e.x - player.x, e.y - player.y));
 			}
 			if (near < 260 && onFarm) {
@@ -5627,6 +5632,35 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		recenter() {
 			freeCam = false;
+		},
+		back() {
+			if (phase === "menu") return false;
+			unlockAudio();
+			if (phase === "dialogue") {
+				applyChoice("close");
+				return true;
+			}
+			if (phase === "pause") {
+				phase = "play";
+				sync(true);
+				return true;
+			}
+			if (phase !== "play") return true;
+			if (lootId !== -1) {
+				takeLoot("close");
+				return true;
+			}
+			if (packOpen || statsOpen || buildOpen) {
+				packOpen = false;
+				statsOpen = false;
+				buildOpen = false;
+				sfx("click");
+				sync(true);
+				return true;
+			}
+			phase = "pause";
+			sync(true);
+			return true;
 		},
 		togglePack() {
 			packOpen = !packOpen;

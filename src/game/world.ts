@@ -1000,8 +1000,10 @@ function placePeople(world: World): void {
     { variant: "mask" as const, name: "René Gallant" },
     { variant: "saw" as const, name: "Gil Michaud" },
   ];
+  // The three named bosses are Mira's quest targets; the last one down clears the Chopping.
+  // Their three choppers are ordinary hostiles.
   spots.forEach(([x, y], i) => {
-    addEnemy(world, x, y, true, i < 3);
+    addEnemy(world, x, y, i < 3, i < 3);
     if (i >= 3) return;
     const e = world.enemies[world.enemies.length - 1]!;
     const b = bosses[i]!;
