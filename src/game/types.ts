@@ -360,6 +360,7 @@ export interface HudSnapshot {
   quest: number;
   questKills: number;
   questText: string;
+  journal: { id: string; title: string; text: string; done: boolean }[];
   log: string[];
   buildOpen: boolean;
   recipe: number;

@@ -214,6 +214,8 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   placeCal(world);
   placeBunker(world);
   world.gates = layExits(world, mouths, null);
+  finishFarm(world);
+  finishCal(world);
   world.questBandits = world.enemies.filter((e) => e.quest).length;
 
   const cot = world.props.find((p) => p.kind === "cot");
@@ -505,6 +507,51 @@ function plantYard(world: World, kind: PropKind, lx: number, ly: number, extra?:
   addProp(world, kind, tx, ty, extra);
 }
 
+/**
+ * Runs after layExits. An exit road can land on the farmhouse (layExits drops props near a gate),
+ * so put any lost farm building back next to its spot, then add the woodpile for the
+ * "First Snow on Cambridge Road" quest and the family who live here.
+ */
+function finishFarm(world: World): void {
+  const nearGate = (tx: number, ty: number, w: number, h: number) =>
+    world.gates.some((g) => {
+      const cx = tx + w / 2;
+      const cy = ty + h / 2;
+      return (cx - g.arriveTx) ** 2 + (cy - g.arriveTy) ** 2 < 16 || (cx - g.tx) ** 2 + (cy - g.ty) ** 2 < 20;
+    });
+  // Non-blocking props (cot, campfire) don't mark tiles blocked, so check footprints too.
+  const overlapsProp = (tx: number, ty: number, w: number, h: number) =>
+    world.props.some((p) => {
+      const ps = PROP_SPEC[p.kind];
+      return tx < p.tx + ps.w + 1 && tx + w + 1 > p.tx && ty < p.ty + ps.h + 1 && ty + h + 1 > p.ty;
+    });
+  const restore = (kind: PropKind, home: [number, number], extra?: Partial<Prop>) => {
+    if (world.props.some((p) => p.kind === kind && inFarm(p.tx, p.ty))) return;
+    const spec = PROP_SPEC[kind];
+    for (let r = 0; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const tx = home[0] + dx;
+          const ty = home[1] + dy;
+          if (!inFarm(tx, ty) || nearGate(tx, ty, spec.w, spec.h) || overlapsProp(tx, ty, spec.w, spec.h)) continue;
+          if (addProp(world, kind, tx, ty, extra)) return;
+        }
+      }
+    }
+  };
+  restore("farmhouse", at(31, 13));
+  restore("barn", at(40, 13));
+  restore("cot", at(33, 16));
+  restore("press", at(37, 16));
+  // woodpile by the barn for "First Snow on Cambridge Road"
+  restore("logs", at(42, 16), { resource: "wood", amount: 4 });
+  addNpc(world, "justin", "Justin", ...at(35, 15), 30);
+  addNpc(world, "sarah", "Sarah", ...at(37, 15), 30);
+  addNpc(world, "cyndal", "Cyndal", ...at(34, 18), 30);
+  addNpc(world, "loki", "Loki", ...at(39, 18), 30);
+}
+
 function placeOrchard(world: World): void {
   const spot = pullIn(HEX_CX - 52, HEX_CY - 6);
   const tx = spot[0];
@@ -549,10 +596,7 @@ function placeOrchard(world: World): void {
       world.blocked[idx(x, y)] = 0;
     }
   }
-  addNpc(world, "cyndal", "Cyndal", tx + 1, stand, 30);
-  addNpc(world, "justin", "Justin", tx + 3, stand, 30);
-  addNpc(world, "sarah", "Sarah", tx + 5, stand, 30);
-  addNpc(world, "loki", "Loki", tx + 7, stand, 30);
+  // Justin, Sarah, Cyndal and Loki now live at the Cambridge Road farm (finishFarm, map 0).
 }
 
 function clearPad(world: World, tx: number, ty: number, r: number): void {
@@ -590,14 +634,71 @@ function placeLeblanc(world: World): void {
 
 function placeCal(world: World): void {
   const spot = at(66, 68);
-  const tx = spot[0];
-  const ty = spot[1];
+  placeCalAt(world, spot[0], spot[1]);
+}
+
+/** Exit roads are laid after the camps and can cut straight through Jack's stall. If the stall
+ *  did not survive, move the whole camp to the nearest dry, road-free spot so he isn't left
+ *  standing on the gravel with no stand. */
+function finishCal(world: World): void {
+  const jack = world.npcs.find((n) => n.role === "cal");
+  const stall = world.props.find((p) => p.kind === "cache");
+  const by = (kind: PropKind) => !!stall && world.props.some((p) => p.kind === kind && Math.hypot(p.tx - stall.tx, p.ty - stall.ty) < 4);
+  if (jack && stall && by("campfire") && by("logs") && by("crates")) return;
+  const home = at(66, 68);
+  const near = (tx: number, ty: number) => (tx - home[0]) ** 2 + (ty - home[1]) ** 2 <= 36;
+  world.npcs = world.npcs.filter((n) => n.role !== "cal");
+  world.props = world.props.filter((p) => {
+    if ((p.kind === "cache" || p.kind === "crates" || p.kind === "campfire" || p.kind === "logs") && near(p.tx, p.ty)) {
+      vacate(world, p);
+      return false;
+    }
+    return true;
+  });
+  const clearOf = (tx: number, ty: number) => {
+    for (let y = ty - 3; y <= ty + 3; y++) for (let x = tx - 3; x <= tx + 3; x++) {
+      if (!inMap(x, y) || !inHex(x, y)) return false;
+      const t = world.tiles[idx(x, y)];
+      if (t === VOID || t === ROAD) return false;
+    }
+    return !world.gates.some((g) => (tx - g.arriveTx) ** 2 + (ty - g.arriveTy) ** 2 < 49 || (tx - g.tx) ** 2 + (ty - g.ty) ** 2 < 49);
+  };
+  for (let r = 1; r <= 14; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (!clearOf(home[0] + dx, home[1] + dy)) continue;
+        placeCalAt(world, home[0] + dx, home[1] + dy);
+        return;
+      }
+    }
+  }
+  placeCalAt(world, home[0], home[1]);
+}
+
+function placeCalAt(world: World, tx: number, ty: number): void {
   clearPad(world, tx, ty, 4);
   addProp(world, "cache", tx - 1, ty);
-  addProp(world, "campfire", tx + 1, ty + 1);
-  addProp(world, "crates", tx, ty + 2);
+  addProp(world, "campfire", tx + 1, ty + 2);
+  // crates sit beside the stall, not in front of Jack, so nothing is drawn over him
+  addProp(world, "crates", tx - 2, ty + 1);
   addProp(world, "logs", tx + 2, ty);
-  addNpc(world, "cal", "Cal MacInnis", tx, ty + 1);
+  addNpc(world, "cal", "Jack Ready", tx, ty + 1);
+  clearSightline(world, tx, ty + 1);
+}
+
+/** Tall trees on the camera side (south-east in screen terms) of a spot would be drawn over
+ *  whoever stands there. Drop the ones in that wedge so the stall and trader stay in view. */
+function clearSightline(world: World, tx: number, ty: number): void {
+  world.props = world.props.filter((p) => {
+    if (!p.kind.startsWith("tree-") && p.kind !== "orchard" && p.kind !== "maple") return true;
+    const dx = p.tx - tx;
+    const dy = p.ty - ty;
+    const depth = dx + dy;
+    if (depth <= 0 || depth > 10 || Math.abs(dx - dy) > 3) return true;
+    vacate(world, p);
+    return false;
+  });
 }
 
 function placeBunker(world: World): void {

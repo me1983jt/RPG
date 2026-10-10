@@ -2,7 +2,7 @@
 // @ts-nocheck
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
-import { npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
+import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import {
   PERKS,
   SKILLS,
@@ -290,6 +290,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let visible = /* @__PURE__ */ new Uint8Array(24336);
 	let quest = 0;
 	let questKills = 0;
+	/** Beta v2 additions: First Snow on Cambridge Road stage, Jack Ready trust, bunker found, kitchen restock day. */
+	let snow = 0;
+	let jackTrust = 0;
+	let jackMet = false;
+	let bunkerSeen = false;
+	let kitchenDay = -1;
 	let questTotal = 6;
 	let buildOpen = false;
 	let packOpen = false;
@@ -477,6 +483,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		log = lines.map((line) => line.text);
 		sync(true);
 	}
+	function talkState() {
+		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet };
+	}
+	function hudQuestText() {
+		if (snow < 3 && quest <= 0) {
+			if (snow <= 0) return "First Snow: talk to Justin at the Cambridge Road farm.";
+			if (snow === 1) return `First Snow: bring Justin ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
+			return "First Snow: go see Sarah at the farm.";
+		}
+		return questText(quest, questKills);
+	}
 	function sync(force = false) {
 		if (!force) return;
 		const p = player;
@@ -496,7 +513,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			shells: p ? shellCount(p) : 0,
 			quest,
 			questKills,
-			questText: questText(quest, questKills),
+			questText: hudQuestText(),
+			journal: journalEntries(quest, questKills, talkState()),
 			log,
 			buildOpen,
 			recipe,
@@ -722,6 +740,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		explored = /* @__PURE__ */ new Uint8Array(24336);
 		quest = 0;
 		questKills = 0;
+		snow = 0;
+		jackTrust = 0;
+		jackMet = false;
+		bunkerSeen = false;
+		kitchenDay = -1;
+		openedDoors.clear();
+		lootedChests.clear();
 		questTotal = world.enemies.filter((e) => e.quest).length;
 		buildOpen = false;
 		recipe = 0;
@@ -738,6 +763,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setLog("You wake on the cot under the eave. Cambridge Road. The stove in the farmhouse is warm.");
 		const tagged = SKILLS.filter((s) => player.tags.includes(s.id)).map((s) => s.name).join(", ");
 		pushLog(`Tagged skills: ${tagged}. They rise twice as fast.`);
+		pushLog("Justin is out by the farmhouse. First snow is coming.");
 		dialogue = null;
 		piles = [];
 		nextPile = 1;
@@ -881,6 +907,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		inside = null;
 		quest = data.quest;
 		questKills = data.questKills;
+		snow = data.snow ?? (data.quest > 0 ? 3 : 0);
+		jackTrust = data.jackTrust ?? 0;
+		jackMet = !!data.jackMet;
+		bunkerSeen = !!data.bunkerSeen;
+		kitchenDay = data.kitchenDay ?? -1;
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -956,6 +987,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.map = mapId;
 		data.exits = exitSides;
 		data.questTotal = questTotal;
+		data.snow = snow;
+		data.jackTrust = jackTrust;
+		data.jackMet = jackMet;
+		data.bunkerSeen = bunkerSeen;
+		data.kitchenDay = kitchenDay;
 		data.regions = [...regions.values()];
 		data.piles = piles.map((pile) => ({
 			id: pile.id,
@@ -1218,6 +1254,36 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				shiftRep("ponds", 1, 4);
 				startDeal();
 			}
+		} else if (id === "snow-accept" && snow <= 0) {
+			snow = 1;
+			pushLog(`Justin wants ${SNOW_WOOD} armloads of wood. The woodpile is by the barn.`);
+		} else if (id === "snow-wood" && snow === 1 && player.wood >= SNOW_WOOD) {
+			player.wood -= SNOW_WOOD;
+			snow = 2;
+			grantXp(12);
+			pushLog("Justin stacks the wood by the stove. Sarah wants to see you.");
+		} else if (id === "snow-done" && snow === 2) {
+			snow = 3;
+			lootedChests.add(91001);
+			lootedChests.add(91002);
+			giveItem("cider");
+			giveItem("donut");
+			giveItem("donut");
+			const cot = world.props.find((p) => p.kind === "cot");
+			if (cot && mapId === 0) {
+				const spot = nearestRespawn(cot.tx, cot.ty, 1, 1);
+				player.respawnX = spot.x;
+				player.respawnY = spot.y;
+			}
+			kitchenDay = Math.floor(clock / DAY_LENGTH_SEC);
+			shiftRep("ponds", 2, 6);
+			grantXp(30);
+			pushLog("First Snow on Cambridge Road: done. The farm is your base now. You wake on the cot if you fall.");
+			pushLog("Hot cider and cider donuts heal. Use them from the pack.");
+			sfx("level");
+			startDeal();
+		} else if (id === "jack-bye") {
+			pushLog(JACK_SIGNOFF);
 		} else if (id === "mira-brief" && quest <= 0) {
 			quest = 1;
 			shiftRep("lowelltown", 1, 2);
@@ -1232,10 +1298,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (id === "buy-wrap") buyFromTrader("rejean", 6, "bandage-std", 1, "A field bandage. Cleaner than a rag.", "Not enough iron. Réjean doesn't keep a tab.");
 		else if (id === "buy-coat") buyFromTrader("rejean", 14, "coat-std", 1, "A trail coat. Heavy, and it will turn a blade.", "Not enough iron. Réjean doesn't keep a tab.");
 		else if (id === "buy-carbine") buyFromTrader("rejean", 18, "carbine-std", 1, "A service carbine. Straighter than the one you walked in with.", "Not enough iron. Réjean doesn't keep a tab.");
-		else if (id === "buy-cal-shells") buyFromTrader("cal", 10, "shells", 8, "Eight shells. Cal sets them on the table and doesn't watch you count.", "Not enough iron. Cal doesn't keep a tab.");
-		else if (id === "buy-cal-wrap") buyFromTrader("cal", 10, "bandage-good", 1, "A clean bandage. Sealed better than a road rag.", "Not enough iron. Cal doesn't keep a tab.");
-		else if (id === "buy-cal-coat") buyFromTrader("cal", 16, "quilt", 1, "A quilted jacket. He wore the pockets flat before he sold it.", "Not enough iron. Cal doesn't keep a tab.");
-		else if (id === "buy-cal-gun") buyFromTrader("cal", 26, "carbine-good", 1, "A good carbine. The bore is bright.", "Not enough iron. Cal doesn't keep a tab.");
+		else if (id === "buy-cal-shells") jackSale(10, "shells", 10, "Ten shells. Jack counts them out with a grin.");
+		else if (id === "buy-cal-wrap") jackSale(18, "trauma", 1, "A sealed trauma kit. Real medicine, not a road rag.");
+		else if (id === "buy-cal-coat") jackSale(34, "rig", 1, "A plate rig. Canvas, pouches, and a plate that stops more than wool.");
+		else if (id === "buy-cal-gun") jackSale(42, "scoped", 1, "A scoped carbine. The glass is clean and the bore is bright.");
 		dialogue = null;
 		phase = "play";
 		sfx("click");
@@ -1295,6 +1361,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		prop.hp = DEF_HP[next] ?? prop.hp;
 		pushLog("You build it up a notch.");
 	}
+	function jackSale(cost, item, qty, got) {
+		if (!buyFromTrader("cal", cost, item, qty, got, "Not enough iron, friend. Jack doesn't keep a tab.")) return;
+		jackTrust += 1;
+		if (jackTrust === 1 && !bunkerSeen) pushLog("Jack Ready trusts you now. Talk to him again.");
+	}
 	function buyFromTrader(role, cost, item, qty, got, broke) {
 		if (!player || !GEAR[item]) return;
 		const town = townOf(role);
@@ -1325,6 +1396,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.scrap -= price;
 		pushLog(price === cost ? got : `${got} The iron comes to ${price}.`);
 		startDeal();
+		return true;
 	}
 	function startDeal() {
 		if (!player) return;
@@ -1353,7 +1425,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				choices: [{ label: "I'll go", id: "close" }]
 			};
 		} else {
-			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002));
+			if (npc.role === "cal") jackMet = true;
+			if (npc.role === "sarah") restockKitchen();
+			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002), talkState());
 			if (rep <= -10) line.text = `You are not welcome here, and they do not pretend otherwise. ${line.text}`;
 			line.choices = line.choices.map((choice) => {
 				if (!choice.check) return choice;
@@ -2183,6 +2257,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		holdWalk = false;
 		packOpen = false;
 		statsOpen = false;
+		if (prop.kind === "hatch") bunkerSeen = true;
+		if (prop.kind === "farmhouse") restockKitchen();
 		pushLog(prop.kind === "farmhouse" ? "You step into the farmhouse. The wood stove is going." : prop.kind === "barn" ? "The barn smells of hay and split wood." : prop.kind === "hatch" ? "Under the birch log, a hatch. The room below is dry." : prop.built || prop.kind === "shelter" || prop.kind === "workshop" ? "You step into your own place." : "You step inside.");
 		saveGame();
 	}
@@ -2223,6 +2299,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("gather");
 			saveGame();
 		}
+	}
+	/** After First Snow, Sarah's kitchen (cider cups 91001, donut plate 91002) refills once a day. */
+	function restockKitchen() {
+		if (snow < 3) return;
+		const day = Math.floor(clock / DAY_LENGTH_SEC);
+		if (day <= kitchenDay) return;
+		kitchenDay = day;
+		lootedChests.delete(91001);
+		lootedChests.delete(91002);
 	}
 	function warmStove() {
 		if (!player) return;
@@ -4065,7 +4150,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			npc.path = pathTo(world, npc.x, npc.y, npc.homeX, npc.homeY);
 			npc.pause = 0;
 		} else if (npc.pause <= 0 && (!npc.path || !npc.path.length)) {
-			if (Math.random() < .45) {
+			// Jack Ready minds his stall: he stays put instead of wandering behind the crates
+			if (npc.role !== "cal" && Math.random() < .45) {
 				const ang = Math.random() * Math.PI * 2;
 				const dist = 36 + Math.random() * 80;
 				npc.path = pathTo(world, npc.x, npc.y, npc.homeX + Math.cos(ang) * dist, npc.homeY + Math.sin(ang) * dist);
@@ -4236,7 +4322,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillRect(o.x, o.y, 320, 22);
 		ctx.fillStyle = "#e6c56a";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Cal's cache. Shut it when you leave.", o.x + 10, o.y + 16);
+		ctx.fillText("Jack's cache. Shut it when you leave.", o.x + 10, o.y + 16);
 		ctx.fillStyle = "#efe6d4";
 		ctx.fillText(lootedChests.has(93012) ? "Meds gone" : "Trauma kit", o.x + 18, o.y + 78);
 		ctx.fillText(lootedChests.has(93011) ? "Rig gone" : "Plate rig", o.x + 18, o.y + 132);
@@ -4523,6 +4609,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							jy = work.shake > 0 ? Math.cos(work.shake * 64) * 3 : 0;
 						}
 					}
+					// see-through: a tall prop drawn in front of the hero fades so the hero never vanishes behind it
+					let seeThrough = false;
+					if (player && !inside && h > 140 && c.x + c.y > player.x + player.y) {
+						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
+						const ps = zoomPoint(pr.sx, pr.sy);
+						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
+						const hs = zoomPoint(hr.sx, hr.sy);
+						const ph = h * scale * zoom;
+						const pw = ph * (tree ? .62 : .9);
+						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy && hs.sy - HERO_H * zoom * .6 > ps.sy - ph;
+					}
+					if (seeThrough) ctx.globalAlpha = .42;
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
 						const img = images.get("tractor-run");
 						const frames = 4;
@@ -4536,6 +4634,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const dw = dh * (sw / sh);
 						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
 					} else blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					if (seeThrough) ctx.globalAlpha = 1;
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 1) && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 36, 70, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.burn || 0) > 0 && images.get("fx-smoke")) blit("fx-smoke", c.x + 8, c.y - 70, 64, false, 0, 0, drawCamX, drawCamY);
@@ -4977,10 +5076,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx) + .5, Math.ceil(sy) + .5);
 		}
 		mctx.globalAlpha = 1;
-		const obj = objectiveTile(quest);
+		const rawObj = objectiveTile(quest);
+		const obj = { tx: rawObj.tx + WORLD_OX, ty: rawObj.ty + WORLD_OY };
 		if (mapId === 0 && visible[obj.ty * 156 + obj.tx]) {
 			mctx.fillStyle = "#d4a24a";
 			mctx.fillRect(obj.tx * sx - 1, obj.ty * sy - 1, 3, 3);
+		}
+		if (mapId === 0 && jackTrust > 0 && !bunkerSeen) {
+			const hatch = world.props.find((p) => p.kind === "hatch");
+			if (hatch) {
+				mctx.fillStyle = "#7fbf6a";
+				mctx.fillRect(hatch.tx * sx - 1.5, hatch.ty * sy - 1.5, 4, 4);
+			}
 		}
 		const pt = tileOf(player.x, player.y);
 		mctx.fillStyle = "#f0e6d4";
@@ -5181,11 +5288,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	window.addEventListener("keydown", onKeyDown);
 	window.addEventListener("keyup", onKeyUp);
 	window.addEventListener("blur", onBlur);
+	/** Keep progress when the app goes to the background (Android home button, app switch, screen off). */
+	const saveNow = () => {
+		try {
+			if (player && world && phase !== "menu") saveGame();
+		} catch {}
+	};
 	const onVis = () => {
-		if (document.hidden) keys.clear();
-		else unlockAudio();
+		if (document.hidden) {
+			keys.clear();
+			saveNow();
+		} else unlockAudio();
 	};
 	document.addEventListener("visibilitychange", onVis);
+	window.addEventListener("pagehide", saveNow);
+	window.__maineSave = saveNow;
 	const onWheel = (e) => {
 		if (phase === "menu") return;
 		e.preventDefault();
@@ -5320,6 +5437,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			window.removeEventListener("keyup", onKeyUp);
 			window.removeEventListener("blur", onBlur);
 			document.removeEventListener("visibilitychange", onVis);
+			window.removeEventListener("pagehide", saveNow);
+			if (window.__maineSave === saveNow) delete window.__maineSave;
 			canvas.removeEventListener("wheel", onWheel);
 			if (window.__controlsTest) delete window.__controlsTest;
 		},
@@ -5728,6 +5847,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			exits: exitSides,
 			gates: world?.gates ?? []
 		}),
+		questState: () => ({ quest, snow, jackTrust, jackMet, bunkerSeen, wood: player?.wood ?? 0, respawn: player ? [player.respawnX, player.respawnY] : null }),
+		giveIron: (n) => {
+			if (player) player.scrap += n;
+			sync(true);
+		},
+		choose: (id) => applyChoice(id),
+		leave: () => leaveHouse(),
+		die: () => {
+			if (!player) return;
+			player.hp = 0;
+			phase = "dead";
+			intent = null;
+			saveGame();
+			sync(true);
+		},
+		setHp: (n) => {
+			if (player) player.hp = n;
+		},
+		farmProps: () => world ? world.props.filter((p) => inFarm(p.tx, p.ty)).map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, x: propCenter(p).x, y: propCenter(p).y })) : [],
 		revealMap: () => {
 			if (!world) return;
 			for (let i = 0; i < explored.length; i++) if (world.tiles[i] !== 5) explored[i] = 1;
