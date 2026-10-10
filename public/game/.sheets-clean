@@ -1,0 +1,1 @@
+sprite sheets already cleaned + composed (apk-kit/clean_sheets.py + merge/compose_v18_art.py); build-apk.sh skips its cleanup step
