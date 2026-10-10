@@ -1129,6 +1129,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			statsOpen = true;
 		}
 	}
+	/** Death closes every open panel so nothing sits over the "You fall" card. */
+	function closePanels() {
+		statsOpen = false;
+		packOpen = false;
+		buildOpen = false;
+		dialogue = null;
+	}
 	function sightRadius() {
 		const trail = skillOf("trail");
 		return 5 + (player?.perception ?? 1) + (trail >= 45 ? 1 : 0);
@@ -1960,12 +1967,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Natural cloth dye. The pixel keeps its shading relative to the region's average brightness
 	 * (ref), but the region as a whole lands near the dye's own brightness, so a bright tan coat
 	 * dyed spruce becomes a dark forest green instead of lime. A little greying keeps it muted. */
-	function dye(r, g, b, target, amt, ref = 0, mute = .18) {
+	function dye(r, g, b, target, amt, ref = 0, mute = .18, contrast = .75) {
 		const lum = r * .3 + g * .59 + b * .11;
 		const tl = target[0] * .3 + target[1] * .59 + target[2] * .11 || 1;
 		const rel = ref > 0 ? lum / ref : lum / tl;
 		// soften the source's contrast a little so sparse masks (vest, plate) don't turn speckly
-		const scale = Math.max(.4, Math.min(1.35, 1 + (rel - 1) * .75));
+		const scale = Math.max(.4, Math.min(1.35, contrast < .5 ? Math.pow(Math.max(rel, .05), contrast) : 1 + (rel - 1) * contrast));
 		let nr = target[0] * scale, ng = target[1] * scale, nb = target[2] * scale;
 		const top = Math.max(nr, ng, nb);
 		if (top > 228) { const k = 228 / top; nr *= k; ng *= k; nb *= k; }
@@ -2059,8 +2066,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const skin = r > 148 && rg > 56 && gg > 72 && b > 42 && lum > 96 && by < .74;
 				const face = inHead && (skin || lum > 75 && rg > 18 && by < .26);
 				const boot = by > .86 && r > gg + 8 && r > b + 10 && lum < 160;
-				const shirt = !face && !skin && !boot && by > .14 && by < .5 && r > 138 && gg > 98 && b > 55 && rg >= 12 && rg <= 62 && gg > b + 4 && lum > 100 && r < 242 && sat > 18;
-				const vest = !face && !skin && !shirt && !boot && by > .3 && by < .58 && bx > .12 && bx < .88 && r > 40 && r < 175 && gg > 18 && gg < 125 && b < 90 && rg > 8 && r - b > 14 && lum > 28 && lum < 135 && sat > 12;
+				const shirt = !face && !skin && !boot && by > .14 && by < .57 && r > 138 && gg > 98 && b > 55 && rg >= 12 && rg <= 62 && gg > b + 4 && lum > 100 && r < 242 && sat > 18;
+				const vest = !face && !skin && !shirt && !boot && by > .3 && by < .58 && bx > .12 && bx < .88 && r > 40 && r < 175 && gg > 18 && gg < 125 && b < 90 && rg > 8 && r - b > 14 && lum > 28 && lum < 94 && sat > 12;
 				const pants = !boot && !skin && by > .5 && by < .9 && b + 10 >= r && gg + 16 >= r && sat < 115 && lum > 18 && lum < 180 && !(rg > 18 && r > b + 14);
 				const hair = !skin && !face && by < .1 && lum < 92 && sat < 100;
 				const hand = skin && !face && by > .34 && by < .7;
@@ -2072,7 +2079,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				else if (hand) tag = 5;
 				mask[y * cw + x] = tag;
 			}
-			for (let pass = 0; pass < 3; pass++) {
+			for (let pass = 0; pass < 5; pass++) {
 				const grow = mask.slice();
 				for (let y = box.top + 1; y < box.bottom; y++) for (let x = box.left + 1; x < box.right; x++) {
 					const mi = y * cw + x;
@@ -2087,11 +2094,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const rg = r - gg;
 					const skin = r > 148 && rg > 56 && gg > 72 && b > 42 && lum > 96 && by < .74;
 					if (skin) continue;
-					const shirtLike = r > 140 && gg > 100 && b > 55 && rg >= 8 && rg <= 70 && gg > b - 5 && lum > 95;
-					const vestLike = !shirtLike && r > 45 && r < 165 && gg > 20 && gg < 115 && b < 85 && rg > 10 && r - b > 16 && lum > 30 && lum < 130;
+					// later passes also take the coat's shaded folds, so dyed coats come out even, not blotchy
+					const shirtLike = pass < 3 ? r > 140 && gg > 100 && b > 55 && rg >= 8 && rg <= 70 && gg > b - 5 && lum > 95 : r > 96 && gg > 62 && rg >= 8 && rg <= 72 && gg > b - 2 && lum > 70 && lum < 200;
+					const vestLike = !shirtLike && r > 45 && r < 165 && gg > 20 && gg < 115 && b < 85 && rg > 10 && r - b > 16 && lum > 30 && lum < 94;
 					const blue = b + 8 >= r && gg + 12 >= r && !(rg > 16 && r > b + 12);
 					const up = mask[mi - cw], dn = mask[mi + cw], lf = mask[mi - 1], rt = mask[mi + 1];
-					if ((lf === 1 || rt === 1 || up === 1 || dn === 1) && shirtLike && by > .14 && by < .5) grow[mi] = 1;
+					if ((lf === 1 || rt === 1 || up === 1 || dn === 1) && shirtLike && by > .14 && by < (pass < 3 ? .5 : .57)) grow[mi] = 1;
 					else if ((lf === 2 || rt === 2 || up === 2 || dn === 2) && vestLike && by > .3 && by < .58 && bx > .12 && bx < .88) grow[mi] = 2;
 					else if ((lf === 3 || rt === 3 || up === 3 || dn === 3) && blue && by > .5 && by < .9 && lum < 180) grow[mi] = 3;
 				}
@@ -2113,7 +2121,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const r = px[i], gg = px[i + 1], b = px[i + 2];
 				let next = null;
 				if (tag === 1 && colors.shirt) next = dye(r, gg, b, colors.shirt, .9, ref[1]);
-				else if (tag === 2 && colors.plate) next = dye(r, gg, b, colors.plate, .92, ref[2], .6);
+				else if (tag === 2 && colors.plate) next = dye(r, gg, b, colors.plate, .92, ref[2], .6, .22);
 				else if (tag === 2 && colors.vest) next = dye(r, gg, b, colors.vest, .86, ref[2]);
 				else if (tag === 3 && colors.legs) next = dye(r, gg, b, colors.legs, .88, ref[3]);
 				else if (tag === 4 && colors.head) next = dye(r, gg, b, colors.head, .78, ref[4], colors.helm ? .6 : .18);
@@ -3003,6 +3011,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.hp = 0;
 			phase = "dead";
 			intent = null;
+			closePanels();
 			parkBike(false);
 			sfx("die");
 			pushLog("You go down in the spruce.");
@@ -5997,7 +6006,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			gates: world?.gates ?? []
 		}),
 		questState: () => ({ quest, snow, jackTrust, jackMet, bunkerSeen, wood: player?.wood ?? 0, respawn: player ? [player.respawnX, player.respawnY] : null }),
-		enemies: () => world ? world.enemies.map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), name: e.name ?? "", variant: e.variant ?? "", quest: !!e.quest, dead: !!e.dead, hp: e.hp })) : [],
+		enemies: () => world ? world.enemies.map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), name: e.name ?? "", kind: e.kind ?? "", variant: e.variant ?? "", quest: !!e.quest, dead: !!e.dead, hp: e.hp })) : [],
 		strike: (id, dmg) => {
 			const e = world?.enemies.find((q) => q.id === id);
 			if (!e || e.dead) return;
@@ -6021,6 +6030,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.hp = 0;
 			phase = "dead";
 			intent = null;
+			closePanels();
 			saveGame();
 			sync(true);
 		},
@@ -6029,6 +6039,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		farmProps: () => world ? world.props.filter((p) => inFarm(p.tx, p.ty)).map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, x: propCenter(p).x, y: propCenter(p).y })) : [],
 		propsNear: (x, y, r) => world ? world.props.map((p) => ({ id: p.id, kind: p.kind, ...propCenter(p), fade: p.fade || 0 })).filter((p) => Math.hypot(p.x - x, p.y - y) < r) : [],
+		beastAt: (id, kind, x, y) => {
+			const e = world?.enemies.find((q) => q.id === id);
+			if (!e) return;
+			e.kind = kind; e.x = x; e.y = y; e.homeX = x; e.homeY = y; e.temper = "timid"; e.aggro = false; e.dead = false; e.hp = Math.max(e.hp, 10); e.path = null;
+		},
 		setLook: (look) => {
 			if (player) player.look = look;
 		},

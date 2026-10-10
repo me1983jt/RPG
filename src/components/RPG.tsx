@@ -879,7 +879,7 @@ function useShortScreen(): boolean {
 
 function Overlay({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="scrap-scrim absolute inset-0 flex items-center justify-center p-4">
+    <div className="scrap-scrim absolute inset-0 z-40 flex items-center justify-center p-4">
       <div className="flex w-full max-w-sm flex-col gap-2 plank border border-border bg-surface p-5">
         <h2 className="font-display text-3xl">{title}</h2>
         {children}
