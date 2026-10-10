@@ -4560,6 +4560,86 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ctx.globalAlpha = 1;
 	}
+	/** Night darkness, 0 by day. Ramps in through the evening (17-21h), keeps deepening to its
+	 * darkest around 2-4h, then lifts through dawn (4-7h). Capped so a phone screen stays readable. */
+	function nightDark(total) {
+		const span = DAY_LENGTH_SEC;
+		const h = (((total % span) + span) % span) / span * 24;
+		const ease = (t) => t * t * (3 - 2 * t);
+		const DUSK = .64, DEEP = .82;
+		if (h >= 7 && h < 17) return 0;
+		if (h >= 17 && h < 21) return DUSK * ease((h - 17) / 4);
+		if (h >= 21) return DUSK + (DEEP - DUSK) * ease((h - 21) / 5);
+		if (h < 2) return DUSK + (DEEP - DUSK) * ease((h + 3) / 5);
+		if (h < 4) return DEEP;
+		return DEEP * (1 - ease((h - 4) / 3));
+	}
+	const LIT_BUILDINGS = { farmhouse: [150, -70, .8], shack: [110, -50, .65], workshop: [120, -60, .65], stall: [120, -40, .7], barn: [120, -70, .55], "post-porch": [120, -60, .75], "post-loft": [100, -90, .6] };
+	const FIRES = { campfire: 230, firepot: 170, "firepot-up": 180, "firepot-3": 190 };
+	let nightCv = null;
+	/** Darkness layer with holes cut around light sources, then a warm additive glow on top. */
+	function paintNight(dark, camXd, camYd) {
+		if (!world || !player || !ctx) return;
+		const scale = .5;
+		const w = Math.max(1, Math.ceil(viewW * scale)), h = Math.max(1, Math.ceil(viewH * scale));
+		if (!nightCv) nightCv = document.createElement("canvas");
+		if (nightCv.width !== w || nightCv.height !== h) { nightCv.width = w; nightCv.height = h; }
+		const lg = nightCv.getContext("2d");
+		if (!lg) return;
+		const lights = [];
+		const at = (wx, wy) => { const r = worldToScreen(wx, wy, camXd, camYd); return zoomPoint(r.sx, r.sy); };
+		const t = performance.now() / 1000;
+		const flick = (k) => 1 + Math.sin(t * 9 + k) * .04 + Math.sin(t * 23 + k * 3) * .03;
+		// the hero carries a small light; sharper eyes see a little further into it
+		const pp = at(player.x, player.y - 40);
+		lights.push({ x: pp.sx, y: pp.sy, r: (120 + Math.min(10, player.perception ?? 1) * 9) * zoom, a: .8, warm: .3 });
+		const margin = 320 * zoom;
+		for (const prop of world.props) {
+			if (!explored[prop.ty * 156 + prop.tx]) continue;
+			const fire = FIRES[prop.kind] ?? ((prop.burn || 0) > 0 ? 200 : 0);
+			const lit = LIT_BUILDINGS[prop.kind];
+			if (!fire && !lit) continue;
+			const c = propCenter(prop);
+			const q = at(c.x, c.y);
+			if (q.sx < -margin || q.sy < -margin || q.sx > viewW + margin || q.sy > viewH + margin) continue;
+			if (fire) lights.push({ x: q.sx, y: q.sy - 20 * zoom, r: fire * zoom * flick(prop.id || 0), a: 1, warm: .5 });
+			else lights.push({ x: q.sx, y: q.sy + lit[1] * zoom, r: lit[0] * zoom, a: lit[2], warm: .5 });
+		}
+		for (const e of world.enemies) {
+			if (e.dead || (e.variant !== "torch" && e.variant !== "atv")) continue;
+			const tt = tileOf(e.x, e.y);
+			if (!visible[tt.ty * 156 + tt.tx]) continue;
+			const q = at(e.x, e.y - 40);
+			lights.push({ x: q.sx, y: q.sy, r: (e.variant === "atv" ? 150 : 160) * zoom * flick(e.id), a: .9, warm: .55 });
+		}
+		lg.setTransform(1, 0, 0, 1, 0, 0);
+		lg.globalCompositeOperation = "source-over";
+		lg.clearRect(0, 0, w, h);
+		lg.fillStyle = `rgba(4, 8, 22, ${dark})`;
+		lg.fillRect(0, 0, w, h);
+		lg.globalCompositeOperation = "destination-out";
+		for (const L of lights) {
+			const x = L.x * scale, y = L.y * scale, r = Math.max(4, L.r * scale);
+			const g = lg.createRadialGradient(x, y, 0, x, y, r);
+			g.addColorStop(0, `rgba(0,0,0,${L.a})`);
+			g.addColorStop(.55, `rgba(0,0,0,${L.a * .6})`);
+			g.addColorStop(1, "rgba(0,0,0,0)");
+			lg.fillStyle = g;
+			lg.fillRect(x - r, y - r, r * 2, r * 2);
+		}
+		ctx.save();
+		ctx.imageSmoothingEnabled = true;
+		ctx.drawImage(nightCv, 0, 0, viewW, viewH);
+		ctx.globalCompositeOperation = "lighter";
+		for (const L of lights) {
+			const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, L.r * .8);
+			g.addColorStop(0, `rgba(255, 160, 70, ${L.warm * dark * .95})`);
+			g.addColorStop(1, "rgba(0,0,0,0)");
+			ctx.fillStyle = g;
+			ctx.fillRect(L.x - L.r, L.y - L.r, L.r * 2, L.r * 2);
+		}
+		ctx.restore();
+	}
 	function render() {
 		resize();
 		const dpr = canvas.width / viewW;
@@ -4574,6 +4654,28 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (inside) {
 			drawRoom();
+			const dark = nightDark(clock) * .5;
+			if (dark > .02) {
+				const kind = world.props.find((p) => p.id === inside.id)?.kind;
+				ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+				const o = roomOrigin();
+				const fx = kind === "farmhouse" ? o.x + 58 : viewW / 2, fy = kind === "farmhouse" ? o.y + 110 : viewH / 2;
+				const g = ctx.createRadialGradient(fx, fy, 20, fx, fy, Math.max(viewW, viewH) * .7);
+				g.addColorStop(0, `rgba(6, 10, 24, ${kind === "farmhouse" ? 0 : dark * .5})`);
+				g.addColorStop(1, `rgba(6, 10, 24, ${dark})`);
+				ctx.fillStyle = g;
+				ctx.fillRect(0, 0, viewW, viewH);
+				if (kind === "farmhouse") {
+					ctx.save();
+					ctx.globalCompositeOperation = "lighter";
+					const w2 = ctx.createRadialGradient(fx, fy, 0, fx, fy, 170);
+					w2.addColorStop(0, `rgba(255, 150, 60, ${.18 + dark * .3})`);
+					w2.addColorStop(1, "rgba(0,0,0,0)");
+					ctx.fillStyle = w2;
+					ctx.fillRect(fx - 170, fy - 170, 340, 340);
+					ctx.restore();
+				}
+			}
 			drawMini();
 			return;
 		}
@@ -4654,10 +4756,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
 						const hs = zoomPoint(hr.sx, hr.sy);
 						const ph = h * scale * zoom;
-						const pw = ph * (tree ? .62 : .9);
-						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy && hs.sy - HERO_H * zoom * .6 > ps.sy - ph;
+						const pimg = images.get(spec.image);
+						const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
+						const pw = ph * aspect * (tree ? .6 : .92);
+						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph;
 					}
-					if (seeThrough) ctx.globalAlpha = .42;
+					// ease the fade in and out instead of popping
+					const fadeTo = seeThrough ? 1 : 0;
+					prop.fade = (prop.fade || 0) + (fadeTo - (prop.fade || 0)) * Math.min(1, STEP * 10);
+					if (prop.fade < .01) prop.fade = 0;
+					seeThrough = prop.fade > 0;
+					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * .62;
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
 						const img = images.get("tractor-run");
 						const frames = 4;
@@ -4671,7 +4780,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const dw = dh * (sw / sh);
 						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
 					} else blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
-					if (seeThrough) ctx.globalAlpha = 1;
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 1) && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 36, 70, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.burn || 0) > 0 && images.get("fx-smoke")) blit("fx-smoke", c.x + 8, c.y - 70, 64, false, 0, 0, drawCamX, drawCamY);
@@ -4683,6 +4791,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const swing = opening && opening.id === prop.id ? 1 - opening.t / OPEN_TIME : 0;
 						paintDoorOnBuilding(prop.kind, c.x, c.y, h, swing, drawCamX, drawCamY);
 					}
+					if (seeThrough) ctx.globalAlpha = 1;
 				}
 			});
 		}
@@ -4804,37 +4913,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (work && work.swing > 0 && player && !inside) paintToolSwing(drawCamX, drawCamY);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
-		if (shade > .04) {
-			ctx.fillStyle = `rgba(10, 14, 24, ${shade * .5})`;
-			ctx.fillRect(0, 0, viewW, viewH);
-		}
+		const dark = nightDark(clock);
+		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
 		if (world && player && shade > .12) {
 			const here = tileOf(player.x, player.y);
 			const onFarm = inFarm(here.tx, here.ty) || world.props.some((p) => DEFENSE[p.kind] && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
-			if (onFarm) {
-				ctx.save();
-				ctx.globalCompositeOperation = "lighter";
-				const glowAt = (wx, wy, radius, color) => {
-					const p = zoomPoint(worldToScreen(wx, wy, drawCamX, drawCamY).sx, worldToScreen(wx, wy, drawCamX, drawCamY).sy);
-					const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, radius * zoom);
-					g.addColorStop(0, color);
-					g.addColorStop(1, "rgba(0,0,0,0)");
-					ctx.fillStyle = g;
-					ctx.beginPath();
-					ctx.arc(p.sx, p.sy, radius * zoom, 0, Math.PI * 2);
-					ctx.fill();
-				};
-				for (const prop of world.props) {
-					if (!explored[prop.ty * 156 + prop.tx]) continue;
-					const c = propCenter(prop);
-					if (prop.kind === "campfire" || prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 0) glowAt(c.x, c.y - 20, prop.kind === "campfire" ? 90 : 70, "rgba(255, 170, 70, 0.55)");
-					if (prop.kind === "farmhouse" || prop.kind === "barn" || prop.kind === "post-porch" || prop.kind === "post-loft") glowAt(c.x, c.y - 40, 110, "rgba(255, 196, 110, 0.28)");
-				}
-				for (const e of world.enemies) {
-					if (!e.dead && (e.variant === "torch" || e.variant === "atv")) glowAt(e.x, e.y - 30, e.variant === "atv" ? 64 : 78, "rgba(255, 140, 50, 0.7)");
-				}
-				ctx.restore();
-			}
 			let near = 9999;
 			for (const e of world.enemies) {
 				if (e.dead || !isRaider(e)) continue;
@@ -5945,6 +6028,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (player) player.hp = n;
 		},
 		farmProps: () => world ? world.props.filter((p) => inFarm(p.tx, p.ty)).map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, x: propCenter(p).x, y: propCenter(p).y })) : [],
+		propsNear: (x, y, r) => world ? world.props.map((p) => ({ id: p.id, kind: p.kind, ...propCenter(p), fade: p.fade || 0 })).filter((p) => Math.hypot(p.x - x, p.y - y) < r) : [],
 		setLook: (look) => {
 			if (player) player.look = look;
 		},
