@@ -3975,6 +3975,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const along = t * 460;
 		return { x: along, y: -along * .2 };
 	}
+	/** A raider spawn point on open ground with a walkable path to the hero (v18 spawned raiders inside
+	 * trees, buildings and off-map tiles, where they stood still all night). */
+	function raidSpawn(minR, maxR) {
+		if (!world || !player) return null;
+		for (let tries = 0; tries < 16; tries++) {
+			const ang = Math.random() * Math.PI * 2;
+			const rad = minR + Math.random() * (maxR - minR);
+			const x = player.x + Math.cos(ang) * rad;
+			const y = player.y + Math.sin(ang) * rad;
+			const t = tileOf(x, y);
+			if (cellBlocked(world, t.tx, t.ty)) continue;
+			if (!pathTo(world, x, y, player.x, player.y)) continue;
+			return { x: (t.tx + .5) * 64, y: (t.ty + .5) * 64 };
+		}
+		return null;
+	}
 	function stepRaid(dt) {
 		if (!world || !player || inside) {
 			guardPost.clear();
@@ -4030,13 +4046,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!bossThisNight && (raidNight === 5 || raidNight === 10 || raidNight === 15)) {
 			bossThisNight = true;
 			const boss = raidNight === 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raidNight === 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 };
-			const ang = Math.random() * Math.PI * 2;
-			const rad = 14 * 64;
-			const x = player.x + Math.cos(ang) * rad;
-			const y = player.y + Math.sin(ang) * rad;
-			world.enemies.push({
+			const spot = raidSpawn(12 * 64, 15 * 64);
+			if (!spot) bossThisNight = false;
+			else world.enemies.push({
 				id: world.nextEnemyId++,
-				x, y, homeX: x, homeY: y,
+				x: spot.x, y: spot.y, homeX: spot.x, homeY: spot.y,
 				hp: boss.hp, maxHp: boss.hp, atk: boss.atk, xp: boss.xp,
 				elite: true, quest: false, kind: "bandit", pack: 90, temper: "hostile",
 				crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0,
@@ -4053,10 +4067,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (raidNight >= 6) pool.push("armor");
 			if (raidNight >= 7) pool.push("atv");
 			const variant = pool[Math.floor(Math.random() * pool.length)];
-			const ang = Math.random() * Math.PI * 2;
-			const rad = (7 + Math.random() * 4) * 64;
-			const x = player.x + Math.cos(ang) * rad;
-			const y = player.y + Math.sin(ang) * rad;
+			const spot = raidSpawn(7 * 64, 11 * 64);
+			if (spot) {
+			const { x, y } = spot;
 			const stats = variant === "armor" || variant === "brute" ? [46, 8, 16] : variant === "shield" ? [36, 6, 12] : variant === "atv" ? [28, 7, 14] : variant === "torch" ? [22, 5, 10] : variant === "jumper" ? [16, 4, 9] : [14, 4, 8];
 			const label = { scout: "Scout", jumper: "Climber", armor: "Plate", shield: "Shield", brute: "Brute", torch: "Torch", atv: "Rider" };
 			world.enemies.push({
@@ -4085,6 +4098,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				death: 0
 			});
 			if (raiders.length === 0) pushLog("Lanterns at the orchard edge. They are coming in.");
+			}
 		}
 		for (const prop of world.props) {
 			const spec = DEFENSE[prop.kind];
@@ -5882,6 +5896,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			gates: world?.gates ?? []
 		}),
 		questState: () => ({ quest, snow, jackTrust, jackMet, bunkerSeen, wood: player?.wood ?? 0, respawn: player ? [player.respawnX, player.respawnY] : null }),
+		enemies: () => world ? world.enemies.map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), name: e.name ?? "", variant: e.variant ?? "", quest: !!e.quest, dead: !!e.dead, hp: e.hp })) : [],
+		strike: (id, dmg) => {
+			const e = world?.enemies.find((q) => q.id === id);
+			if (!e || e.dead) return;
+			e.hp -= dmg;
+			e.hurt = .2;
+			if (e.hp <= 0) markDead(e, e.xp);
+			sync(true);
+		},
+		setQuest: (q) => {
+			quest = q;
+			sync(true);
+		},
 		giveIron: (n) => {
 			if (player) player.scrap += n;
 			sync(true);
