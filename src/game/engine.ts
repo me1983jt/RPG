@@ -55,6 +55,7 @@ import {
   pointBlocked,
   propCenter,
   tileOf,
+  addProp,
   tryPlace,
   vacate,
   type World,
@@ -137,6 +138,91 @@ var IMAGES = [
 	"rabbit",
 	"squirrel",
 	"crow",
+	"boss-fur",
+	"boss-mask",
+	"boss-saw",
+	"boss-fur-atk",
+	"boss-mask-atk",
+	"boss-saw-atk",
+	"boss-fur-dead",
+	"boss-mask-dead",
+	"boss-saw-dead",
+	"raider-scout",
+	"raider-brute",
+	"raider-torch",
+	"guard-sarah",
+	"guard-justin",
+	"guard-cyndal",
+	"guard-loki",
+	"guard-adele",
+	"guard-pete",
+	"guard-sera",
+	"guard-holt",
+	"stand",
+	"stand-up",
+	"blind",
+	"blind-up",
+	"firepot",
+	"firepot-up",
+	"nest",
+	"nest-up",
+	"fence",
+	"fence-2",
+	"fence-3",
+	"fence-x",
+	"stand-3",
+	"stand-x",
+	"blind-3",
+	"blind-x",
+	"firepot-3",
+	"firepot-x",
+	"nest-3",
+	"nest-x",
+	"post-loft",
+	"post-porch",
+	"post-roof",
+	"scarecrow",
+	"bait",
+	"tractor",
+	"tractor-run",
+	"bench",
+	"raider-jumper",
+	"raider-armor",
+	"raider-shield",
+	"raider-atv",
+	"raider-scout-atk",
+	"raider-jumper-atk",
+	"raider-armor-atk",
+	"raider-shield-atk",
+	"raider-torch-atk",
+	"raider-atv-atk",
+	"raider-brute-atk",
+	"raider-scout-dead",
+	"raider-jumper-dead",
+	"raider-armor-dead",
+	"raider-shield-dead",
+	"raider-torch-dead",
+	"raider-atv-dead",
+	"raider-brute-dead",
+	"guard-watch-sarah",
+	"guard-watch-justin",
+	"guard-watch-cyndal",
+	"guard-watch-loki",
+	"guard-watch-adele",
+	"guard-watch-pete",
+	"guard-watch-sera",
+	"guard-watch-holt",
+	"fx-muzzle",
+	"fx-smoke",
+	"fx-fire",
+	"fx-smoke2",
+	"icon-fence",
+	"icon-pot",
+	"icon-bomb",
+	"icon-bait",
+	"icon-scrap",
+	"icon-fuel",
+	"bunker-room",
 	"sack",
 	"tree-dead",
 	"tree-scrub",
@@ -231,6 +317,84 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let talkNpc = null;
 	let party = null;
 	let partyReturn = null;
+	let raidNight = 0;
+	let nightLatch = false;
+	let bossThisNight = false;
+	let tractorReady = false;
+	const guardPost = new Map();
+	const DEFENSE = {
+		stand: { range: 190, dmg: 3, every: .85 },
+		"stand-up": { range: 240, dmg: 5, every: .7 },
+		"stand-3": { range: 280, dmg: 7, every: .55 },
+		blind: { range: 280, dmg: 4, every: 1.1 },
+		"blind-up": { range: 340, dmg: 6, every: .9 },
+		"blind-3": { range: 400, dmg: 8, every: .75 },
+		firepot: { range: 108, dmg: 1, every: .35, slow: true },
+		"firepot-up": { range: 136, dmg: 2, every: .3, slow: true },
+		"firepot-3": { range: 160, dmg: 3, every: .25, slow: true },
+		nest: { range: 210, dmg: 6, every: .5 },
+		"nest-up": { range: 250, dmg: 8, every: .38 },
+		"nest-3": { range: 280, dmg: 11, every: .3 },
+		"post-loft": { range: 260, dmg: 5, every: .8 },
+		"post-porch": { range: 200, dmg: 4, every: .75 },
+		"post-roof": { range: 240, dmg: 5, every: .7 }
+	};
+	const BROKEN = {
+		fence: "fence-x",
+		"fence-2": "fence-x",
+		"fence-3": "fence-x",
+		stand: "stand-x",
+		"stand-up": "stand-x",
+		"stand-3": "stand-x",
+		blind: "blind-x",
+		"blind-up": "blind-x",
+		"blind-3": "blind-x",
+		firepot: "firepot-x",
+		"firepot-up": "firepot-x",
+		"firepot-3": "firepot-x",
+		nest: "nest-x",
+		"nest-up": "nest-x",
+		"nest-3": "nest-x",
+		"post-loft": "stand-x",
+		"post-porch": "stand-x",
+		"post-roof": "stand-x"
+	};
+	const DEF_HP = {
+		fence: 28,
+		"fence-2": 48,
+		"fence-3": 72,
+		stand: 36,
+		"stand-up": 52,
+		"stand-3": 70,
+		blind: 40,
+		"blind-up": 58,
+		"blind-3": 76,
+		firepot: 22,
+		"firepot-up": 34,
+		"firepot-3": 48,
+		nest: 50,
+		"nest-up": 68,
+		"nest-3": 90,
+		"post-loft": 44,
+		"post-porch": 36,
+		"post-roof": 40
+	};
+	const NEXT_TIER = {
+		fence: "fence-2",
+		"fence-2": "fence-3",
+		stand: "stand-up",
+		"stand-up": "stand-3",
+		blind: "blind-up",
+		"blind-up": "blind-3",
+		firepot: "firepot-up",
+		"firepot-up": "firepot-3",
+		nest: "nest-up",
+		"nest-up": "nest-3"
+	};
+	const LURE = new Set(["scarecrow", "bait"]);
+	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
+	const GUARD_ROLES = new Set(["sarah", "justin", "cyndal", "loki", "adele", "pete", "sera", "holt"]);
+	let raidClock = 10;
 	let piles = [];
 	let nextPile = 1;
 	let lootId = -1;
@@ -744,6 +908,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dialogue = null;
 		spawnCrows();
 		clock = data.clock ?? morningClock();
+		raidNight = data.raidNight ?? 0;
+		tractorReady = !!data.tractorReady;
 		rotAcc = 0;
 		goneNpcs = new Set(data.goneNpcs ?? []);
 		if (world) world.npcs = world.npcs.filter((npc) => !goneNpcs.has(npc.id));
@@ -783,6 +949,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.aim = aim;
 		data.turnBased = turnBased;
 		data.clock = clock;
+		data.raidNight = raidNight;
+		data.tractorReady = tractorReady;
 		data.goneNpcs = [...goneNpcs];
 		data.seed = worldSeed;
 		data.map = mapId;
@@ -1056,6 +1224,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			grantXp(12);
 			pushLog("Mira says the choppers bunch on the north gravel. Come at them from the south spruce.");
 		} else if (id.startsWith("join-")) recruitTalk();
+		else if (id === "bench-up") upgradeDefense();
+		else if (id === "bench-bomb") benchBuy("bomb", 0, 6, "A pipe bomb. Short fuse.");
+		else if (id === "bench-fuel") benchBuy("fuel", 0, 4, "A can for the tractor.");
+		else if (id === "bench-bait") benchBuy("baitpack", 2, 0, "A bait tin. Drop it where you want them.");
 		else if (id === "buy-shells") buyFromTrader("rejean", 8, "shells", 6, "Six shells. Réjean counts them twice.", "Not enough iron. Réjean doesn't keep a tab.");
 		else if (id === "buy-wrap") buyFromTrader("rejean", 6, "bandage-std", 1, "A field bandage. Cleaner than a rag.", "Not enough iron. Réjean doesn't keep a tab.");
 		else if (id === "buy-coat") buyFromTrader("rejean", 14, "coat-std", 1, "A trail coat. Heavy, and it will turn a blade.", "Not enough iron. Réjean doesn't keep a tab.");
@@ -1069,6 +1241,59 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sfx("click");
 		saveGame();
 		sync(true);
+	}
+	function openBench() {
+		if (!player) return;
+		if (nightShade(clock) > .22) {
+			pushLog("They are on the road. The bench can wait until morning.");
+			return;
+		}
+		dialogue = {
+			speaker: "Barn bench",
+			text: "Between raids the vise is free. Timber and iron buy a harder night.",
+			choices: [
+				{ label: "Upgrade a defense · 4 timber, 3 iron", id: "bench-up" },
+				{ label: "Pipe bomb · 6 iron", id: "bench-bomb" },
+				{ label: "Fuel can · 4 iron", id: "bench-fuel" },
+				{ label: "Bait tin · 2 timber", id: "bench-bait" },
+				{ label: "Leave it", id: "close" }
+			]
+		};
+		phase = "dialogue";
+		intent = null;
+		sync(true);
+	}
+	function benchBuy(item, wood, scrap, got) {
+		if (!player || !GEAR[item]) return;
+		if (player.wood < wood || player.scrap < scrap) {
+			pushLog("The bench is short. You need the timber and the iron in hand.");
+			return;
+		}
+		if (!giveItem(item)) {
+			pushLog("Your pack is full.");
+			return;
+		}
+		player.wood -= wood;
+		player.scrap -= scrap;
+		pushLog(got);
+	}
+	function upgradeDefense() {
+		if (!player || !world) return;
+		const prop = world.props.find((p) => NEXT_TIER[p.kind]);
+		if (!prop) {
+			pushLog("Nothing on the ground will take another nail.");
+			return;
+		}
+		if (player.wood < 4 || player.scrap < 3) {
+			pushLog("An upgrade wants 4 timber and 3 iron.");
+			return;
+		}
+		const next = NEXT_TIER[prop.kind];
+		player.wood -= 4;
+		player.scrap -= 3;
+		prop.kind = next;
+		prop.hp = DEF_HP[next] ?? prop.hp;
+		pushLog("You build it up a notch.");
 	}
 	function buyFromTrader(role, cost, item, qty, got, broke) {
 		if (!player || !GEAR[item]) return;
@@ -1243,6 +1468,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function stepParty(dt) {
 		if (!party || !player || !world || inside) return;
+		if (guardPost.has(party.homeId)) {
+			party.cooldown = Math.max(0, party.cooldown - dt);
+			return;
+		}
 		party.cooldown = Math.max(0, party.cooldown - dt);
 		const dx = player.x - party.x;
 		const dy = player.y - party.y;
@@ -1273,19 +1502,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("hit");
 			floater(foe.x, foe.y - 28, String(dmg));
 			burst(foe.x, foe.y, "#c4543a", 5);
-			if (foe.hp <= 0) {
-				foe.dead = true;
-				foe.aggro = false;
-				corpseOf(foe);
-				grantXp(Math.max(2, Math.round(foe.xp * .6)));
-				if (foe.quest && quest === 1) {
-					questKills += 1;
-					if (questKills >= questTotal) {
-						quest = 2;
-						pushLog("The chopping is quiet. Mira Pelletier will want the news.");
-					}
-				}
-			}
+			if (foe.hp <= 0) markDead(foe, Math.max(2, Math.round(foe.xp * .6)));
 		}
 		if (moving) party.anim = (party.anim || 0) + dt * 8;
 		party.frame = moving ? Math.floor(party.anim) % 4 : 0;
@@ -2304,6 +2521,35 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		leavePile(enemy.x, enemy.y, bodyTitle(enemy.kind), items, scrap, enemy.kind, enemy.dir);
 		pushLog("Search the body.");
 	}
+	function markDead(enemy, xp) {
+		if (!enemy || enemy.dead) return;
+		enemy.dead = true;
+		enemy.aggro = false;
+		enemy.death = .85;
+		corpseOf(enemy);
+		grantXp(xp);
+		if (enemy.name) pushLog(`${enemy.name} is down.`);
+		if (enemy.quest && quest === 1) {
+			questKills += 1;
+			if (questKills >= questTotal) {
+				quest = 2;
+				pushLog("The chopping is quiet. Mira Pelletier will want the news.");
+			}
+		}
+		saveGame();
+	}
+	function hurtProp(prop, dmg) {
+		const broken = BROKEN[prop.kind];
+		if (!broken || !world) return;
+		if (prop.hp == null) prop.hp = DEF_HP[prop.kind] ?? 30;
+		prop.hp -= dmg;
+		prop.flash = .12;
+		if (prop.hp > 0) return;
+		prop.kind = broken;
+		prop.hp = 0;
+		prop.burn = 0;
+		pushLog("A defense gives way.");
+	}
 	function corpseOfNpc(npc) {
 		const items = [];
 		const scrap = npc.role === "villager" ? 1 : 2;
@@ -2571,20 +2817,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!reduceMotion) shake = Math.min(8, shake + 3);
 		burst(enemy.x, enemy.y, "#c4543a", 7);
 		floater(enemy.x, enemy.y - 28, String(dmg));
-		if (enemy.hp <= 0) {
-			enemy.dead = true;
-			enemy.aggro = false;
-			corpseOf(enemy);
-			grantXp(enemy.xp);
-			if (enemy.quest && quest === 1) {
-				questKills += 1;
-				if (questKills >= questTotal) {
-					quest = 2;
-					pushLog("The chopping is quiet. Mira Pelletier will want the news.");
-				}
-			}
-			saveGame();
-		}
+		if (enemy.hp <= 0) markDead(enemy, enemy.xp);
 		sync(true);
 	}
 	function strikeNpc(npc) {
@@ -3213,8 +3446,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			clearEdges();
 			return;
 		}
-		if (!turnBased) for (const npc of world.npcs) stepFolk(npc, dt);
+		if (!turnBased) for (const npc of world.npcs) {
+			if (!guardPost.has(npc.id)) stepFolk(npc, dt);
+		}
 		if (!turnBased) stepParty(dt);
+		if (!turnBased) stepRaid(dt);
 		snowAcc += dt;
 		if (snowAcc > .14 && particles.length < 48) {
 			snowAcc = 0;
@@ -3231,11 +3467,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			});
 		}
 		if (!turnBased) for (const enemy of world.enemies) {
+			if (enemy.death > 0) enemy.death = Math.max(0, enemy.death - dt);
 			if (enemy.dead) continue;
 			enemy.cooldown = Math.max(0, enemy.cooldown - dt);
 			enemy.hurt = Math.max(0, enemy.hurt - dt);
 			enemy.crippleArm = Math.max(0, enemy.crippleArm - dt);
 			enemy.crippleLeg = Math.max(0, enemy.crippleLeg - dt);
+			enemy.slow = Math.max(0, (enemy.slow || 0) - dt);
 			enemy.pathT -= dt;
 			const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
@@ -3282,14 +3520,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				enemy.frame = enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 				continue;
 			}
-			if (enemy.aggro && homeDist > 520) enemy.aggro = false;
+			if (enemy.aggro && homeDist > 520 && !RAID_VAR.has(enemy.variant)) enemy.aggro = false;
 			const sight = enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 : 190;
 			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight)) {
 				enemy.aggro = true;
 				alertPack(enemy);
 			}
-			let speed = enemy.kind === "wolf" ? 176 : enemy.kind === "coyote" ? 196 : enemy.kind === "deer" ? 168 : enemy.kind === "moose" ? 118 : enemy.elite ? 128 : ENEMY_SPEED;
+			let speed = enemy.variant === "scout" ? 236 : enemy.variant === "jumper" ? 214 : enemy.variant === "atv" ? 250 : enemy.variant === "armor" ? 78 : enemy.variant === "shield" ? 100 : enemy.variant === "brute" ? 92 : enemy.variant === "torch" ? 148 : enemy.kind === "wolf" ? 176 : enemy.kind === "coyote" ? 196 : enemy.kind === "deer" ? 168 : enemy.kind === "moose" ? 118 : enemy.elite ? 128 : ENEMY_SPEED;
 			if (enemy.crippleLeg > 0) speed *= .55;
+			if (enemy.slow > 0) speed *= .48;
 			const bite = enemy.kind === "moose" ? 70 : enemy.kind === "deer" ? 58 : 50;
 			const partyDist = party ? Math.hypot(enemy.x - party.x, enemy.y - party.y) : 9999;
 			let enemyMoving = false;
@@ -3302,13 +3541,86 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				enemy.dir = facing8(player.x - enemy.x, player.y - enemy.y);
 				hurtPlayer(enemy.crippleArm > 0 ? Math.max(1, Math.round(enemy.atk * .65)) : enemy.atk, enemy.x, enemy.y);
 			} else if (enemy.aggro) {
+				let goalX = player.x;
+				let goalY = player.y;
+				if (RAID_VAR.has(enemy.variant) && dist > 90) {
+					let lure = null;
+					let lureD = 460;
+					for (const p of world.props) {
+						if (!LURE.has(p.kind)) continue;
+						const c = propCenter(p);
+						const d = Math.hypot(c.x - enemy.x, c.y - enemy.y);
+						if (d < lureD) {
+							lureD = d;
+							lure = c;
+						}
+					}
+					if (lure && lureD < dist) {
+						goalX = lure.x;
+						goalY = lure.y;
+					}
+				}
+				if (enemy.variant === "torch" && dist > 110) {
+					let best = null;
+					let bestD = 340;
+					for (const p of world.props) {
+						if (p.kind !== "farmhouse" && p.kind !== "barn" && p.kind !== "shack" && !DEFENSE[p.kind] && !BROKEN[p.kind]) continue;
+						if (String(p.kind).endsWith("-x")) continue;
+						const c = propCenter(p);
+						const d = Math.hypot(c.x - enemy.x, c.y - enemy.y);
+						if (d < bestD) {
+							bestD = d;
+							best = p;
+						}
+					}
+					if (best) {
+						const c = propCenter(best);
+						goalX = c.x;
+						goalY = c.y;
+						if (bestD < 56) {
+							best.burn = (best.burn || 0) + dt;
+							if (best.burn > 4 && !best.burnNoted) {
+								best.burnNoted = true;
+								pushLog("A torch catches the timber.");
+							}
+							if (best.burn > 7 && BROKEN[best.kind]) hurtProp(best, 18);
+						}
+					}
+				}
+				if (enemy.variant && RAID_VAR.has(enemy.variant) && enemy.variant !== "jumper" && enemy.cooldown <= 0) {
+					for (const p of world.props) {
+						if (!BROKEN[p.kind] || String(p.kind).endsWith("-x")) continue;
+						const c = propCenter(p);
+						if (Math.hypot(c.x - enemy.x, c.y - enemy.y) > 54) continue;
+						const ram = enemy.variant === "armor" || enemy.variant === "brute" || enemy.variant === "atv" ? 9 : 4;
+						hurtProp(p, ram);
+						enemy.cooldown = .75;
+						enemy.dir = facing8(c.x - enemy.x, c.y - enemy.y);
+						break;
+					}
+				}
 				if (enemy.pathT <= 0 || !enemy.path) {
-					enemy.path = pathTo(world, enemy.x, enemy.y, player.x, player.y);
+					enemy.path = pathTo(world, enemy.x, enemy.y, goalX, goalY);
 					enemy.pathT = .45;
 				}
 				if (enemy.path) {
 					enemy.path = follow(enemy, enemy.path, speed, dt, true);
 					enemyMoving = true;
+				}
+				if (enemy.variant === "jumper") {
+					for (const p of world.props) {
+						if (p.kind !== "fence" && p.kind !== "fence-2" && p.kind !== "fence-3") continue;
+						const c = propCenter(p);
+						if (Math.hypot(c.x - enemy.x, c.y - enemy.y) > 46) continue;
+						const dx = goalX - enemy.x;
+						const dy = goalY - enemy.y;
+						const m = Math.hypot(dx, dy) || 1;
+						enemy.x += dx / m * 80;
+						enemy.y += dy / m * 80;
+						enemy.path = null;
+						enemy.dir = facing8(dx, dy);
+						break;
+					}
 				}
 			} else if (homeDist > 90) {
 				if (enemy.pathT <= 0 || !enemy.path) {
@@ -3512,7 +3824,29 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function folkSheet(npc) {
 		return npc.role === "villager" ? "villager" : `npc-${npc.role}`;
 	}
+	function paintPerson(body, camX, camY) {
+		const id = body.id ?? body.homeId;
+		const guarding = id != null && guardPost.has(id);
+		const firing = guarding && (body.cooldown || 0) > .2;
+		const guardName = firing ? `guard-${body.role}` : `guard-watch-${body.role}`;
+		const posed = guarding && images.get(guardName) ? guardName : guarding && images.get(`guard-${body.role}`) ? `guard-${body.role}` : "";
+		if (posed) {
+			blit(posed, body.x, body.y, folkHeight(body), false, 0, 0, camX, camY, firing);
+			return;
+		}
+		blit(folkSheet(body), body.x, body.y, folkHeight(body), true, body.frame || 0, body.dir || 0, camX, camY);
+	}
 	function beastSheet(enemy) {
+		if (enemy.variant === "fur") return "boss-fur";
+		if (enemy.variant === "mask") return "boss-mask";
+		if (enemy.variant === "saw") return "boss-saw";
+		if (enemy.variant === "scout") return "raider-scout";
+		if (enemy.variant === "jumper") return "raider-jumper";
+		if (enemy.variant === "armor") return "raider-armor";
+		if (enemy.variant === "shield") return "raider-shield";
+		if (enemy.variant === "atv") return "raider-atv";
+		if (enemy.variant === "brute") return "raider-brute";
+		if (enemy.variant === "torch") return "raider-torch";
 		if (enemy.kind === "wolf") return "wolf";
 		if (enemy.kind === "coyote") return "coyote";
 		if (enemy.kind === "deer") return "deer";
@@ -3522,12 +3856,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return enemy.id % 3 === 1 ? "raider-gray" : enemy.id % 3 === 2 ? "raider-blue" : "raider";
 	}
 	function beastH(enemy) {
+		if (enemy.variant === "fur" || enemy.variant === "saw" || enemy.variant === "armor") return Math.round(NPC_H * 1.22);
+		if (enemy.variant === "brute" || enemy.variant === "shield" || enemy.variant === "atv") return Math.round(NPC_H * 1.12);
+		if (enemy.variant === "mask") return Math.round(NPC_H * 1.08);
+		if (enemy.variant === "jumper") return Math.round(NPC_H * .96);
+		if (enemy.variant === "scout") return Math.round(NPC_H * .92);
 		if (enemy.kind === "moose") return Math.round(NPC_H * 1.35);
 		if (enemy.kind === "deer") return Math.round(NPC_H * .78);
-		if (enemy.kind === "wolf") return Math.round(NPC_H * .5);
-		if (enemy.kind === "coyote") return Math.round(NPC_H * .4);
-		if (enemy.kind === "rabbit") return Math.round(NPC_H * .2);
-		if (enemy.kind === "squirrel") return Math.round(NPC_H * .15);
+		if (enemy.kind === "wolf") return Math.round(NPC_H * .62);
+		if (enemy.kind === "coyote") return Math.round(NPC_H * .55);
+		if (enemy.kind === "rabbit") return Math.round(NPC_H * .44);
+		if (enemy.kind === "squirrel") return Math.round(NPC_H * .36);
 		return NPC_H;
 	}
 	function folkHeight(npc) {
@@ -3540,6 +3879,181 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (npc.role === "adele") return Math.round(NPC_H * .96);
 		if (npc.role === "pete") return Math.round(NPC_H * 1.05);
 		return NPC_H;
+	}
+	function tractorShift(charge) {
+		const t = Math.min(1, Math.max(0, charge || 0));
+		const along = t * 460;
+		return { x: along, y: -along * .2 };
+	}
+	function stepRaid(dt) {
+		if (!world || !player || inside) {
+			guardPost.clear();
+			return;
+		}
+		for (const prop of world.props) {
+			if (prop.flash > 0) prop.flash = Math.max(0, prop.flash - dt);
+		}
+		const here = tileOf(player.x, player.y);
+		const nearPost = world.props.some((p) => (DEFENSE[p.kind] || LURE.has(p.kind) || p.kind === "tractor" || p.kind === "farmhouse") && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
+		const dark = nightShade(clock) > .22;
+		const onFarm = inFarm(here.tx, here.ty) || nearPost;
+		if (dark && onFarm && !nightLatch) {
+			nightLatch = true;
+			bossThisNight = false;
+			raidNight += 1;
+			const names = { 5: "Night five. Harland Poulin is with them.", 10: "Night ten. René Gallant walks in off the road.", 15: "Night fifteen. You can hear the saw." };
+			pushLog(names[raidNight] || `Night ${raidNight} on Cambridge Road.`);
+		}
+		if (!dark) {
+			nightLatch = false;
+			bossThisNight = false;
+		}
+		const night = dark && onFarm;
+		const raiders = world.enemies.filter((e) => !e.dead && RAID_VAR.has(e.variant));
+		if (night && tractorReady) {
+			const tractor = world.props.find((p) => p.kind === "tractor");
+			if (tractor) {
+				tractor.charge = Math.min(1, (tractor.charge || 0) + dt * .22);
+				const shift = tractorShift(tractor.charge);
+				const c = propCenter(tractor);
+				for (const e of raiders) {
+					if (Math.hypot(e.x - (c.x + shift.x), e.y - (c.y + shift.y)) < 64) {
+						e.hp -= 16 * dt;
+						e.hurt = .1;
+						e.slow = .3;
+						if (e.hp <= 0) markDead(e, e.xp);
+					}
+				}
+				if (tractor.charge >= 1) {
+					tractor.charge = 0;
+					tractorReady = false;
+					pushLog("The tractor coughs and stops. It wants another can.");
+				}
+			}
+		}
+		if (!night) {
+			guardPost.clear();
+			return;
+		}
+		raidClock -= dt;
+		const cap = 3 + Math.min(4, raidNight);
+		if (!bossThisNight && (raidNight === 5 || raidNight === 10 || raidNight === 15)) {
+			bossThisNight = true;
+			const boss = raidNight === 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raidNight === 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 };
+			const ang = Math.random() * Math.PI * 2;
+			const rad = 14 * 64;
+			const x = player.x + Math.cos(ang) * rad;
+			const y = player.y + Math.sin(ang) * rad;
+			world.enemies.push({
+				id: world.nextEnemyId++,
+				x, y, homeX: x, homeY: y,
+				hp: boss.hp, maxHp: boss.hp, atk: boss.atk, xp: boss.xp,
+				elite: true, quest: false, kind: "bandit", pack: 90, temper: "hostile",
+				crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0,
+				path: null, pathT: 0, aggro: true, dead: false, hurt: 0,
+				variant: boss.variant, name: boss.name, slow: 0, death: 0
+			});
+		}
+		if (raidClock <= 0 && raiders.length < cap) {
+			raidClock = 14 + Math.random() * 8;
+			const pool = ["scout"];
+			if (raidNight >= 2) pool.push("jumper", "scout");
+			if (raidNight >= 3) pool.push("torch");
+			if (raidNight >= 4) pool.push("shield", "brute");
+			if (raidNight >= 6) pool.push("armor");
+			if (raidNight >= 7) pool.push("atv");
+			const variant = pool[Math.floor(Math.random() * pool.length)];
+			const ang = Math.random() * Math.PI * 2;
+			const rad = (7 + Math.random() * 4) * 64;
+			const x = player.x + Math.cos(ang) * rad;
+			const y = player.y + Math.sin(ang) * rad;
+			const stats = variant === "armor" || variant === "brute" ? [46, 8, 16] : variant === "shield" ? [36, 6, 12] : variant === "atv" ? [28, 7, 14] : variant === "torch" ? [22, 5, 10] : variant === "jumper" ? [16, 4, 9] : [14, 4, 8];
+			const label = { scout: "Scout", jumper: "Climber", armor: "Plate", shield: "Shield", brute: "Brute", torch: "Torch", atv: "Rider" };
+			world.enemies.push({
+				id: world.nextEnemyId++,
+				x, y, homeX: x, homeY: y,
+				hp: stats[0], maxHp: stats[0], atk: stats[1], xp: stats[2],
+				elite: variant === "armor" || variant === "brute",
+				quest: false,
+				kind: "bandit",
+				pack: 90,
+				temper: "hostile",
+				crippleArm: 0,
+				crippleLeg: 0,
+				dir: 0,
+				frame: 0,
+				anim: 0,
+				cooldown: 0,
+				path: null,
+				pathT: 0,
+				aggro: true,
+				dead: false,
+				hurt: 0,
+				variant,
+				name: label[variant] || "Raider",
+				slow: 0,
+				death: 0
+			});
+			if (raiders.length === 0) pushLog("Lanterns at the orchard edge. They are coming in.");
+		}
+		for (const prop of world.props) {
+			const spec = DEFENSE[prop.kind];
+			if (!spec) continue;
+			prop.cool = Math.max(0, (prop.cool || 0) - dt);
+			const c = propCenter(prop);
+			let best = null;
+			let bestD = spec.range;
+			for (const e of world.enemies) {
+				if (e.dead || !RAID_VAR.has(e.variant)) continue;
+				const d = Math.hypot(e.x - c.x, e.y - c.y);
+				if (d < bestD) {
+					best = e;
+					bestD = d;
+				}
+			}
+			if (!best || prop.cool > 0) continue;
+			prop.cool = spec.every;
+			prop.flash = .1;
+			if (spec.dmg <= 0 && !spec.slow) continue;
+			if (spec.slow) best.slow = .45;
+			best.hp -= spec.dmg;
+			best.aggro = true;
+			best.hurt = .08;
+			burst(c.x, c.y - 36, spec.slow ? "#e07030" : "#f3e7b0", spec.slow ? 7 : 4);
+			burst(best.x, best.y - 10, "#f4e2a0", 3);
+			if (!spec.slow) sfx("hit");
+			if (best.hp <= 0) markDead(best, best.xp);
+		}
+		const posts = world.props.filter((p) => DEFENSE[p.kind]);
+		const crew = [];
+		if (party) crew.push(party);
+		for (const n of world.npcs) {
+			if (GUARD_ROLES.has(n.role) && Math.hypot(n.x - player.x, n.y - player.y) < 4200) crew.push(n);
+		}
+		guardPost.clear();
+		for (let i = 0; i < posts.length && i < crew.length; i++) {
+			const who = crew[i];
+			const post = posts[i];
+			const id = who.id ?? who.homeId;
+			guardPost.set(id, post.id);
+			const c = propCenter(post);
+			const dx = c.x - who.x;
+			const dy = c.y - who.y;
+			const dist = Math.hypot(dx, dy);
+			if (dist > 28) {
+				const screen = worldVelToScreen(dx, dy);
+				moveBody(who, screen.dsx, screen.dsy, 78, dt);
+				const vel = screenDirToWorld(screen.dsx, screen.dsy);
+				who.dir = facing8(vel.vx, vel.vy);
+				who.anim = (who.anim || 0) + dt * 8;
+				who.frame = Math.floor(who.anim) % 4;
+			} else {
+				const foe = raiders[0];
+				if (foe) who.dir = facing8(foe.x - who.x, foe.y - who.y);
+				who.cooldown = ((who.anim || 0) % .8) < .12 ? .4 : 0;
+				who.anim = (who.anim || 0) + dt;
+			}
+		}
 	}
 	function stepFolk(npc, dt) {
 		if (!world) {
@@ -3694,6 +4208,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillStyle = "#efe6d4";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
 		ctx.fillText(lootedChests.has(92001) ? "Wood taken" : "Split wood", o.x + 36, o.y + 168);
+		paintProp("bench", o.x + 236, o.y + 156, 108);
+		ctx.fillStyle = "#efe6d4";
+		ctx.fillText("Bench", o.x + 210, o.y + 168);
+		paintProp("icon-bomb", o.x + 196, o.y + 78, 32);
+		paintProp("icon-fuel", o.x + 236, o.y + 78, 32);
+		paintProp("icon-fence", o.x + 276, o.y + 78, 32);
+		ctx.fillText("Between raids", o.x + 188, o.y + 96);
 		paintExitDoor();
 		paintHeroInRoom();
 	}
@@ -3704,97 +4225,26 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillStyle = "#0e120f";
 		ctx.fillRect(0, 0, viewW, viewH);
 		const o = roomOrigin();
-		ctx.fillStyle = "#243028";
-		ctx.fillRect(o.x, o.y, 320, 240);
-		ctx.fillStyle = "#1a221c";
-		for (let i = 0; i < 10; i++) ctx.fillRect(o.x + i * 34, o.y, 2, 240);
-		ctx.fillStyle = "#141a16";
-		ctx.fillRect(o.x, o.y, 320, 20);
+		const art = images.get("bunker-room");
+		if (art) {
+			ctx.drawImage(art, o.x, o.y, 320, 240);
+		} else {
+			ctx.fillStyle = "#243028";
+			ctx.fillRect(o.x, o.y, 320, 240);
+		}
+		ctx.fillStyle = "rgba(12, 10, 8, 0.45)";
+		ctx.fillRect(o.x, o.y, 320, 22);
 		ctx.fillStyle = "#e6c56a";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Cal's cache. Shut it when you leave.", o.x + 10, o.y + 14);
-		ctx.fillStyle = "#3a3228";
-		ctx.fillRect(o.x + 14, o.y + 32, 102, 128);
-		ctx.fillStyle = "#5a4834";
-		for (let i = 0; i < 4; i++) ctx.fillRect(o.x + 18, o.y + 44 + i * 28, 94, 3);
-		for (let i = 0; i < 5; i++) {
-			ctx.fillStyle = [
-				"#8a3a2a",
-				"#c4a05a",
-				"#3a5a3a",
-				"#6a6a72",
-				"#8a3a2a"
-			][i];
-			ctx.fillRect(o.x + 24 + i % 3 * 26, o.y + 50, 16, 10);
-			ctx.fillRect(o.x + 24 + i % 3 * 26, o.y + 78, 16, 10);
-		}
-		const meds = lootedChests.has(93012);
-		ctx.fillStyle = meds ? "#3a342c" : "#9a2a2a";
-		ctx.fillRect(o.x + 28, o.y + 52, 52, 22);
-		ctx.fillStyle = meds ? "#6a645c" : "#f0e6d4";
-		ctx.fillRect(o.x + 46, o.y + 56, 16, 14);
+		ctx.fillText("Cal's cache. Shut it when you leave.", o.x + 10, o.y + 16);
 		ctx.fillStyle = "#efe6d4";
-		ctx.fillText(meds ? "Meds gone" : "Trauma kit", o.x + 22, o.y + 86);
-		const rig = lootedChests.has(93011);
-		ctx.fillStyle = rig ? "#3a342c" : "#8a7048";
-		ctx.fillRect(o.x + 30, o.y + 100, 28, 34);
-		ctx.fillRect(o.x + 58, o.y + 104, 22, 26);
-		ctx.fillStyle = "#2a241c";
-		ctx.fillRect(o.x + 36, o.y + 108, 10, 8);
-		ctx.fillRect(o.x + 64, o.y + 110, 10, 8);
-		ctx.fillStyle = "#efe6d4";
-		ctx.fillText(rig ? "Rig gone" : "Plate rig", o.x + 22, o.y + 148);
-		const gun = lootedChests.has(93010);
-		ctx.fillStyle = "#2a2824";
-		ctx.fillRect(o.x + 206, o.y + 32, 100, 86);
-		ctx.strokeStyle = "#6a5840";
-		ctx.lineWidth = 3;
-		ctx.strokeRect(o.x + 214, o.y + 40, 84, 58);
-		if (!gun) {
-			ctx.strokeStyle = "#c8b090";
-			ctx.lineWidth = 4;
-			ctx.beginPath();
-			ctx.moveTo(o.x + 224, o.y + 78);
-			ctx.lineTo(o.x + 286, o.y + 62);
-			ctx.stroke();
-			ctx.fillStyle = "#1c1c1c";
-			ctx.fillRect(o.x + 268, o.y + 54, 16, 8);
-			ctx.fillStyle = "#8a9098";
-			ctx.fillRect(o.x + 272, o.y + 56, 8, 4);
-		}
-		ctx.fillStyle = "#e6c56a";
-		ctx.fillText(gun ? "Rack empty" : "Scoped rifle", o.x + 214, o.y + 110);
-		const ammo = lootedChests.has(93013);
-		ctx.fillStyle = ammo ? "#3a3830" : "#4a5a34";
-		ctx.fillRect(o.x + 210, o.y + 124, 90, 40);
-		ctx.fillStyle = ammo ? "#5a584c" : "#6a7a48";
-		ctx.fillRect(o.x + 214, o.y + 128, 82, 8);
-		ctx.fillStyle = "#efe6d4";
-		ctx.fillText(ammo ? "Crate empty" : "Sealed shells", o.x + 216, o.y + 152);
-		ctx.fillStyle = "#2a3a44";
-		ctx.beginPath();
-		ctx.ellipse(o.x + 152, o.y + 164, 26, 16, 0, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.fillStyle = "#3a4a54";
-		ctx.fillRect(o.x + 128, o.y + 148, 48, 16);
-		ctx.fillStyle = "#efe6d4";
+		ctx.fillText(lootedChests.has(93012) ? "Meds gone" : "Trauma kit", o.x + 18, o.y + 78);
+		ctx.fillText(lootedChests.has(93011) ? "Rig gone" : "Plate rig", o.x + 18, o.y + 132);
+		ctx.fillText("Radio", o.x + 140, o.y + 70);
+		ctx.fillText(lootedChests.has(93010) ? "Rack empty" : "Scoped rifle", o.x + 200, o.y + 78);
+		ctx.fillText(lootedChests.has(93013) ? "Crate empty" : "Sealed shells", o.x + 200, o.y + 148);
 		ctx.fillText("Water", o.x + 134, o.y + 176);
-		ctx.fillStyle = "#1c241c";
-		ctx.fillRect(o.x + 132, o.y + 36, 66, 40);
-		ctx.fillStyle = "#101610";
-		ctx.fillRect(o.x + 140, o.y + 44, 28, 16);
-		ctx.fillStyle = "#6ad26a";
-		ctx.fillRect(o.x + 146, o.y + 50, 8, 4);
-		ctx.fillStyle = "#8a8680";
-		ctx.fillRect(o.x + 174, o.y + 48, 4, 18);
-		ctx.fillStyle = "#efe6d4";
-		ctx.fillText("Radio", o.x + 144, o.y + 88);
-		ctx.fillStyle = "#5a4630";
-		ctx.fillRect(o.x + 136, o.y + 196, 48, 40);
-		ctx.fillStyle = "#3a2c20";
-		ctx.fillRect(o.x + 154, o.y + 200, 12, 32);
-		ctx.fillStyle = "#efe6d4";
-		ctx.fillText("Hatch", o.x + 144, o.y + 222);
+		paintExitDoor();
 		paintHeroInRoom();
 	}
 	function paintHeroInRoom() {
@@ -4073,7 +4523,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							jy = work.shake > 0 ? Math.cos(work.shake * 64) * 3 : 0;
 						}
 					}
-					blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
+						const img = images.get("tractor-run");
+						const frames = 4;
+						const sw = img.width / frames;
+						const sh = img.height;
+						const shift = tractorShift(prop.charge || 0);
+						const f = Math.floor((prop.charge || 0) * 16) % frames;
+						const raw = worldToScreen(c.x + shift.x, c.y + shift.y, drawCamX, drawCamY);
+						const p = zoomPoint(raw.sx, raw.sy);
+						const dh = h * zoom;
+						const dw = dh * (sw / sh);
+						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
+					} else blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
+					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 1) && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 36, 70, false, 0, 0, drawCamX, drawCamY);
+					if ((prop.burn || 0) > 0 && images.get("fx-smoke")) blit("fx-smoke", c.x + 8, c.y - 70, 64, false, 0, 0, drawCamX, drawCamY);
 					if (work && work.id === prop.id && bitten > 0 && fall < .55) {
 						if (work.mode === "chop") paintNotch(c.x, c.y, bitten, drawCamX, drawCamY);
 						else paintCracks(c.x, c.y, bitten, drawCamX, drawCamY);
@@ -4091,7 +4556,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			draws.push({
 				z: npc.x + npc.y,
 				draw: () => {
-					blit(folkSheet(npc), npc.x, npc.y, folkHeight(npc), true, npc.frame, npc.dir, drawCamX, drawCamY);
+					paintPerson(npc, drawCamX, drawCamY);
 					if (npc.hp < npc.maxHp) bar(npc.x, npc.y, folkHeight(npc), npc.hp / npc.maxHp, drawCamX, drawCamY);
 				}
 			});
@@ -4100,7 +4565,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			draws.push({
 				z: party.x + party.y,
 				draw: () => {
-					blit(folkSheet(party), party.x, party.y, folkHeight(party), true, party.frame || 0, party.dir || 0, drawCamX, drawCamY);
+					paintPerson(party, drawCamX, drawCamY);
 					bar(party.x, party.y, folkHeight(party), Math.max(0, party.hp) / party.maxHp, drawCamX, drawCamY);
 				}
 			});
@@ -4126,16 +4591,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const lockedId = intent && intent.kind === "attack" ? intent.id : -1;
 		for (const enemy of world.enemies) {
-			if (enemy.dead) continue;
+			if (enemy.dead && !(enemy.death > 0)) continue;
 			const t = tileOf(enemy.x, enemy.y);
 			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
 			if (!visible[t.ty * 156 + t.tx]) continue;
 			draws.push({
 				z: enemy.x + enemy.y,
 				draw: () => {
-					const swinging = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52);
 					const h = beastH(enemy);
-					blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
+					if (enemy.dead) {
+						const deadName = `${beastSheet(enemy)}-dead`;
+						if (images.get(deadName)) blit(deadName, enemy.x, enemy.y, Math.round(h * .62), false, 0, 0, drawCamX, drawCamY);
+						return;
+					}
+					const swinging = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52);
+					const atk = `${beastSheet(enemy)}-atk`;
+					if (swinging && images.get(atk)) blit(atk, enemy.x, enemy.y, h, false, 0, 0, drawCamX, drawCamY, true);
+					else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
 					if (enemy.aggro || enemy.hp < enemy.maxHp || enemy.id === lockedId) bar(enemy.x, enemy.y, h, enemy.hp / enemy.maxHp, drawCamX, drawCamY);
 				}
 			});
@@ -4199,6 +4671,47 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (shade > .04) {
 			ctx.fillStyle = `rgba(10, 14, 24, ${shade * .5})`;
 			ctx.fillRect(0, 0, viewW, viewH);
+		}
+		if (world && player && shade > .12) {
+			const here = tileOf(player.x, player.y);
+			const onFarm = inFarm(here.tx, here.ty) || world.props.some((p) => DEFENSE[p.kind] && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
+			if (onFarm) {
+				ctx.save();
+				ctx.globalCompositeOperation = "lighter";
+				const glowAt = (wx, wy, radius, color) => {
+					const p = zoomPoint(worldToScreen(wx, wy, drawCamX, drawCamY).sx, worldToScreen(wx, wy, drawCamX, drawCamY).sy);
+					const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, radius * zoom);
+					g.addColorStop(0, color);
+					g.addColorStop(1, "rgba(0,0,0,0)");
+					ctx.fillStyle = g;
+					ctx.beginPath();
+					ctx.arc(p.sx, p.sy, radius * zoom, 0, Math.PI * 2);
+					ctx.fill();
+				};
+				for (const prop of world.props) {
+					if (!explored[prop.ty * 156 + prop.tx]) continue;
+					const c = propCenter(prop);
+					if (prop.kind === "campfire" || prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 0) glowAt(c.x, c.y - 20, prop.kind === "campfire" ? 90 : 70, "rgba(255, 170, 70, 0.55)");
+					if (prop.kind === "farmhouse" || prop.kind === "barn" || prop.kind === "post-porch" || prop.kind === "post-loft") glowAt(c.x, c.y - 40, 110, "rgba(255, 196, 110, 0.28)");
+				}
+				for (const e of world.enemies) {
+					if (!e.dead && (e.variant === "torch" || e.variant === "atv")) glowAt(e.x, e.y - 30, e.variant === "atv" ? 64 : 78, "rgba(255, 140, 50, 0.7)");
+				}
+				ctx.restore();
+			}
+			let near = 9999;
+			for (const e of world.enemies) {
+				if (e.dead || !RAID_VAR.has(e.variant)) continue;
+				near = Math.min(near, Math.hypot(e.x - player.x, e.y - player.y));
+			}
+			if (near < 260 && onFarm) {
+				const t = 1 - near / 260;
+				const g = ctx.createRadialGradient(viewW / 2, viewH / 2, viewW * .25, viewW / 2, viewH / 2, viewW * .72);
+				g.addColorStop(0, "rgba(0,0,0,0)");
+				g.addColorStop(1, `rgba(120, 18, 12, ${t * .45})`);
+				ctx.fillStyle = g;
+				ctx.fillRect(0, 0, viewW, viewH);
+			}
 		}
 		if (lockedId >= 0) {
 			const foe = world.enemies.find((e) => e.id === lockedId && !e.dead);
@@ -4297,7 +4810,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dw = dh * (sw / sh);
 		const spriteY = -dh * frac - lift * zoom;
 		const smooth = ctx.imageSmoothingEnabled;
-		ctx.imageSmoothingEnabled = false;
+		ctx.imageSmoothingEnabled = dh < sh * 0.92;
+		ctx.imageSmoothingQuality = "high";
 		if (tilt || flatten !== 1 || flip) {
 			ctx.save();
 			ctx.translate(p.sx, p.sy);
@@ -4875,7 +5389,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 								saveGame();
 								sync(true);
 							}
-						} else if (hit(130, 190, 190, 240)) leaveHouse();
+						} else if (hit(170, 36, 312, 176)) openBench();
+						else if (hit(130, 190, 190, 240)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5101,6 +5616,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				player.scrap = Math.min(999, player.scrap + pay);
 				sfx("click");
 				pushLog(`Traded the ${def.name.toLowerCase()} for ${pay} iron.`);
+			} else if (def.id === "bomb") {
+				stack.qty -= 1;
+				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+				let hits = 0;
+				for (const e of world?.enemies ?? []) {
+					if (e.dead || Math.hypot(e.x - player.x, e.y - player.y) > 120) continue;
+					e.hp -= 18;
+					e.hurt = .2;
+					e.aggro = true;
+					hits += 1;
+					if (e.hp <= 0) markDead(e, e.xp);
+				}
+				burst(player.x, player.y, "#e07030", 12);
+				sfx("hit");
+				pushLog(hits ? `The pipe bomb catches ${hits}.` : "The pipe bomb wastes itself on empty ground.");
+			} else if (def.id === "fuel") {
+				stack.qty -= 1;
+				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+				tractorReady = true;
+				sfx("click");
+				pushLog("The tractor will make one pass when they come.");
+			} else if (def.id === "baitpack") {
+				stack.qty -= 1;
+				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+				const t = tileOf(player.x, player.y);
+				if (world) addProp(world, "bait", t.tx, t.ty, { built: true });
+				sfx("click");
+				pushLog("You leave the bait where you stand.");
 			} else if (def.id === "shells") pushLog(`${stack.qty} shells. A gun spends one each time it fires.`);
 			else pushLog(def.note);
 			saveGame();
@@ -5197,7 +5740,8 @@ function cleanName(name) {
 	return name.replace(/[^\w\s'-]/g, "").trim().slice(0, 18) || "Packer";
 }
 function sheetRowsOf(name) {
-	if (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
+	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
+	if (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
 	return 4;
 }
 function measureFoot(img, sheet, sheetRows = 4) {
@@ -5305,7 +5849,7 @@ function loadImages(images) {
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
 			const rows = sheetRowsOf(name);
-			const posed = name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow";
+			const posed = !name.endsWith("-atk") && !name.endsWith("-dead") && (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
 			const radius = name.startsWith("ground-") ? 0 : posed ? 1 : 1;
 			const soft = softenSprite(img, radius, posed ? rows : 0);
 			if (posed && name.startsWith("hero")) soft.sharp = img;
@@ -5317,6 +5861,6 @@ function loadImages(images) {
 			resolve();
 		};
 		img.onerror = () => resolve();
-		img.src = `/game/${name}.png?v=2027`;
+		img.src = `/game/${name}.png?v=2033`;
 	}))).then(() => void 0);
 }

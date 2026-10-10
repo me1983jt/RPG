@@ -98,7 +98,10 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     return {
       speaker: name,
       text: "This is our ground on the Chain of Ponds road. Twelve apple trees, two rows, and a lane between them. Sarah runs the press at the end of the row. The road you came in on goes back to Moose River.",
-      choices: [{ label: "I'll leave the rows standing", id: "close" }],
+      choices: [
+        { label: "I'll leave the rows standing", id: "close" },
+        { label: "Come hold the orchard", id: "join-justin" },
+      ],
     };
   }
   if (role === "sarah") {
@@ -106,30 +109,40 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
       return {
         speaker: name,
         text: "The press at the end of the row ran this week. Hot cider and cider donuts from these trees. I can put some in your pack.",
-        choices: [
-          { label: "I'll take them", id: "cider" },
-          { label: "I'll sit a minute", id: "close" },
-        ],
+      choices: [
+        { label: "I'll take them", id: "cider" },
+        { label: "I'll stand the night with you", id: "join-sarah" },
+        { label: "I'll sit a minute", id: "close" },
+      ],
       };
     }
     return {
       speaker: name,
       text: "Leave the two rows standing. They're why the cups stay full.",
-      choices: [{ label: "I will", id: "close" }],
+      choices: [
+        { label: "I will", id: "close" },
+        { label: "Stand with me if they come", id: "join-sarah" },
+      ],
     };
   }
   if (role === "cyndal") {
     return {
       speaker: name,
       text: "Cyndal. I'm thirteen. I can reach the lower limbs on these two rows without a box. The high ones are Justin's.",
-      choices: [{ label: "I'll leave the high ones", id: "close" }],
+      choices: [
+        { label: "I'll leave the high ones", id: "close" },
+        { label: "You can take a post", id: "join-cyndal" },
+      ],
     };
   }
   if (role === "loki") {
     return {
       speaker: name,
       text: "Loki. I'm nine. Justin said the press is not a ladder, so I stay in the lane. I can see over the crate if I stand on my toes.",
-      choices: [{ label: "Stay off the press", id: "close" }],
+      choices: [
+        { label: "Stay off the press", id: "close" },
+        { label: "Stay by me tonight", id: "join-loki" },
+      ],
     };
   }
   if (role === "mira") {

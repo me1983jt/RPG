@@ -429,7 +429,7 @@ export function vacate(world: World, prop: Prop): void {
   }
 }
 
-function addProp(world: World, kind: PropKind, tx: number, ty: number, extra?: Partial<Prop>): Prop | null {
+export function addProp(world: World, kind: PropKind, tx: number, ty: number, extra?: Partial<Prop>): Prop | null {
   const spec = PROP_SPEC[kind];
   const allowRoad = kind === "car-sedan" || kind === "car-truck" || kind === "bike";
   if (!fits(world, tx, ty, spec.w, spec.h, allowRoad)) return null;
@@ -462,24 +462,47 @@ function placeHomestead(world: World): void {
   });
   world.enemies = world.enemies.filter((e) => !inFarm(Math.floor(e.x / TILE), Math.floor(e.y / TILE)));
 
-  const house = at(31, 13);
-  const barn = at(40, 13);
-  const cot = at(33, 16);
-  const press = at(37, 16);
-  const crateA = at(38, 17);
-  const crateB = at(36, 17);
-  addProp(world, "farmhouse", house[0], house[1]);
-  addProp(world, "barn", barn[0], barn[1]);
-  addProp(world, "cot", cot[0], cot[1]);
-  addProp(world, "press", press[0], press[1]);
-  addProp(world, "crates", crateA[0], crateA[1], { amount: 4 });
-  addProp(world, "crates", crateB[0], crateB[1], { amount: 4 });
+  plantYard(world, "farmhouse", 31, 13);
+  plantYard(world, "barn", 40, 13);
+  plantYard(world, "cot", 33, 16);
+  plantYard(world, "press", 37, 16);
+  plantYard(world, "crates", 38, 17, { amount: 4 });
+  plantYard(world, "crates", 36, 17, { amount: 4 });
+  plantYard(world, "shack", 44, 15);
+  plantYard(world, "post-loft", 42, 14);
+  plantYard(world, "post-porch", 32, 15);
+  plantYard(world, "post-roof", 46, 16);
+  plantYard(world, "tractor", 36, 15);
+  plantYard(world, "scarecrow", 33, 20);
+  plantYard(world, "bait", 39, 20);
+  for (const tx of [29, 31, 33, 42, 44, 46]) plantYard(world, "fence", tx, 11);
   for (const [tx, ty] of [at(30, 19), at(32, 19), at(34, 20), at(37, 20), at(39, 19), at(41, 20), at(43, 19)] as const) {
     addProp(world, "orchard", tx, ty);
   }
   for (const [tx, ty] of [at(29, 12), at(34, 12), at(38, 12), at(44, 12), at(28, 15), at(45, 15), at(29, 18)] as const) {
     addProp(world, "maple", tx, ty);
   }
+}
+
+function plantYard(world: World, kind: PropKind, lx: number, ly: number, extra?: Partial<Prop>): void {
+  const spec = PROP_SPEC[kind];
+  const spots: [number, number][] = [[lx, ly], [lx + 1, ly], [lx - 1, ly], [lx, ly + 1], [lx, ly - 1], [lx + 1, ly + 1], [lx + 2, ly], [lx, ly + 2]];
+  for (const [x, y] of spots) {
+    const [tx, ty] = at(x, y);
+    if (!inFarm(tx + spec.w / 2, ty + spec.h / 2)) continue;
+    if (addProp(world, kind, tx, ty, extra)) return;
+  }
+  const [tx, ty] = at(lx, ly);
+  for (let y = 0; y < spec.h; y++) {
+    for (let x = 0; x < spec.w; x++) {
+      if (!inMap(tx + x, ty + y)) return;
+      const i = idx(tx + x, ty + y);
+      if (world.tiles[i] === VOID) return;
+      if (world.tiles[i] === ROAD || world.tiles[i] === RUBBLE) world.tiles[i] = SNOW;
+      world.blocked[i] = 0;
+    }
+  }
+  addProp(world, kind, tx, ty, extra);
 }
 
 function placeOrchard(world: World): void {
@@ -871,7 +894,24 @@ function placePeople(world: World): void {
     [r.tx - 2, r.ty - 2],
     [r.tx + 4, r.ty - 1],
   ];
-  for (const [x, y] of spots) addEnemy(world, x, y, true, false);
+  const bosses = [
+    { variant: "fur" as const, name: "Harland Poulin" },
+    { variant: "mask" as const, name: "René Gallant" },
+    { variant: "saw" as const, name: "Gil Michaud" },
+  ];
+  spots.forEach(([x, y], i) => {
+    addEnemy(world, x, y, true, i < 3);
+    if (i >= 3) return;
+    const e = world.enemies[world.enemies.length - 1]!;
+    const b = bosses[i]!;
+    e.variant = b.variant;
+    e.name = b.name;
+    e.elite = true;
+    e.hp = 54;
+    e.maxHp = 54;
+    e.atk = 8;
+    e.xp = 26;
+  });
 
   addEnemy(world, b.tx - 8, b.ty + 4, false, true);
   addEnemy(world, b.tx + 6, b.ty - 6, false, true);

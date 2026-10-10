@@ -95,6 +95,9 @@ export const GEAR: Record<string, GearDef> = {
   meat: { id: "meat", name: "Raw meat", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Smoke it or stew it. Eating it raw is a poor idea." },
   hide: { id: "hide", name: "Green hide", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Still wet. Cut it for cloth." },
   cloth: { id: "cloth", name: "Twist of cloth", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Rags. Bandages start here." },
+  bomb: { id: "bomb", name: "Pipe bomb", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it from the pack. It bursts on raiders nearby." },
+  fuel: { id: "fuel", name: "Fuel can", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it to ready the tractor for the next pass down the lane." },
+  baitpack: { id: "baitpack", name: "Bait tin", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to drop a cache where you stand. Raiders come for it." },
 };
 
 export const ROLES: RoleKit[] = [

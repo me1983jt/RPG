@@ -565,6 +565,7 @@ export function RPG() {
                   value={name}
                   maxLength={18}
                   onChange={(e) => setName(e.target.value)}
+                  suppressHydrationWarning
                   className="mt-1 w-full plank border border-border bg-bg px-3 py-3 text-fg outline-none focus:border-primary short:py-2"
                 />
                 <div className="mt-4 grid grid-cols-2 gap-2 short:mt-2 short:grid-cols-4 short:gap-1">

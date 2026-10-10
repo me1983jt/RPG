@@ -49,7 +49,33 @@ export type PropKind =
   | "hatch"
   | "stall"
   | "cache"
-  | "bike";
+  | "bike"
+  | "stand"
+  | "stand-up"
+  | "blind"
+  | "blind-up"
+  | "firepot"
+  | "firepot-up"
+  | "nest"
+  | "nest-up"
+  | "fence"
+  | "fence-2"
+  | "fence-3"
+  | "fence-x"
+  | "stand-3"
+  | "stand-x"
+  | "blind-3"
+  | "blind-x"
+  | "firepot-3"
+  | "firepot-x"
+  | "nest-3"
+  | "nest-x"
+  | "post-loft"
+  | "post-porch"
+  | "post-roof"
+  | "scarecrow"
+  | "bait"
+  | "tractor";
 
 export type Resource = "scrap" | "wood" | "stone";
 
@@ -63,7 +89,7 @@ export interface PropSpec {
 
 export const PROP_SPEC: Record<PropKind, PropSpec> = {
   "tree-dead": { w: 1, h: 1, blocks: true, drawH: 340, image: "tree-dead" },
-  "tree-scrub": { w: 1, h: 1, blocks: true, drawH: 320, image: "tree-scrub" },
+  "tree-scrub": { w: 1, h: 1, blocks: true, drawH: 168, image: "tree-scrub" },
   "tree-pine": { w: 1, h: 1, blocks: true, drawH: 393, image: "tree-pine" },
   "tree-yellow": { w: 1, h: 1, blocks: true, drawH: 339, image: "tree-yellow" },
   "tree-orange": { w: 1, h: 1, blocks: true, drawH: 339, image: "tree-orange" },
@@ -94,6 +120,32 @@ export const PROP_SPEC: Record<PropKind, PropSpec> = {
   stall: { w: 1, h: 1, blocks: true, drawH: 168, image: "stall" },
   cache: { w: 1, h: 1, blocks: true, drawH: 168, image: "cache" },
   bike: { w: 1, h: 1, blocks: false, drawH: 92, image: "bike" },
+  stand: { w: 1, h: 1, blocks: false, drawH: 150, image: "stand" },
+  "stand-up": { w: 1, h: 1, blocks: false, drawH: 188, image: "stand-up" },
+  blind: { w: 1, h: 1, blocks: true, drawH: 168, image: "blind" },
+  "blind-up": { w: 1, h: 1, blocks: true, drawH: 196, image: "blind-up" },
+  firepot: { w: 1, h: 1, blocks: false, drawH: 96, image: "firepot" },
+  "firepot-up": { w: 1, h: 1, blocks: false, drawH: 118, image: "firepot-up" },
+  nest: { w: 1, h: 1, blocks: true, drawH: 160, image: "nest" },
+  "nest-up": { w: 1, h: 1, blocks: true, drawH: 188, image: "nest-up" },
+  fence: { w: 1, h: 1, blocks: true, drawH: 118, image: "fence" },
+  "fence-2": { w: 1, h: 1, blocks: true, drawH: 132, image: "fence-2" },
+  "fence-3": { w: 1, h: 1, blocks: true, drawH: 146, image: "fence-3" },
+  "fence-x": { w: 1, h: 1, blocks: false, drawH: 96, image: "fence-x" },
+  "stand-3": { w: 1, h: 1, blocks: false, drawH: 210, image: "stand-3" },
+  "stand-x": { w: 1, h: 1, blocks: false, drawH: 140, image: "stand-x" },
+  "blind-3": { w: 1, h: 1, blocks: true, drawH: 210, image: "blind-3" },
+  "blind-x": { w: 1, h: 1, blocks: false, drawH: 130, image: "blind-x" },
+  "firepot-3": { w: 1, h: 1, blocks: false, drawH: 136, image: "firepot-3" },
+  "firepot-x": { w: 1, h: 1, blocks: false, drawH: 90, image: "firepot-x" },
+  "nest-3": { w: 1, h: 1, blocks: true, drawH: 210, image: "nest-3" },
+  "nest-x": { w: 1, h: 1, blocks: false, drawH: 140, image: "nest-x" },
+  "post-loft": { w: 1, h: 1, blocks: false, drawH: 150, image: "post-loft" },
+  "post-porch": { w: 1, h: 1, blocks: false, drawH: 140, image: "post-porch" },
+  "post-roof": { w: 1, h: 1, blocks: false, drawH: 150, image: "post-roof" },
+  scarecrow: { w: 1, h: 1, blocks: false, drawH: 168, image: "scarecrow" },
+  bait: { w: 1, h: 1, blocks: false, drawH: 100, image: "bait" },
+  tractor: { w: 1, h: 1, blocks: false, drawH: 140, image: "tractor" },
 };
 
 export interface Recipe {
@@ -107,9 +159,23 @@ export interface Recipe {
 
 export const RECIPES: Recipe[] = [
   { kind: "shelter", wood: 8, stone: 4, scrap: 0, label: "Lean-to", blurb: "Spruce poles and canvas. You wake here if you fall." },
-  { kind: "wall", wood: 2, stone: 0, scrap: 0, label: "Stake fence", blurb: "Sharpened spruce. A wall, not a charm." },
+  { kind: "wall", wood: 2, stone: 0, scrap: 0, label: "Log wall", blurb: "A solid crib of logs. It does not burn as fast." },
   { kind: "workshop", wood: 6, stone: 2, scrap: 8, label: "Smithy", blurb: "A stump forge. Camp iron in, nails out. Slowly." },
   { kind: "campfire", wood: 3, stone: 2, scrap: 0, label: "Cookfire", blurb: "Heat, dry wool, hot water. Rest, not a blessing." },
+  { kind: "stand", wood: 6, stone: 2, scrap: 1, label: "Rifle stand", blurb: "A raised platform and sandbags. It fires on a raid." },
+  { kind: "stand-up", wood: 4, stone: 2, scrap: 4, label: "Raised stand", blurb: "Higher sandbags and a cedar roof. Hits harder." },
+  { kind: "blind", wood: 5, stone: 0, scrap: 1, label: "Hunting blind", blurb: "Brush and cedar. A long shot at night." },
+  { kind: "blind-up", wood: 4, stone: 1, scrap: 3, label: "Cedar blind", blurb: "Thicker cover and a longer slit." },
+  { kind: "firepot", wood: 1, stone: 2, scrap: 2, label: "Fire pot", blurb: "Burning pitch. Raiders slow when they pass it." },
+  { kind: "firepot-up", wood: 1, stone: 3, scrap: 3, label: "Stone fire pot", blurb: "A wider pot in a ring of stone." },
+  { kind: "nest", wood: 8, stone: 1, scrap: 4, label: "Gun nest", blurb: "Logs and a heavy gun. Mean at close range." },
+  { kind: "nest-up", wood: 6, stone: 2, scrap: 6, label: "Camp gun", blurb: "Higher walls and a mounted camp gun." },
+  { kind: "fence", wood: 2, stone: 0, scrap: 0, label: "Stake fence", blurb: "A section of sharpened spruce. Most raiders have to go around." },
+  { kind: "scarecrow", wood: 2, stone: 0, scrap: 0, label: "Scarecrow", blurb: "Draws a raid toward the row, away from the house." },
+  { kind: "bait", wood: 1, stone: 0, scrap: 1, label: "Bait cache", blurb: "Apples and a ham. They come for it." },
+  { kind: "post-loft", wood: 4, stone: 0, scrap: 2, label: "Hayloft", blurb: "A rifle slit for the barn loft. It fires on a raid." },
+  { kind: "post-porch", wood: 3, stone: 0, scrap: 1, label: "Porch post", blurb: "A chair and a lantern on the farmhouse porch." },
+  { kind: "post-roof", wood: 4, stone: 1, scrap: 2, label: "Roof stand", blurb: "Planks and a sandbag on a shack roof." },
 ];
 
 export interface Prop {
@@ -122,6 +188,11 @@ export interface Prop {
   loose?: boolean;
   built?: boolean;
   locked?: boolean;
+  cool?: number;
+  burn?: number;
+  hp?: number;
+  charge?: number;
+  flash?: number;
 }
 
 export type BeastKind = "bandit" | "wolf" | "coyote" | "deer" | "moose" | "rabbit" | "squirrel";
@@ -192,6 +263,10 @@ export interface Enemy {
   aggro: boolean;
   dead: boolean;
   hurt: number;
+  name?: string;
+  variant?: "fur" | "mask" | "saw" | "scout" | "brute" | "torch" | "jumper" | "armor" | "shield" | "atv";
+  slow?: number;
+  death?: number;
 }
 
 export interface Player {

@@ -113,6 +113,8 @@ export interface SaveData {
   rep?: Record<string, number>;
   party?: SavedParty | null;
   partyReturn?: SavedParty | null;
+  raidNight?: number;
+  tractorReady?: boolean;
 }
 
 export function hasSave(): boolean {
