@@ -55,7 +55,7 @@ def leg(hip, foot, l1, l2, bend):
 PAL = {
   "coyote": dict(fur=(158, 124, 86), dark=(96, 74, 54), belly=(214, 196, 162), nose=(34, 28, 24), tip=(52, 42, 34), leg=(140, 108, 74)),
   "wolf":   dict(fur=(128, 126, 122), dark=(78, 76, 74), belly=(206, 202, 194), nose=(26, 24, 24), tip=(96, 94, 90), leg=(118, 114, 108)),
-  "moose":  dict(fur=(74, 54, 40), dark=(42, 30, 24), belly=(98, 76, 58), nose=(36, 28, 24), tip=(60, 44, 34), leg=(132, 116, 96), antler=(188, 168, 128)),
+  "moose":  dict(fur=(74, 54, 40), dark=(42, 30, 24), belly=(98, 76, 58), nose=(36, 28, 24), tip=(60, 44, 34), leg=(132, 116, 96), antler=(164, 144, 108)),
   "deer":   dict(fur=(148, 102, 64), dark=(96, 66, 42), belly=(226, 214, 192), nose=(30, 24, 22), tip=(236, 230, 220), leg=(132, 92, 58), antler=(196, 178, 140)),
   "rabbit": dict(fur=(150, 116, 84), dark=(100, 76, 56), belly=(222, 210, 190), nose=(70, 44, 44), tip=(240, 236, 228), leg=(140, 108, 78), ear=(170, 132, 104)),
   "squirrel": dict(fur=(168, 92, 48), dark=(110, 58, 30), belly=(230, 210, 180), nose=(40, 26, 22), tip=(186, 108, 60), leg=(150, 82, 44), ear=(176, 100, 56)),
@@ -96,8 +96,13 @@ def quad_parts(n, frame):
         for side in (-1, 1):
             base = hc + np.array([-s["hs"] * .1, side * s["hs"] * .6, s["hs"] * .7])
             parts.append(("c", (base, base + np.array([0, side * .14, .05]), .03), "antler", .02))
-            R = rotz(0) @ np.array([[1, 0, 0], [0, math.cos(side * .5), -math.sin(side * .5)], [0, math.sin(side * .5), math.cos(side * .5)]])
-            parts.append(("e", (base + np.array([0, side * .3, .12]), np.array([.17, .2, .035]), R), "antler", .03))
+            tilt = side * .25
+            R = np.array([[1, 0, 0], [0, math.cos(tilt), -math.sin(tilt)], [0, math.sin(tilt), math.cos(tilt)]])
+            pc = base + np.array([-.02, side * .26, .1])
+            parts.append(("e", (pc, np.array([.14, .17, .03]), R), "antler", .03))
+            for k in range(3):   # tines along the paddle's outer edge
+                tb = pc + np.array([-.1 + k * .1, side * .14, .02])
+                parts.append(("c", (tb, tb + np.array([.0, side * .06, .09]), .018), "antler", .01))
     elif s.get("antlers") == "tine":
         for side in (-1, 1):
             base = hc + np.array([-s["hs"] * .1, side * s["hs"] * .45, s["hs"] * .75])

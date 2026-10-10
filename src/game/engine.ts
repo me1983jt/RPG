@@ -3979,11 +3979,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.variant === "jumper") return Math.round(NPC_H * .96);
 		if (enemy.variant === "scout") return Math.round(NPC_H * .92);
 		if (enemy.kind === "moose") return Math.round(NPC_H * 1.35);
-		if (enemy.kind === "deer") return Math.round(NPC_H * .78);
-		if (enemy.kind === "wolf") return Math.round(NPC_H * .62);
-		if (enemy.kind === "coyote") return Math.round(NPC_H * .55);
-		if (enemy.kind === "rabbit") return Math.round(NPC_H * .44);
-		if (enemy.kind === "squirrel") return Math.round(NPC_H * .36);
+		if (enemy.kind === "deer") return Math.round(NPC_H * .84);
+		if (enemy.kind === "wolf") return Math.round(NPC_H * .76);
+		if (enemy.kind === "coyote") return Math.round(NPC_H * .68);
+		if (enemy.kind === "rabbit") return Math.round(NPC_H * .5);
+		if (enemy.kind === "squirrel") return Math.round(NPC_H * .42);
 		return NPC_H;
 	}
 	function folkHeight(npc) {
@@ -6042,7 +6042,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		beastAt: (id, kind, x, y) => {
 			const e = world?.enemies.find((q) => q.id === id);
 			if (!e) return;
-			e.kind = kind; e.x = x; e.y = y; e.homeX = x; e.homeY = y; e.temper = "timid"; e.aggro = false; e.dead = false; e.hp = Math.max(e.hp, 10); e.path = null;
+			e.kind = kind; e.x = x; e.y = y; e.homeX = x; e.homeY = y; e.temper = "hostile"; e.aggro = true; e.dead = false; e.hp = Math.max(e.hp, 10); e.path = null;
 		},
 		setLook: (look) => {
 			if (player) player.look = look;
