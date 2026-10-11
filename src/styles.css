@@ -81,3 +81,12 @@
     transition: none;
   }
 }
+
+/* the "You fall" panel waits a beat so the fall animation is seen (it covers a phone screen) */
+.overlay-late {
+  animation: overlay-late 0.35s ease-out 0.95s both;
+}
+@keyframes overlay-late {
+  from { opacity: 0; pointer-events: none; }
+  to { opacity: 1; }
+}

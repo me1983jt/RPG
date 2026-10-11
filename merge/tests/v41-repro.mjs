@@ -40,7 +40,7 @@ for (const kind of kinds) {
   const door = await page.evaluate(() => { const c = document.querySelector("canvas"); return null; });
   const s2 = await page.evaluate(() => window.__controlsTest.insideInfo());
   const sc = await page.evaluate(() => (window.__roomScale ? window.__roomScale() : 1));
-  const dx = (s2.origin.x + 160) * s2.scale, dy = (s2.origin.y + 214) * s2.scale;
+  const D = s2.dims || { w: 320, h: 240 }; const dx = (s2.origin.x + D.w / 2) * s2.scale, dy = (s2.origin.y + D.h - 26) * s2.scale;
   r.doorAt = [Math.round(dx), Math.round(dy)];
   r.onTop = await page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); return el ? el.tagName : null; }, [dx, dy]);
   await page.touchscreen.tap(dx, dy); await page.waitForTimeout(700);
@@ -56,7 +56,7 @@ for (const kind of kinds) {
   // 3) walk onto the door mat (tap floor just above the door)
   info = await enter(kind); await page.waitForTimeout(500);
   const s3 = await T("insideInfo");
-  await page.touchscreen.tap((s3.origin.x + 160) * s3.scale, (s3.origin.y + 207) * s3.scale); await page.waitForTimeout(2500);
+  { const D3 = s3.dims || { w: 320, h: 240 }; await page.touchscreen.tap((s3.origin.x + D3.w / 2) * s3.scale, (s3.origin.y + D3.h - 33) * s3.scale); } await page.waitForTimeout(2500);
   r.walkOut = !(await T("insideInfo"));
   if (!r.walkOut) await T("leave");
   // 4) back button path: pause menu has Leave building

@@ -108,6 +108,11 @@ var IMAGES = [
 	"hero-pick",
 	"hero-gun",
 	"hero-knife",
+	"hero-atk",
+	"hero-axe-atk",
+	"hero-pick-atk",
+	"hero-knife-atk",
+	"hero-gun-atk",
 	"tool-axe",
 	"tool-pick",
 	"raider",
@@ -141,6 +146,15 @@ var IMAGES = [
 	"moose",
 	"rabbit",
 	"squirrel",
+	"wolf-dead",
+	"coyote-dead",
+	"deer-dead",
+	"moose-dead",
+	"rabbit-dead",
+	"squirrel-dead",
+	"raider-dead",
+	"raider-gray-dead",
+	"raider-blue-dead",
 	"crow",
 	"boss-fur",
 	"boss-mask",
@@ -227,6 +241,7 @@ var IMAGES = [
 	"icon-scrap",
 	"icon-fuel",
 	"bunker-room",
+	"farm-room",
 	"sack",
 	"tree-dead",
 	"tree-scrub",
@@ -431,6 +446,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let hoverY = 0;
 	let zoom = 1;
 	let reach = 0;
+	/** Hero attack strip timer (v19 4-frame swings). */
+	let swingAnim = 0;
+	/** When the hero went down (ms), for the fall animation. */
+	let fellAt = 0;
 	let deal = 0;
 	let pointerDown = false;
 	let downX = 0;
@@ -1932,7 +1951,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return !!player && GEAR[player.weaponId]?.family === "pickaxe";
 	}
 	function heroKey() {
-		const using = drawn > 0 || reach > 0 || intent?.kind === "attack" || intent?.kind === "chop" || intent?.kind === "mine";
+		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack" || intent?.kind === "chop" || intent?.kind === "mine";
 		if (!player || !using || !player.weaponId) return "hero";
 		if (work && work.swing > .05) return "hero";
 		const family = GEAR[player.weaponId]?.family;
@@ -2020,7 +2039,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const data = g.getImageData(0, 0, stamp.width, stamp.height);
 		const px = data.data;
 		const cols = 4;
-		const rows = 8;
+		const rows = name.endsWith("-atk") && stamp.width / stamp.height > 2.2 ? 1 : 8;
 		const cw = stamp.width / cols;
 		const ch = stamp.height / rows;
 		const boxes = [];
@@ -2283,8 +2302,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const door = doorPoint(prop);
 		inside = {
 			id: prop.id,
-			rx: 160,
-			ry: 118,
+			rx: prop.kind === "farmhouse" ? 200 : 160,
+			ry: prop.kind === "farmhouse" ? 170 : 118,
 			backX: door.x,
 			backY: door.y
 		};
@@ -2452,18 +2471,32 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Rooms are a 320x240 stage. On short phone screens it shrinks and sits high, so the door stays
 	 * clear of the bottom HUD (on a landscape phone the old centred room put the door under it). */
+	/** Room stage size in room units. The v19 farmhouse kitchen is a bigger room (800x560 art drawn
+	 * at half size); the others are the 320x240 stage. */
+	function roomDims() {
+		const prop = inside && world?.props.find((p) => p.id === inside.id);
+		return prop?.kind === "farmhouse" ? { w: 400, h: 280, farm: true } : { w: 320, h: 240, farm: false };
+	}
 	function roomScale() {
-		const s = viewH < 560 ? Math.max(.62, Math.min(1, (viewH - 170) / 240)) : 1;
-		return Math.min(s, (viewW - 16) / 320);
+		const d = roomDims();
+		// phones: fit between the top panels and the bottom HUD; big screens: the farmhouse may grow
+		const s = viewH < 560 ? Math.max(.5, Math.min(1, (viewH - 170) / d.h)) : Math.min(d.farm ? 1.5 : 1, (viewH - 200) / d.h);
+		return Math.max(.4, Math.min(s, (viewW - 16) / d.w));
 	}
 	/** Room origin in room space (screen = room point * roomScale()). */
 	function roomOrigin() {
 		const s = roomScale();
-		const top = viewH < 560 ? Math.max(56, (viewH - 110 - 240 * s) / 2 + 20) : viewH / 2 - 120;
+		const d = roomDims();
+		const top = viewH < 560 ? Math.max(56, (viewH - 110 - d.h * s) / 2 + 20) : Math.max(60, viewH / 2 - d.h * s / 2);
 		return {
-			x: (viewW / 2 - 160 * s) / s,
+			x: (viewW / 2 - d.w / 2 * s) / s,
 			y: top / s
 		};
+	}
+	/** Door hot-spot / walk-out zone, bottom centre of the stage. */
+	function roomDoor() {
+		const d = roomDims();
+		return { cx: d.w / 2, bottom: d.h, x0: d.w / 2 - 52, x1: d.w / 2 + 52, y0: d.h - 64, y1: d.h + 12 };
 	}
 	function applyRoomTransform(dpr) {
 		const s = roomScale();
@@ -2481,8 +2514,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else {
 				const pace = player.stamina > 0 ? 110 : 48;
 				const stepLen = Math.min(dist, pace * dt);
-				inside.rx = Math.min(292, Math.max(28, inside.rx + dx / dist * stepLen));
-				inside.ry = Math.min(210, Math.max(28, inside.ry + dy / dist * stepLen));
+				const dims = roomDims();
+				inside.rx = Math.min(dims.w - 28, Math.max(28, inside.rx + dx / dist * stepLen));
+				inside.ry = Math.min(dims.h - 30, Math.max(28, inside.ry + dy / dist * stepLen));
 				moving = true;
 				player.dir = facing8Screen(dx, dy);
 				player.anim += stepLen;
@@ -2492,7 +2526,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else player.stamina = Math.min(player.maxStamina, player.stamina + staminaBack() * dt);
 		player.frame = moving ? Math.floor(player.anim / 22) % 4 : 1;
 		// walking onto the door mat takes you out, the same as tapping the door
-		if (moving && inside.ry >= 204 && Math.abs(inside.rx - 160) < 40) {
+		if (moving && inside.ry >= roomDims().h - 36 && Math.abs(inside.rx - roomDims().w / 2) < 40) {
 			leaveHouse();
 			return;
 		}
@@ -2699,13 +2733,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (enemy.kind === "moose") scrap += 2;
 		}
 		leavePile(enemy.x, enemy.y, bodyTitle(enemy.kind), items, scrap, enemy.kind, enemy.dir);
+		const pile = piles[piles.length - 1];
+		if (pile && pile.body === enemy.kind) {
+			// the body keeps the look of the one that fell, and waits for its fall animation to finish
+			pile.sheet = beastSheet(enemy);
+			pile.shownAt = performance.now() + 1150;
+		}
 		pushLog("Search the body.");
 	}
 	function markDead(enemy, xp) {
 		if (!enemy || enemy.dead) return;
 		enemy.dead = true;
 		enemy.aggro = false;
-		enemy.death = .85;
+		enemy.death = 1.15;
 		corpseOf(enemy);
 		grantXp(xp);
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
@@ -2934,6 +2974,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (gun) floater(player.x, player.y - 16, `${shellCount(player)} shells`);
 		player.cooldown = swingOf().wait;
 		reach = .22;
+		swingAnim = .48;
 		return true;
 	}
 	function strikeEnemy(enemy) {
@@ -3381,7 +3422,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (inside) {
 			// Talk / E indoors: by the door it takes you out, elsewhere it says where the way out is
 			if (edges.interact) {
-				if (inside.ry > 160 && Math.abs(inside.rx - 160) < 70) leaveHouse();
+				if (inside.ry > roomDims().h - 80 && Math.abs(inside.rx - roomDims().w / 2) < 70) leaveHouse();
 				else pushLog("The door is at the bottom of the room. Tap it, or tap Leave.");
 			}
 			if (inside) stepInside(dt);
@@ -3393,6 +3434,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.invuln = Math.max(0, player.invuln - dt);
 		player.hurt = Math.max(0, player.hurt - dt);
 		reach = Math.max(0, reach - dt);
+		swingAnim = Math.max(0, swingAnim - dt);
 		if (edges.build) {
 			buildOpen = !buildOpen;
 			if (buildOpen) {
@@ -3595,7 +3637,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const stepDist = Math.hypot(player.x - fromX, player.y - fromY);
 		if (stepDist > .45 && !swinging) {
 			player.dir = facing8(player.x - fromX, player.y - fromY);
-			player.anim += stepDist;
+			// leg cycle follows on-screen distance (one 4-frame cycle per ~72 px), so feet don't skate
+			// on sideways walks (screen moves 1.41 px per world unit there, 0.71 up/down)
+			const mdx = player.x - fromX, mdy = player.y - fromY;
+			player.anim += Math.hypot(mdx - mdy, (mdx + mdy) / 2) * 1.22;
 			if (!mounted && !turnBased) player.stamina = Math.max(0, player.stamina - 12 * dt);
 			if (turnBased) {
 				apWalk += stepDist;
@@ -4025,7 +4070,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const guardName = firing ? `guard-${body.role}` : `guard-watch-${body.role}`;
 		const posed = guarding && images.get(guardName) ? guardName : guarding && images.get(`guard-${body.role}`) ? `guard-${body.role}` : "";
 		if (posed) {
-			blit(posed, body.x, body.y, folkHeight(body), false, 0, 0, camX, camY, firing);
+			// idle: a slow breath; firing: recoil lunge (the painted v18 poses beat v19's strip guards)
+			const breath = firing ? 1 : 1 + .018 * Math.sin(performance.now() / 520 + (id || 0));
+			blit(posed, body.x, body.y, folkHeight(body), false, 0, 0, camX, camY, firing, 0, 0, breath);
 			return;
 		}
 		blit(folkSheet(body), body.x, body.y, folkHeight(body), true, body.frame || 0, body.dir || 0, camX, camY);
@@ -4138,6 +4185,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					tractor.charge = 0;
 					tractorReady = false;
 					pushLog("The tractor coughs and stops. It wants another can.");
+				} else if (particles.length < 90) {
+					// snow and dirt kicked up behind the rear wheels
+					const kick = Math.random() < .6 ? "#f4f7fb" : "#d7c4a2";
+					particles.push({
+						x: c.x + shift.x - 34,
+						y: c.y + shift.y + 4,
+						vx: -80 - Math.random() * 50,
+						vy: -28 + Math.random() * 16,
+						life: .45 + Math.random() * .2,
+						max: .65,
+						color: kick,
+						size: 3 + Math.random() * 3
+					});
 				}
 			}
 		}
@@ -4353,16 +4413,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function paintExitDoor() {
 		if (!inside || !ctx) return;
 		const o = roomOrigin();
+		const d = roomDims();
 		const img = images.get("door");
+		const dh = d.farm ? 84 : 108;
 		if (img) {
-			const dh = 108;
 			const dw = dh * (img.width / img.height);
-			ctx.drawImage(img, o.x + 160 - dw / 2, o.y + 236 - dh, dw, dh);
+			ctx.drawImage(img, o.x + d.w / 2 - dw / 2, o.y + d.h - 4 - dh, dw, dh);
 		}
 		ctx.fillStyle = "#efe6d4";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
 		ctx.textAlign = "center";
-		ctx.fillText("Door \u2193", o.x + 160, o.y + 124);
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = "rgba(10, 8, 6, 0.75)";
+		ctx.strokeText("Door \u2193", o.x + d.w / 2, o.y + d.h - dh - 10);
+		ctx.fillText("Door \u2193", o.x + d.w / 2, o.y + d.h - dh - 10);
 		ctx.textAlign = "left";
 	}
 	function paintProp(name, x, y, h) {
@@ -4379,31 +4443,53 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillRect(0, 0, viewW, viewH);
 		applyRoomTransform(dpr);
 		const o = roomOrigin();
-		ctx.fillStyle = "#5a4030";
-		ctx.fillRect(o.x, o.y, 320, 240);
-		ctx.fillStyle = "#6b4c34";
-		for (let i = 0; i < 8; i++) ctx.fillRect(o.x, o.y + i * 30, 320, 2);
-		ctx.fillStyle = "#3a2a22";
-		ctx.fillRect(o.x, o.y, 320, 18);
-		ctx.fillStyle = "#efe6d4";
-		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Cambridge Road", o.x + 12, o.y + 14);
-		paintProp("stove", o.x + 58, o.y + 150, 108);
-		ctx.fillStyle = "#efe6d4";
-		ctx.fillText("Stove", o.x + 36, o.y + 164);
-		ctx.fillStyle = "#6a4a32";
-		ctx.fillRect(o.x + 150, o.y + 78, 140, 16);
-		ctx.fillStyle = "#4a3424";
-		ctx.fillRect(o.x + 162, o.y + 94, 8, 28);
-		ctx.fillRect(o.x + 270, o.y + 94, 8, 28);
-		if (!lootedChests.has(91001)) paintProp("cider-cups", o.x + 196, o.y + 86, 52);
+		const d = roomDims();
+		const art = images.get("farm-room");
+		if (art) ctx.drawImage(art, o.x, o.y, d.w, d.h);
 		else {
-			ctx.fillStyle = "#efe6d4";
-			ctx.fillText("Cups empty", o.x + 160, o.y + 74);
+			ctx.fillStyle = "#5a4030";
+			ctx.fillRect(o.x, o.y, d.w, d.h);
 		}
-		if (!lootedChests.has(91002)) paintProp("donuts", o.x + 262, o.y + 88, 48);
+		if (FARM_PAINTED_PROPS) {
+			// the painted stove / cups / donuts over the flat v19 shapes, so the kitchen matches the game
+			paintProp("stove", o.x + 62, o.y + 188, 112);
+			if (!lootedChests.has(91001)) paintProp("cider-cups", o.x + 188, o.y + 117, 44);
+			if (!lootedChests.has(91002)) paintProp("donuts", o.x + 256, o.y + 115, 40);
+		}
+		ctx.font = "700 13px Source Sans 3, sans-serif";
+		const tag = (text, x, y) => {
+			ctx.lineWidth = 3;
+			ctx.strokeStyle = "rgba(10, 8, 6, 0.75)";
+			ctx.strokeText(text, x, y);
+			ctx.fillStyle = "#efe6d4";
+			ctx.fillText(text, x, y);
+		};
+		const nd = nightDark(clock);
+		if (nd > .05) {
+			// the kitchen window goes dark with the night outside
+			ctx.fillStyle = `rgba(10, 16, 34, ${Math.min(.85, nd * 1.1)})`;
+			ctx.fillRect(o.x + 160, o.y + 36, 95, 47);
+		}
+		tag("Stove", o.x + 40, o.y + 206);
+		tag(lootedChests.has(91001) ? "Cups empty" : "Cider", o.x + 166, o.y + 72);
+		tag(lootedChests.has(91002) ? "Crumbs" : "Donuts", o.x + 236, o.y + 72);
+		tag("Stairs", o.x + 318, o.y + 40);
+		paintRoomTitle("Cambridge Road");
 		paintExitDoor();
 		paintHeroInRoom();
+	}
+	/** Room name, top-right of the stage so the quest panel (top-left on phones) never covers it. */
+	function paintRoomTitle(text) {
+		const o = roomOrigin();
+		const d = roomDims();
+		ctx.font = "700 15px Source Sans 3, sans-serif";
+		ctx.textAlign = "right";
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = "rgba(10, 8, 6, 0.8)";
+		ctx.strokeText(text, o.x + d.w - 10, o.y + 18);
+		ctx.fillStyle = "#efe6d4";
+		ctx.fillText(text, o.x + d.w - 10, o.y + 18);
+		ctx.textAlign = "left";
 	}
 	function drawBarn() {
 		if (!inside || !ctx) return;
@@ -4448,9 +4534,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ctx.fillStyle = "rgba(12, 10, 8, 0.45)";
 		ctx.fillRect(o.x, o.y, 320, 22);
+		paintRoomTitle("Jack's cache");
+		ctx.font = "600 12px Source Sans 3, sans-serif";
+		ctx.textAlign = "right";
 		ctx.fillStyle = "#e6c56a";
+		ctx.fillText("Shut the hatch when you leave.", o.x + 310, o.y + 34);
+		ctx.textAlign = "left";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Jack's cache. Shut it when you leave.", o.x + 10, o.y + 16);
 		ctx.fillStyle = "#efe6d4";
 		ctx.fillText(lootedChests.has(93012) ? "Meds gone" : "Trauma kit", o.x + 18, o.y + 78);
 		ctx.fillText(lootedChests.has(93011) ? "Rig gone" : "Plate rig", o.x + 18, o.y + 132);
@@ -4470,7 +4560,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const rows = 8;
 		const sw = img.width / 4;
 		const sh = img.height / rows;
-		const dh = 110;
+		const dh = roomDims().farm ? 124 : 110;
 		const dw = dh * (sw / sh);
 		const col = player.frame % 4;
 		const row = player.dir % rows;
@@ -4752,7 +4842,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 				const o = roomOrigin();
 				const rs = roomScale();
-				const fx = kind === "farmhouse" ? (o.x + 58) * rs : viewW / 2, fy = kind === "farmhouse" ? (o.y + 110) * rs : viewH / 2;
+				const fx = kind === "farmhouse" ? (o.x + 62) * rs : viewW / 2, fy = kind === "farmhouse" ? (o.y + 150) * rs : viewH / 2;
 				const g = ctx.createRadialGradient(fx, fy, 20, fx, fy, Math.max(viewW, viewH) * .7);
 				g.addColorStop(0, `rgba(6, 10, 24, ${kind === "farmhouse" ? 0 : dark * .5})`);
 				g.addColorStop(1, `rgba(6, 10, 24, ${dark})`);
@@ -4862,11 +4952,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * .62;
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
 						const img = images.get("tractor-run");
-						const frames = 4;
+						const frames = img.width / img.height > 8 ? 8 : 4;
 						const sw = img.width / frames;
 						const sh = img.height;
 						const shift = tractorShift(prop.charge || 0);
-						const f = Math.floor((prop.charge || 0) * 16) % frames;
+						const f = Math.floor((prop.charge || 0) * 28) % frames;
 						const raw = worldToScreen(c.x + shift.x, c.y + shift.y, drawCamX, drawCamY);
 						const p = zoomPoint(raw.sx, raw.sy);
 						const dh = h * zoom;
@@ -4937,15 +5027,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				z: enemy.x + enemy.y,
 				draw: () => {
 					const h = beastH(enemy);
+					// strips are drawn facing west; mirror them for anything facing east
+					const east = (enemy.dir ?? 0) >= 5 && (enemy.dir ?? 0) <= 7;
 					if (enemy.dead) {
 						const deadName = `${beastSheet(enemy)}-dead`;
-						if (images.get(deadName)) blit(deadName, enemy.x, enemy.y, Math.round(h * .62), false, 0, 0, drawCamX, drawCamY);
+						const dimg = images.get(deadName);
+						if (dimg) {
+							if (stripFrames(deadName, dimg) > 1) {
+								const u = 1 - Math.max(0, enemy.death) / 1.15;
+								const f = Math.max(0, Math.min(3, Math.floor(u * 4)));
+								blit(deadName, enemy.x, enemy.y, h, false, f, 0, drawCamX, drawCamY, false, 0, 0, 1, east);
+							} else blit(deadName, enemy.x, enemy.y, Math.round(h * .62), false, 0, 0, drawCamX, drawCamY);
+						}
 						return;
 					}
-					const swinging = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52);
 					const atk = `${beastSheet(enemy)}-atk`;
-					if (swinging && images.get(atk)) blit(atk, enemy.x, enemy.y, h, false, 0, 0, drawCamX, drawCamY, true);
-					else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
+					const aimg = images.get(atk);
+					if (aimg && stripFrames(atk, aimg) > 1) {
+						const swingMax = enemy.kind === "moose" ? 1.05 : enemy.elite ? .95 : .82;
+						if (enemy.cooldown > .08) {
+							const u = 1 - Math.min(swingMax, enemy.cooldown) / swingMax;
+							const f = Math.max(0, Math.min(3, Math.floor(u * 4)));
+							blit(atk, enemy.x, enemy.y, h, false, f, 0, drawCamX, drawCamY, false, 0, 0, 1, east);
+						} else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, enemy.cooldown > .2);
+					} else {
+						const swinging = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52);
+						if (swinging && aimg) blit(atk, enemy.x, enemy.y, h, false, 0, 0, drawCamX, drawCamY, true);
+						else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
+					}
 					if (enemy.aggro || enemy.hp < enemy.maxHp || enemy.id === lockedId) bar(enemy.x, enemy.y, h, enemy.hp / enemy.maxHp, drawCamX, drawCamY);
 				}
 			});
@@ -4958,8 +5067,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			draws.push({
 				z: pile.x + pile.y,
 				draw: () => {
+					if (pile.shownAt && performance.now() < pile.shownAt) return;
 					const tilt = pile.dir === 1 || pile.dir === 2 || pile.dir === 3 ? -1.2 : 1.2;
-					if (pile.folk) blit(pile.folk, pile.x, pile.y, NPC_H, true, 0, pile.dir, drawCamX, drawCamY, false, 0, tilt, .78);
+					const deadName = pile.body ? `${pile.sheet || beastSheet({ kind: pile.body, id: pile.id })}-dead` : "";
+					const dimg = deadName ? images.get(deadName) : null;
+					if (dimg && stripFrames(deadName, dimg) > 1) {
+						// last frame of the death strip: the body as it came to rest
+						const east = pile.dir >= 5 && pile.dir <= 7;
+						const dummy = { kind: pile.body, id: pile.id, variant: (pile.sheet || "").startsWith("boss-") || (pile.sheet || "").startsWith("raider-") && !["raider-gray", "raider-blue"].includes(pile.sheet) ? (pile.sheet || "").split("-")[1] : undefined };
+						blit(deadName, pile.x, pile.y, beastH(dummy), false, 3, 0, drawCamX, drawCamY, false, 0, 0, 1, east);
+					} else if (pile.folk) blit(pile.folk, pile.x, pile.y, NPC_H, true, 0, pile.dir, drawCamX, drawCamY, false, 0, tilt, .78);
 					else if (pile.body) {
 						const dummy = {
 							kind: pile.body,
@@ -4984,7 +5101,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			z: player.x + player.y,
 			draw: () => {
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
-				blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
+				if (phase === "dead") {
+					// fall: the (dyed) side-view walk frame tips backwards onto the snow over ~0.7 s
+					if (!fellAt) fellAt = performance.now();
+					const u = Math.min(1, (performance.now() - fellAt) / 700);
+					const ease = 1 - (1 - u) * (1 - u);
+					const eastward = player.dir >= 5 && player.dir <= 7 || player.dir === 0 && player.frame % 2 === 1;
+					const row = eastward ? 6 : 2;
+					blit("hero", player.x, player.y, HERO_H, true, 0, row, drawCamX, drawCamY, false, -ease * 6, (eastward ? -1 : 1) * ease * Math.PI * .47);
+					return;
+				}
+				fellAt = 0;
+				const atkName = `${heroKey()}-atk`;
+				// the v19 swing strips are front views: use them when facing the camera, otherwise keep the lunge
+				const facingCam = player.dir === 0 || player.dir === 1 || player.dir === 7;
+				if (swingAnim > 0 && !work && facingCam && images.get(atkName)) {
+					const f = Math.min(3, Math.floor((1 - swingAnim / .48) * 4));
+					blit(atkName, player.x, player.y, HERO_H, false, f, 0, drawCamX, drawCamY, false);
+				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
 			}
 		});
 		for (const scar of scars) {
@@ -5106,16 +5240,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let sw = img.width;
 		let sh = img.height;
 		let rows = 1;
-		if (sheet) {
-			rows = sheetRowsOf(name);
+		const strips = !sheet && stripFrames(name, img) > 1;
+		if (sheet || strips) {
+			rows = sheet ? sheetRowsOf(name) : 1;
 			sw = img.width / 4;
 			sh = img.height / rows;
 			sx = frame % 4 * sw;
-			sy = dir % rows * sh;
+			sy = (sheet ? dir % rows : 0) * sh;
 		}
-		let frac = img.foot ?? (sheet ? .92 : .9);
-		if (sheet && img.feet) {
-			const planted = img.feet[(dir % rows) * 4 + (frame % 4)];
+		let frac = img.foot ?? (sheet || strips ? .92 : .9);
+		if ((sheet || strips) && img.feet) {
+			const planted = img.feet[(sheet ? dir % rows : 0) * 4 + (frame % 4)];
 			if (planted) frac = planted;
 		}
 		const dh = drawH * zoom;
@@ -5711,11 +5846,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const prop = world?.props.find((p) => p.id === room.id);
 					const hit = (x0, y0, x1, y1) => moved < 24 && lx > x0 && lx < x1 && ly > y0 && ly < y1;
 					if (prop?.kind === "farmhouse") {
-						if (hit(16, 40, 110, 168)) warmStove();
-						else if (hit(150, 30, 230, 100)) takeFromKitchen(91001, "cider", 1, "The tin cups are empty.", "Hot cider. It tastes like the orchard.");
-						else if (hit(230, 36, 300, 108)) takeFromKitchen(91002, "donut", 2, "The plate is down to crumbs.", "Two cider donuts, still a little warm.");
-						else if (hit(108, 176, 212, 252)) leaveHouse();
-						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
+						if (hit(14, 90, 112, 192)) warmStove();
+						else if (hit(152, 78, 222, 124)) takeFromKitchen(91001, "cider", 1, "The tin cups are empty.", "Hot cider. It tastes like the orchard.");
+						else if (hit(222, 76, 292, 124)) takeFromKitchen(91002, "donut", 2, "The plate is down to crumbs.", "Two cider donuts, still a little warm.");
+						else if (hit(296, 44, 396, 196)) pushLog("The stairs go up to a cold loft. Nothing you need is stored up there.");
+						else if (hit(roomDoor().x0, roomDoor().y0, roomDoor().x1, roomDoor().y1)) leaveHouse();
+						else if (lx > 16 && lx < 384 && ly > 16 && ly < 266) intent = {
 							kind: "walk",
 							x: lx,
 							y: ly,
@@ -5733,7 +5869,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 								sync(true);
 							}
 						} else if (hit(170, 36, 312, 176)) openBench();
-						else if (hit(108, 176, 212, 252)) leaveHouse();
+						else if (hit(roomDoor().x0, roomDoor().y0, roomDoor().x1, roomDoor().y1)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5747,7 +5883,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						else if (hit(210, 124, 306, 170)) takeFromKitchen(93013, "shells", 8, "The ammo crate is empty.", "Eight shells from a crate that was still sealed.");
 						else if (hit(120, 148, 186, 188)) drinkBarrel();
 						else if (hit(130, 36, 200, 92)) pushLog("The radio hisses. A French station, a long way off, then nothing.");
-						else if (hit(108, 176, 212, 252)) leaveHouse();
+						else if (hit(roomDoor().x0, roomDoor().y0, roomDoor().x1, roomDoor().y1)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5755,7 +5891,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							path: []
 						};
 					} else if (moved < 14 && lx > 132 && lx < 188 && ly > 44 && ly < 96) openChest();
-					else if (moved < 24 && lx > 108 && lx < 212 && ly > 176 && ly < 252) leaveHouse();
+					else if (moved < 24 && lx > roomDoor().x0 && lx < roomDoor().x1 && ly > roomDoor().y0 && ly < roomDoor().y1) leaveHouse();
 					else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 						kind: "walk",
 						x: lx,
@@ -6131,7 +6267,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		choose: (id) => applyChoice(id),
 		leave: () => leaveHouse(),
-		insideInfo: () => inside ? { id: inside.id, kind: world?.props.find((p) => p.id === inside.id)?.kind ?? "", rx: inside.rx, ry: inside.ry, origin: roomOrigin(), scale: roomScale(), phase } : null,
+		insideInfo: () => inside ? { id: inside.id, kind: world?.props.find((p) => p.id === inside.id)?.kind ?? "", rx: inside.rx, ry: inside.ry, origin: roomOrigin(), scale: roomScale(), dims: roomDims(), door: roomDoor(), phase } : null,
 		exitCheck: () => world ? world.props.filter((p) => canWalkIn(p)).map((p) => { const d = doorPoint(p); const t = tileOf(d.x, d.y); const o = clearOutside(d.x, d.y); const ot = tileOf(o.x, o.y); const seen = new Set([ot.ty * 156 + ot.tx]); const q = [[ot.tx, ot.ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const k = ay * 156 + ax; if (ax < 0 || ay < 0 || ax >= 156 || ay >= 156 || seen.has(k) || cellBlocked(world, ax, ay)) continue; seen.add(k); q.push([ax, ay]); } } return { kind: p.kind, id: p.id, blocked: cellBlocked(world, t.tx, t.ty), moved: Math.round(Math.hypot(o.x - d.x, o.y - d.y)), reach: seen.size }; }) : [],
 		doorOf: (kind) => { const p = world?.props.find((q) => q.kind === kind); return p ? doorPoint(p) : null; },
 		screenOf: (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); },
@@ -6166,6 +6302,47 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wear: (slot, id) => {
 			if (player) player[slot] = id;
 		},
+		dbgDir: () => player ? player.dir : -1,
+		walkStraight: (x, y) => {
+			intent = { kind: "walk", x, y, path: [{ x, y }] };
+		},
+		openArea: (x, y, R) => {
+			// a clear patch (no blocked tile and no prop within 5 tiles) near x,y, for clean close-ups
+			if (!world) return null;
+			const c = tileOf(x, y);
+			const occupied = new Set(world.props.map((p) => p.ty * 156 + p.tx));
+			let best = null;
+			for (let r = 0; r <= R && !best; r++) for (let ty = c.ty - r; ty <= c.ty + r && !best; ty++) for (let tx = c.tx - r; tx <= c.tx + r && !best; tx++) {
+				if (Math.max(Math.abs(tx - c.tx), Math.abs(ty - c.ty)) !== r) continue;
+				let ok = true;
+				for (let dy = -7; dy <= 7 && ok; dy++) for (let dx = -7; dx <= 7 && ok; dx++) {
+					const ax = tx + dx, ay = ty + dy;
+					if (ax < 1 || ay < 1 || ax > 154 || ay > 154 || cellBlocked(world, ax, ay) || occupied.has(ay * 156 + ax)) ok = false;
+				}
+				if (ok) best = { x: (tx + .5) * 64, y: (ty + .5) * 64 };
+			}
+			return best;
+		},
+		clearNear: (x, y, r) => {
+			if (!world) return 0;
+			let n = 0;
+			for (const e of world.enemies) if (!e.dead && !e.quest && Math.hypot(e.x - x, e.y - y) < r) {
+				e.dead = true;
+				e.death = 0;
+				n++;
+			}
+			return n;
+		},
+		swingNow: () => {
+			swingAnim = .48;
+			reach = .22;
+		},
+		tractorGo: () => {
+			const t = world?.props.find((p) => p.kind === "tractor");
+			if (!t) return null;
+			tractorReady = true;
+			return propCenter(t);
+		},
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (h / 24) * span;
@@ -6191,6 +6368,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 }
 function cleanName(name) {
 	return name.replace(/[^\w\s'-]/g, "").trim().slice(0, 18) || "Packer";
+}
+/** v19 attack / death / guard art: one row of 4 frames (wide image). Old single poses stay 1. */
+const FARM_PAINTED_PROPS = true;
+function stripFrames(name, img) {
+	if (!img || !name) return 1;
+	if (!(name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-"))) return 1;
+	return img.width / img.height > 2.2 ? 4 : 1;
 }
 function sheetRowsOf(name) {
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
@@ -6302,11 +6486,12 @@ function loadImages(images) {
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
 			const rows = sheetRowsOf(name);
-			const posed = !name.endsWith("-atk") && !name.endsWith("-dead") && (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
-			const radius = name.startsWith("ground-") ? 0 : posed ? 1 : 1;
+			const strips = stripFrames(name, img) > 1;
+			const posed = !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
+			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" ? 0 : posed ? 1 : 1;
 			const soft = softenSprite(img, radius, posed ? rows : 0);
-			if (posed && name.startsWith("hero")) soft.sharp = img;
-			const pose = measurePose(img, posed, rows);
+			if ((posed || strips) && name.startsWith("hero")) soft.sharp = img;
+			const pose = measurePose(img, posed || strips, strips ? 1 : rows);
 			soft.foot = pose.foot;
 			soft.feet = pose.feet;
 			soft.footX = pose.footX;
@@ -6314,6 +6499,6 @@ function loadImages(images) {
 			resolve();
 		};
 		img.onerror = () => resolve();
-		img.src = `/game/${name}.png?v=2033`;
+		img.src = `/game/${name}.png?v=2040`;
 	}))).then(() => void 0);
 }

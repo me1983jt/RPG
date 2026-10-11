@@ -271,6 +271,63 @@ def render(parts, yaw_f, scale, cx, cy, pal, SS=SS):
     a[..., :3] = a[..., :3] * (1 - .6 * edge) + dk * .6 * edge
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA")
 
+def rotx(a):
+    c, s_ = math.cos(a), math.sin(a); return np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]])
+
+def roll_parts(parts, theta, side=1.0):
+    """Tip the whole model over onto its side: rotate about the long (x) axis around the ground line
+    on one flank, then drop it so its lowest point rests on the ground."""
+    R = rotx(side * theta)
+    ys = [abs(a[0][1]) for k, a, c, b in parts]
+    piv = np.array([0, side * .12, 0])
+    out = []
+    for k, a, col, bl in parts:
+        if k == "e": out.append((k, (R @ (a[0] - piv) + piv, a[1], R @ (a[2] if len(a) > 2 else np.eye(3))), col, bl))
+        elif k == "c": out.append((k, (R @ (a[0] - piv) + piv, R @ (a[1] - piv) + piv, a[2]), col, bl))
+        else: out.append((k, (R @ (a[0] - piv) + piv, a[1]), col, bl))
+    low = 1e9
+    for k, a, col, bl in out:
+        if k == "e": low = min(low, a[0][2] - float(np.max(a[1])) * .8)
+        elif k == "c": low = min(low, min(a[0][2], a[1][2]) - a[2])
+        else: low = min(low, a[0][2] - a[1])
+    sh = np.array([0, 0, -low])
+    res = []
+    for k, a, col, bl in out:
+        if k == "e": res.append((k, (a[0] + sh, a[1], a[2]), col, bl))
+        elif k == "c": res.append((k, (a[0] + sh, a[1] + sh, a[2]), col, bl))
+        else: res.append((k, (a[0] + sh, a[1]), col, bl))
+    return res
+
+def fit(n, frames, pal):
+    target_w = {"rabbit": 46, "squirrel": 42, "coyote": 74, "wolf": 76, "moose": 78, "deer": 70}[n]
+    s0, cx0, cy0 = 30, CW / 2, 90
+    L = R = T = B = 0; side = 0
+    for r, d in enumerate(DIRS):
+        for c, parts in enumerate(frames):
+            a = np.array(render(parts, d, s0, cx0, cy0, pal, SS=1))[..., 3] > 24
+            ys, xs = np.where(a)
+            L = min(L, xs.min() - cx0); R = max(R, xs.max() - cx0); T = min(T, ys.min() - cy0); B = max(B, ys.max() - cy0)
+            if r == 2 and c == 0: side = xs.max() - xs.min()
+    k = min(target_w / max(side, 1), 41 / max(-L, R), 113 / max(B - T, 1))
+    return s0 * k, 118 - B * k
+
+ROLL_SIDE = -1.0
+def build_dead(n):
+    """4-frame death strip (88x124 cells, facing W like the walk sheet's side row): the animal sags,
+    tips onto its flank and lies still. Same model, scale and baseline as the walk sheet."""
+    pal = PAL[n]; small = n in SMALL
+    frames = [(small_parts if small else quad_parts)(n, f) for f in range(4)]
+    scale, cy = fit(n, frames, pal)
+    base = frames[0]
+    strip = Image.new("RGBA", (CW * 4, CH))
+    for i, th in enumerate((0.0, .55, 1.0, 1.3)):
+        parts = roll_parts(base, th, ROLL_SIDE)
+        cell = render(parts, DIRS[2], scale, CW / 2, cy, pal)
+        if i == 3:   # settle: a touch darker, it's down for good
+            a = np.array(cell).astype(float); a[..., :3] *= .9; cell = Image.fromarray(a.astype(np.uint8), "RGBA")
+        strip.alpha_composite(cell, (i * CW, 0))
+    return strip
+
 def build(n):
     pal = PAL[n]; small = n in SMALL
     frames = [(small_parts if small else quad_parts)(n, f) for f in range(4)]
@@ -296,6 +353,9 @@ def build(n):
     return sheet
 
 if __name__ == "__main__":
-    out = sys.argv[1]; names = sys.argv[2:] or ["rabbit", "squirrel", "coyote", "wolf", "moose", "deer"]
+    out = sys.argv[1]; args = sys.argv[2:]
+    dead_only = "--dead" in args; args = [a for a in args if a != "--dead"]
+    names = args or ["rabbit", "squirrel", "coyote", "wolf", "moose", "deer"]
     for n in names:
-        build(n).save(f"{out}/{n}.png"); print("rendered", n)
+        if not dead_only: build(n).save(f"{out}/{n}.png"); print("rendered", n)
+        build_dead(n).save(f"{out}/{n}-dead.png"); print("rendered", n + "-dead")
