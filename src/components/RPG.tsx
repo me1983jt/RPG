@@ -11,6 +11,7 @@ import {
   Minus,
   Plus,
   ScrollText,
+  DoorOpen,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { useHud } from "@/game/store";
@@ -165,6 +166,17 @@ export function RPG() {
 
       {playing ? (
         <div className="pointer-events-none absolute inset-0 z-30 flex flex-col p-2 short:p-1.5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
+          {hud.inside && (hud.phase === "play" || hud.phase === "dialogue") ? (
+            <button
+              type="button"
+              aria-label="Leave building"
+              className="pointer-events-auto absolute right-2 top-1/2 z-40 flex min-h-14 min-w-24 -translate-y-1/2 items-center justify-center gap-2 plank border-2 border-primary bg-surface/95 px-4 py-3 text-base font-semibold text-fg shadow-lg active:bg-surface-2 short:right-1.5"
+              onClick={() => apiRef.current?.leave()}
+            >
+              <DoorOpen className="size-5 text-primary" aria-hidden />
+              Leave
+            </button>
+          ) : null}
           <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
@@ -509,7 +521,7 @@ export function RPG() {
             ) : null}
             </div>
 
-            <div className="pointer-events-auto z-40 flex flex-wrap items-center gap-1">
+            <div className="pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto">
               <span className="px-1 text-[10px] uppercase tracking-wide text-muted">Aim</span>
               {(["head", "chest", "arm", "leg"] as const).map((part) => (
                 <button
@@ -528,9 +540,9 @@ export function RPG() {
               ) : null}
             </div>
 
-            <div className="pointer-events-auto z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1">
+            <div className="pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1">
               <div className="flex min-w-0 flex-1 items-stretch gap-2">
-                <section className="min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
+                <section className="pointer-events-auto min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
@@ -555,7 +567,7 @@ export function RPG() {
                     {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
                   </p>
                 </section>
-                <div className="flex shrink-0 flex-col gap-2 short:flex-row short:gap-1">
+                <div className="pointer-events-auto flex shrink-0 flex-col gap-2 short:flex-row short:gap-1">
                   <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}>
                     <Minus className="size-5 short:size-4" aria-hidden />
                   </ActionButton>
@@ -564,7 +576,7 @@ export function RPG() {
                   </ActionButton>
                 </div>
               </div>
-              <div className="grid grid-cols-6 gap-1 short:w-72 short:shrink-0">
+              <div className="pointer-events-auto grid grid-cols-6 gap-1 short:w-72 short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
                   <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />
@@ -830,6 +842,11 @@ export function RPG() {
           <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.tap("resume")}>
             Resume
           </button>
+          {hud.inside ? (
+            <button type="button" className="plank border border-primary px-4 py-3 font-semibold" onClick={() => apiRef.current?.leave()}>
+              Leave building
+            </button>
+          ) : null}
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("save")}>
             Save
           </button>

@@ -89,6 +89,8 @@ export interface GameApi {
   takeLoot: (key: string) => void;
   /** Android back button: close the open panel, else open/close the pause menu. False on the main menu. */
   back: () => boolean;
+  /** Step out of the building you are in, from anywhere in the room (the always-visible Leave button). */
+  leave: () => void;
 }
 
 assertIso();
@@ -303,6 +305,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let packOpen = false;
 	let statsOpen = false;
 	let inside = null;
+	/** The building just stepped out of: taps on it don't pull you straight back in for a moment. */
+	let justLeft = null;
 	let opening = null;
 	const OPEN_TIME = .34;
 	let stamHud = 0;
@@ -1035,8 +1039,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		} : null;
 		data.partyReturn = partyReturn;
 		if (inside) {
-			data.x = inside.backX;
-			data.y = inside.backY;
+			const out = clearOutside(inside.backX, inside.backY);
+			data.x = out.x;
+			data.y = out.y;
 		}
 		if (!(player.hp > 0)) {
 			const spot = campSpot();
@@ -2279,7 +2284,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		inside = {
 			id: prop.id,
 			rx: 160,
-			ry: 170,
+			ry: 118,
 			backX: door.x,
 			backY: door.y
 		};
@@ -2292,12 +2297,54 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog(prop.kind === "farmhouse" ? "You step into the farmhouse. The wood stove is going." : prop.kind === "barn" ? "The barn smells of hay and split wood." : prop.kind === "hatch" ? "Under the birch log, a hatch. The room below is dry." : prop.built || prop.kind === "shelter" || prop.kind === "workshop" ? "You step into your own place." : "You step inside.");
 		saveGame();
 	}
+	/** The doorstep, or if something now stands on it (a fence, a cot, a built prop), the nearest
+	 * open ground from which the hero can actually walk away. */
+	function clearOutside(x, y) {
+		if (!world) return { x, y };
+		const t = tileOf(x, y);
+		const free = (tx, ty) => tx >= 0 && ty >= 0 && tx < 156 && ty < 156 && !cellBlocked(world, tx, ty);
+		// open enough to walk away from: at least 60 connected open cells, not a pocket between props
+		const roomy = (tx, ty) => {
+			if (!free(tx, ty)) return false;
+			const seen = new Set([ty * 156 + tx]);
+			const q = [[tx, ty]];
+			while (q.length && seen.size < 60) {
+				const [cx, cy] = q.shift();
+				for (const [ax, ay] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+					const k = ay * 156 + ax;
+					if (seen.has(k) || !free(ax, ay)) continue;
+					seen.add(k);
+					q.push([ax, ay]);
+				}
+			}
+			return seen.size >= 60;
+		};
+		// The door point sits 4 px off the wall, inside the hero's 14 px body radius, so standing there
+		// every step collides with the house and the hero cannot move at all. Step out onto the yard.
+		const standable = (px, py) => !pointBlocked(world, px, py, RADIUS + 2);
+		for (const k of [18, 30, 44, 60]) {
+			const ty2 = tileOf(x, y + k);
+			if (standable(x, y + k) && roomy(ty2.tx, ty2.ty)) return { x, y: y + k };
+		}
+		for (let r = 1; r <= 6; r++) {
+			for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+				if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+				const px = (t.tx + dx + .5) * 64, py = (t.ty + dy + .5) * 64;
+				if (standable(px, py) && roomy(t.tx + dx, t.ty + dy)) return { x: px, y: py };
+			}
+		}
+		return { x, y: y + 18 };
+	}
 	function leaveHouse() {
 		if (!player || !inside) return;
-		player.x = inside.backX;
-		player.y = inside.backY;
+		const out = clearOutside(inside.backX, inside.backY);
+		player.x = out.x;
+		player.y = out.y;
+		justLeft = { id: inside.id, x: out.x, y: out.y, t: performance.now() };
 		inside = null;
 		intent = null;
+		opening = null;
+		holdWalk = false;
 		pushLog("You step back outside.");
 		sync(true);
 	}
@@ -2403,11 +2450,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function breakRock(prop) {
 		startLabor(prop, "mine");
 	}
+	/** Rooms are a 320x240 stage. On short phone screens it shrinks and sits high, so the door stays
+	 * clear of the bottom HUD (on a landscape phone the old centred room put the door under it). */
+	function roomScale() {
+		const s = viewH < 560 ? Math.max(.62, Math.min(1, (viewH - 170) / 240)) : 1;
+		return Math.min(s, (viewW - 16) / 320);
+	}
+	/** Room origin in room space (screen = room point * roomScale()). */
 	function roomOrigin() {
+		const s = roomScale();
+		const top = viewH < 560 ? Math.max(56, (viewH - 110 - 240 * s) / 2 + 20) : viewH / 2 - 120;
 		return {
-			x: viewW / 2 - 160,
-			y: viewH / 2 - 120
+			x: (viewW / 2 - 160 * s) / s,
+			y: top / s
 		};
+	}
+	function applyRoomTransform(dpr) {
+		const s = roomScale();
+		ctx.setTransform(dpr * s, 0, 0, dpr * s, 0, 0);
 	}
 	function stepInside(dt) {
 		if (!player || !inside || phase !== "play") return;
@@ -2431,6 +2491,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (moving) player.stamina = Math.max(0, player.stamina - 12 * dt);
 		else player.stamina = Math.min(player.maxStamina, player.stamina + staminaBack() * dt);
 		player.frame = moving ? Math.floor(player.anim / 22) % 4 : 1;
+		// walking onto the door mat takes you out, the same as tapping the door
+		if (moving && inside.ry >= 204 && Math.abs(inside.rx - 160) < 40) {
+			leaveHouse();
+			return;
+		}
 		stamHud += dt;
 		if (stamHud > .35) {
 			stamHud = 0;
@@ -3037,6 +3102,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function slide(body, dx, dy) {
 		if (!world) return false;
+		// A body already overlapping a wall (stepped out of a door, loaded at an old spot) may always move
+		// onto open ground; otherwise every step collides and it is frozen in place.
+		if (pointBlocked(world, body.x, body.y, RADIUS) && !pointBlocked(world, body.x + dx, body.y + dy, 0)) {
+			body.x += dx;
+			body.y += dy;
+			return true;
+		}
 		if (!pointBlocked(world, body.x + dx, body.y + dy, RADIUS)) {
 			body.x += dx;
 			body.y += dy;
@@ -3307,7 +3379,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			rotPiles();
 		}
 		if (inside) {
-			stepInside(dt);
+			// Talk / E indoors: by the door it takes you out, elsewhere it says where the way out is
+			if (edges.interact) {
+				if (inside.ry > 160 && Math.abs(inside.rx - 160) < 70) leaveHouse();
+				else pushLog("The door is at the bottom of the room. Tap it, or tap Leave.");
+			}
+			if (inside) stepInside(dt);
 			prevHeld = currentHeld();
 			clearEdges();
 			return;
@@ -4284,7 +4361,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ctx.fillStyle = "#efe6d4";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
-		ctx.fillText("Door", o.x + 146, o.y + 148);
+		ctx.textAlign = "center";
+		ctx.fillText("Door \u2193", o.x + 160, o.y + 124);
+		ctx.textAlign = "left";
 	}
 	function paintProp(name, x, y, h) {
 		const img = images.get(name);
@@ -4298,6 +4377,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.fillStyle = "#1a140f";
 		ctx.fillRect(0, 0, viewW, viewH);
+		applyRoomTransform(dpr);
 		const o = roomOrigin();
 		ctx.fillStyle = "#5a4030";
 		ctx.fillRect(o.x, o.y, 320, 240);
@@ -4331,6 +4411,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.fillStyle = "#14110e";
 		ctx.fillRect(0, 0, viewW, viewH);
+		applyRoomTransform(dpr);
 		const o = roomOrigin();
 		ctx.fillStyle = "#3a3024";
 		ctx.fillRect(o.x, o.y, 320, 240);
@@ -4356,6 +4437,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.fillStyle = "#0e120f";
 		ctx.fillRect(0, 0, viewW, viewH);
+		applyRoomTransform(dpr);
 		const o = roomOrigin();
 		const art = images.get("bunker-room");
 		if (art) {
@@ -4413,6 +4495,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.fillStyle = "#14120e";
 		ctx.fillRect(0, 0, viewW, viewH);
+		applyRoomTransform(dpr);
 		const o = roomOrigin();
 		ctx.fillStyle = "#3c3428";
 		ctx.fillRect(o.x, o.y, 320, 240);
@@ -4668,7 +4751,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const kind = world.props.find((p) => p.id === inside.id)?.kind;
 				ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 				const o = roomOrigin();
-				const fx = kind === "farmhouse" ? o.x + 58 : viewW / 2, fy = kind === "farmhouse" ? o.y + 110 : viewH / 2;
+				const rs = roomScale();
+				const fx = kind === "farmhouse" ? (o.x + 58) * rs : viewW / 2, fy = kind === "farmhouse" ? (o.y + 110) * rs : viewH / 2;
 				const g = ctx.createRadialGradient(fx, fy, 20, fx, fy, Math.max(viewW, viewH) * .7);
 				g.addColorStop(0, `rgba(6, 10, 24, ${kind === "farmhouse" ? 0 : dark * .5})`);
 				g.addColorStop(1, `rgba(6, 10, 24, ${dark})`);
@@ -5388,7 +5472,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			};
 		} else if (picked.kind === "house") {
 			const p = world.props.find((pp) => pp.id === picked.id);
-			if (p) startEnter(p);
+			// On a phone the building fills the screen around its own door, so right after stepping out
+			// nearly every tap lands on it. Until the hero has walked off the step (or 8 s pass), a tap on
+			// that building walks instead of re-entering.
+			const fresh = justLeft && p && justLeft.id === p.id && performance.now() - justLeft.t < 8e3 && Math.hypot(player.x - justLeft.x, player.y - justLeft.y) < 110;
+			if (fresh) intent = {
+				kind: "walk",
+				x,
+				y,
+				path: pathTo(world, player.x, player.y, x, y) ?? []
+			};
+			else if (p) startEnter(p);
 		} else if (picked.kind === "bike") {
 			const p = world.props.find((pp) => pp.id === picked.id);
 			if (p) startMount(p);
@@ -5601,8 +5695,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (inside) {
 				const room = inside;
 				const o = roomOrigin();
-				const lx = x - o.x;
-				const ly = y - o.y;
+				const rs = roomScale();
+				const lx = x / rs - o.x;
+				const ly = y / rs - o.y;
 				if (type === "down") {
 					pointerDown = true;
 					downX = x;
@@ -5614,12 +5709,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				else if (type === "up") {
 					pointerDown = false;
 					const prop = world?.props.find((p) => p.id === room.id);
-					const hit = (x0, y0, x1, y1) => moved < 14 && lx > x0 && lx < x1 && ly > y0 && ly < y1;
+					const hit = (x0, y0, x1, y1) => moved < 24 && lx > x0 && lx < x1 && ly > y0 && ly < y1;
 					if (prop?.kind === "farmhouse") {
 						if (hit(16, 40, 110, 168)) warmStove();
 						else if (hit(150, 30, 230, 100)) takeFromKitchen(91001, "cider", 1, "The tin cups are empty.", "Hot cider. It tastes like the orchard.");
 						else if (hit(230, 36, 300, 108)) takeFromKitchen(91002, "donut", 2, "The plate is down to crumbs.", "Two cider donuts, still a little warm.");
-						else if (hit(130, 190, 190, 240)) leaveHouse();
+						else if (hit(108, 176, 212, 252)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5638,7 +5733,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 								sync(true);
 							}
 						} else if (hit(170, 36, 312, 176)) openBench();
-						else if (hit(130, 190, 190, 240)) leaveHouse();
+						else if (hit(108, 176, 212, 252)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5652,7 +5747,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						else if (hit(210, 124, 306, 170)) takeFromKitchen(93013, "shells", 8, "The ammo crate is empty.", "Eight shells from a crate that was still sealed.");
 						else if (hit(120, 148, 186, 188)) drinkBarrel();
 						else if (hit(130, 36, 200, 92)) pushLog("The radio hisses. A French station, a long way off, then nothing.");
-						else if (hit(130, 190, 190, 240)) leaveHouse();
+						else if (hit(108, 176, 212, 252)) leaveHouse();
 						else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 							kind: "walk",
 							x: lx,
@@ -5660,7 +5755,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							path: []
 						};
 					} else if (moved < 14 && lx > 132 && lx < 188 && ly > 44 && ly < 96) openChest();
-					else if (moved < 14 && lx > 130 && lx < 190 && ly > 190 && ly < 240) leaveHouse();
+					else if (moved < 24 && lx > 108 && lx < 212 && ly > 176 && ly < 252) leaveHouse();
 					else if (lx > 16 && lx < 304 && ly > 16 && ly < 224) intent = {
 						kind: "walk",
 						x: lx,
@@ -5756,6 +5851,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		recenter() {
 			freeCam = false;
+		},
+		leave() {
+			unlockAudio();
+			if (!inside) return;
+			if (phase === "dialogue") applyChoice("close");
+			if (phase === "pause") phase = "play";
+			packOpen = false;
+			statsOpen = false;
+			buildOpen = false;
+			lootId = -1;
+			leaveHouse();
 		},
 		back() {
 			if (phase === "menu") return false;
@@ -6025,6 +6131,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		choose: (id) => applyChoice(id),
 		leave: () => leaveHouse(),
+		insideInfo: () => inside ? { id: inside.id, kind: world?.props.find((p) => p.id === inside.id)?.kind ?? "", rx: inside.rx, ry: inside.ry, origin: roomOrigin(), scale: roomScale(), phase } : null,
+		exitCheck: () => world ? world.props.filter((p) => canWalkIn(p)).map((p) => { const d = doorPoint(p); const t = tileOf(d.x, d.y); const o = clearOutside(d.x, d.y); const ot = tileOf(o.x, o.y); const seen = new Set([ot.ty * 156 + ot.tx]); const q = [[ot.tx, ot.ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const k = ay * 156 + ax; if (ax < 0 || ay < 0 || ax >= 156 || ay >= 156 || seen.has(k) || cellBlocked(world, ax, ay)) continue; seen.add(k); q.push([ax, ay]); } } return { kind: p.kind, id: p.id, blocked: cellBlocked(world, t.tx, t.ty), moved: Math.round(Math.hypot(o.x - d.x, o.y - d.y)), reach: seen.size }; }) : [],
+		doorOf: (kind) => { const p = world?.props.find((q) => q.kind === kind); return p ? doorPoint(p) : null; },
+		screenOf: (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); },
+		openSpotNear: (r) => { if (!world || !player) return null; const t = tileOf(player.x, player.y); for (let k = 0; k < 200; k++) { const a = k * 2.4, rr = r + (k % 3); const tx = Math.round(t.tx + Math.cos(a) * rr), ty = Math.round(t.ty + Math.sin(a) * rr); if (tx < 0 || ty < 0 || tx >= 156 || ty >= 156 || cellBlocked(world, tx, ty)) continue; if (world.props.some((p) => { const sp = PROP_SPEC[p.kind]; return tx >= p.tx - 1 && tx < p.tx + sp.w + 1 && ty >= p.ty - 3 && ty < p.ty + sp.h + 1; })) continue; const x = (tx + .5) * 64, y = (ty + .5) * 64; const sc = worldToScreen(x, y, camX, camY), zp = zoomPoint(sc.sx, sc.sy); if (zp.sx < 80 || zp.sx > viewW - 120 || zp.sy < 90 || zp.sy > viewH - 140) continue; if (pathTo(world, player.x, player.y, x, y)) return { x, y, sx: zp.sx, sy: zp.sy }; } return null; },
+		dbg: () => ({ phase, intent: intent ? { kind: intent.kind, x: intent.x, y: intent.y, path: intent.path?.length } : null, opening: !!opening, travelLock, pointerDown, inside: !!inside, hold: holdWalk }),
+		forceEnter: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p || !player) return false; const d = doorPoint(p); player.x = d.x; player.y = d.y; finishEnter(p); sync(true); return true; },
+		walkTo: (x, y) => { if (!world || !player) return false; const path = pathTo(world, player.x, player.y, x, y); intent = { kind: "walk", x, y, path: path ?? [] }; return !!path; },
+		blockedHere: () => world && player ? { r: pointBlocked(world, player.x, player.y, RADIUS), c: pointBlocked(world, player.x, player.y, 0), x: player.x, y: player.y, w: pointBlocked(world, player.x - 20, player.y, RADIUS), e: pointBlocked(world, player.x + 20, player.y, RADIUS), n: pointBlocked(world, player.x, player.y - 20, RADIUS), s: pointBlocked(world, player.x, player.y + 20, RADIUS) } : null,
+		walkInKinds: () => world ? [...new Set(world.props.filter((p) => canWalkIn(p)).map((p) => p.kind))] : [],
 		die: () => {
 			if (!player) return;
 			player.hp = 0;
