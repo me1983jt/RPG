@@ -14,6 +14,7 @@ import {
   DoorOpen,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
+import { Inventory } from "@/components/Inventory";
 import { useHud } from "@/game/store";
 import { RECIPES } from "@/game/types";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
@@ -266,80 +267,14 @@ export function RPG() {
               </section>
             ) : null}
 
-            {hud.packOpen ? (
-              <section className="pointer-events-auto mx-auto w-full max-w-3xl plank border border-border bg-surface p-3 short:p-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-display text-xl short:text-lg">Pack</p>
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      className={`plank border px-3 py-2 text-xs font-semibold ${packTab === "items" ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`}
-                      onClick={() => setPackTab("items")}
-                    >
-                      Items
-                    </button>
-                    <button
-                      type="button"
-                      className={`plank border px-3 py-2 text-xs font-semibold ${packTab === "craft" ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`}
-                      onClick={() => setPackTab("craft")}
-                    >
-                      Craft
-                    </button>
-                    <button
-                      type="button"
-                      className={`plank border px-3 py-2 text-xs font-semibold ${hud.turnBased ? "border-primary bg-surface-2 text-primary" : "border-border bg-bg"}`}
-                      onClick={() => apiRef.current?.setTurnBased(!hud.turnBased)}
-                    >
-                      {hud.turnBased ? "Turn-based" : "Real time"}
-                    </button>
-                  </div>
-                </div>
-                {packTab === "items" ? (
-                  <div className="mt-2 flex gap-2">
-                    <div className="flex w-32 shrink-0 flex-col gap-1 short:w-28">
-                      {(
-                        [
-                          ["Head", hud.wornHead, hud.headName],
-                          ["Chest", hud.wornChest, hud.coatName],
-                          ["Legs", hud.wornLegs, hud.legsName],
-                          ["Hands", hud.wornHands, hud.handsName],
-                          ["Weapon", hud.wornWeapon, hud.weaponName],
-                        ] as const
-                      ).map(([label, id, name]) => (
-                        <button
-                          key={label}
-                          type="button"
-                          disabled={!id}
-                          className="plank border border-border bg-bg px-2 py-1.5 text-left disabled:opacity-70"
-                          onClick={() => id && apiRef.current?.clickPack(id)}
-                        >
-                          <span className="block text-[10px] uppercase tracking-wide text-muted">{label}</span>
-                          <span className="block truncate text-xs font-semibold">{id ? name : "Empty"}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="grid min-w-0 flex-1 grid-cols-4 gap-1">
-                      {Array.from({ length: 16 }, (_, i) => hud.pack[i] ?? null).map((slot, i) =>
-                        slot ? (
-                          <button
-                            key={slot.id}
-                            type="button"
-                            className={`flex min-h-14 flex-col justify-between plank border px-1.5 py-1 text-left short:min-h-12 ${slot.equipped ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                            onClick={() => apiRef.current?.clickPack(slot.id)}
-                          >
-                            <span className="text-xs font-semibold leading-tight">{slot.name}</span>
-                            <span className={`text-[10px] capitalize ${slot.quality === "rare" ? "text-[#e6c56a]" : slot.quality === "good" ? "text-primary" : "text-muted"}`}>
-                              {slot.qty > 1 ? `×${slot.qty}` : slot.equipped ? "worn" : slot.quality}
-                            </span>
-                          </button>
-                        ) : (
-                          <div key={`empty-${i}`} className="min-h-14 plank border border-border bg-bg/70 short:min-h-12" />
-                        ),
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <ul className="mt-2 space-y-1">
+            {hud.packOpen && hud.inv ? (
+              <Inventory
+                inv={hud.inv}
+                api={apiRef.current}
+                turnBased={hud.turnBased}
+                onClose={() => apiRef.current?.togglePack()}
+                craft={
+                  <ul className="space-y-1">
                     {CRAFT.map((recipe) => {
                       const stock = (id: string) => hud.pack.find((s) => s.id === id)?.qty ?? 0;
                       const afford = recipe.need.every((n) => stock(n.id) >= n.qty) && hud.scrap >= recipe.iron && hud.wood >= recipe.wood;
@@ -361,11 +296,8 @@ export function RPG() {
                       );
                     })}
                   </ul>
-                )}
-                {packTab === "items" ? (
-                  <p className="mt-2 text-xs text-muted">Tap a piece to wear it. Tap the doll to take it off. Weapons stay sheathed until you swing.</p>
-                ) : null}
-              </section>
+                }
+              />
             ) : null}
 
             {journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (

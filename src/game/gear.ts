@@ -3,7 +3,7 @@ export type TraitId = "eye" | "hide" | "step" | "camp";
 export type LookId = "wool" | "spruce" | "linen" | "soot";
 export type GearKind = "weapon" | "coat" | "supply";
 export type Quality = "poor" | "standard" | "good" | "rare";
-export type ArmorSlot = "head" | "chest" | "legs" | "hands";
+export type ArmorSlot = "head" | "chest" | "legs" | "hands" | "feet" | "back";
 export type GearFamily = "carbine" | "revolver" | "scatter" | "axe" | "pickaxe" | "pry" | "knife" | "coat" | "bandage" | "lockpick" | "supply" | "trade";
 
 export interface GearDef {
@@ -88,6 +88,9 @@ export const GEAR: Record<string, GearDef> = {
   chaps: { id: "chaps", name: "Leather chaps", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "legs", note: "Hide over the legs." },
   gloves: { id: "gloves", name: "Wool gloves", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 1, heal: 0, slot: "hands", note: "Knit. A poor stop for a bite." },
   bracers: { id: "bracers", name: "Leather bracers", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "hands", note: "Cuffs that take a cut." },
+  boots: { id: "boots", name: "Work boots", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 1, heal: 0, slot: "feet", note: "Cracked leather, dry inside." },
+  "boots-std": { id: "boots-std", name: "Lumber boots", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "feet", note: "Steel shank, felt liners. Good in snow." },
+  packframe: { id: "packframe", name: "Pack frame", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 0, heal: 0, slot: "back", note: "Ash frame and straps. Two more rows in the pack while you wear it." },
   trauma: { id: "trauma", name: "Trauma kit", kind: "supply", family: "bandage", quality: "rare", atk: 0, def: 0, heal: 52, note: "Sealed. Use it from the pack. Not road medicine." },
   kit: { id: "kit", name: "Healing kit", kind: "supply", family: "bandage", quality: "standard", atk: 0, def: 0, heal: 30, note: "Needle, cloth, and a boiled wrap. Use it from the pack." },
   jerky: { id: "jerky", name: "Smoked jerky", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 16, note: "Dry meat. Use it from the pack." },
@@ -111,6 +114,7 @@ export const ROLES: RoleKit[] = [
     coat: "patch",
     bag: [
       { id: "carbine", qty: 1 },
+      { id: "boots", qty: 1 },
       { id: "patch", qty: 1 },
       { id: "woolcap", qty: 1 },
       { id: "trousers", qty: 1 },
@@ -129,6 +133,7 @@ export const ROLES: RoleKit[] = [
     coat: "linen",
     bag: [
       { id: "knife", qty: 1 },
+      { id: "boots", qty: 1 },
       { id: "linen", qty: 1 },
       { id: "gloves", qty: 1 },
       { id: "bandage", qty: 3 },
@@ -146,6 +151,7 @@ export const ROLES: RoleKit[] = [
     coat: "shirt",
     bag: [
       { id: "skin", qty: 1 },
+      { id: "boots", qty: 1 },
       { id: "shirt", qty: 1 },
       { id: "soft", qty: 1 },
       { id: "wire", qty: 1 },
@@ -163,6 +169,7 @@ export const ROLES: RoleKit[] = [
     coat: "wool",
     bag: [
       { id: "hatchet", qty: 1 },
+      { id: "boots", qty: 1 },
       { id: "wool", qty: 1 },
       { id: "woolcap", qty: 1 },
       { id: "gloves", qty: 1 },
@@ -234,7 +241,7 @@ export function traitOf(id: string | undefined): { id: TraitId; title: string; b
   return TRAITS.find((t) => t.id === id) ?? null;
 }
 
-const DROP_POOL = ["hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate"];
+const DROP_POOL = ["hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate", "boots", "boots-std", "packframe"];
 
 export function rollDrop(elite: boolean, luck = 1): string | null {
   const lift = Math.max(0, luck - 1) * 0.04;

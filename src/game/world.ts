@@ -466,13 +466,13 @@ function placeHomestead(world: World): void {
 
   plantYard(world, "farmhouse", 31, 13);
   plantYard(world, "barn", 40, 13);
-  plantYard(world, "cot", 33, 16);
+  plantYard(world, "cot", 34, 14);
   plantYard(world, "press", 37, 16);
   plantYard(world, "crates", 38, 17, { amount: 4 });
   plantYard(world, "crates", 36, 17, { amount: 4 });
   plantYard(world, "shack", 44, 15);
   plantYard(world, "post-loft", 42, 14);
-  plantYard(world, "post-porch", 32, 15);
+  plantYard(world, "post-porch", 34, 14);
   plantYard(world, "post-roof", 46, 16);
   plantYard(world, "tractor", 36, 15);
   plantYard(world, "scarecrow", 33, 20);
@@ -542,7 +542,7 @@ function finishFarm(world: World): void {
   };
   restore("farmhouse", at(31, 13));
   restore("barn", at(40, 13));
-  restore("cot", at(33, 16));
+  restore("cot", at(34, 14));
   restore("press", at(37, 16));
   // woodpile by the barn for "First Snow on Cambridge Road"
   restore("logs", at(42, 16), { resource: "wood", amount: 4 });

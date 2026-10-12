@@ -24,6 +24,7 @@ import {
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, hasSave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud } from "@/game/store";
+import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import {
   HEX_CX,
@@ -82,6 +83,11 @@ export interface GameApi {
   takePerk: (id: PerkId) => void;
   dismissParty: () => void;
   clickPack: (id: string) => void;
+  /** Pack screen: wear an item in a slot, take one off (optionally onto a grid cell), move a stack, use one. */
+  invEquip: (id: string, slot: string) => boolean;
+  invUnequip: (slot: string, x?: number, y?: number) => boolean;
+  invMove: (id: string, x: number, y: number) => boolean;
+  invUse: (id: string) => void;
   craft: (id: string) => void;
   setAim: (part: AimPart) => void;
   setTurnBased: (on: boolean) => void;
@@ -554,6 +560,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			def: p?.def ?? 0,
 			packOpen,
 			pack: p ? packView(p) : [],
+			inv: p && packOpen ? invView(p) : null,
 			weaponName: p ? GEAR[p.weaponId]?.name ?? "Empty hands" : "",
 			coatName: p ? GEAR[p.coatId]?.name ?? "Bare chest" : "",
 			headName: p ? GEAR[p.headId]?.name ?? "Bare head" : "",
@@ -621,6 +628,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			headId: "",
 			legsId: "",
 			handsId: "",
+			feetId: "",
+			offId: "",
+			backId: "",
+			gridPos: {},
 			look: "wool",
 			strength: 1,
 			vigor: 1,
@@ -656,10 +667,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		p.headId = "";
 		p.legsId = "";
 		p.handsId = "";
+		p.feetId = "";
+		p.offId = "";
+		p.backId = "";
+		p.gridPos = {};
 		for (const stack of p.bag) {
 			const piece = GEAR[stack.id];
 			const slot = armorSlot(piece);
-			if (slot === "head") p.headId = stack.id;
+			if (slot === "feet") p.feetId = stack.id;
+			else if (slot === "back") p.backId = stack.id;
+			else if (slot === "head") p.headId = stack.id;
 			else if (slot === "chest") p.coatId = stack.id;
 			else if (slot === "legs") p.legsId = stack.id;
 			else if (slot === "hands") p.handsId = stack.id;
@@ -679,11 +696,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function giveItem(id, qty = 1) {
 		if (!player || !GEAR[id] || qty < 1) return false;
 		const stack = player.bag.find((s) => s.id === id);
-		if (stack) {
+		if (stack && (stack.qty - wornCount(player, id) > 0 || canFit(player, id))) {
 			stack.qty += qty;
 			return true;
 		}
-		if (player.bag.filter((s) => s.qty > 0).length >= 16) {
+		if (stack) {
+			floater(player.x, player.y - 8, "Pack full");
+			return false;
+		}
+		if (!canFit(player, id)) {
 			floater(player.x, player.y - 8, "Pack full");
 			return false;
 		}
@@ -699,10 +720,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			p.coatId,
 			p.headId,
 			p.legsId,
-			p.handsId
+			p.handsId,
+			p.feetId,
+			p.backId
 		];
 		const kit = roleKit(p.role);
-		p.atk = p.baseAtk + Math.max(0, p.level - 1) + (w?.atk ?? 0) + Math.max(0, p.strength - 1);
+		// an off-hand knife or revolver adds a third of its bite
+		const off = GEAR[p.offId];
+		p.atk = p.baseAtk + Math.max(0, p.level - 1) + (w?.atk ?? 0) + Math.floor((off?.atk ?? 0) / 3) + Math.max(0, p.strength - 1);
 		p.def = worn.reduce((n, id) => n + (GEAR[id]?.def ?? 0), 0);
 		if (p.perks?.includes("wool")) p.def += 2;
 		apMax = p.perks?.includes("quick") ? 10 : 8;
@@ -713,6 +738,126 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		p.hp = Math.min(p.hp, p.maxHp);
 		p.maxStamina = 70 + p.endurance * 16;
 		p.stamina = Math.min(p.maxStamina, p.stamina || p.maxStamina);
+	}
+	/** Icon file for an item: public/game/items/<id>.png, else the generic one for its shape. */
+	function itemIcon(g) {
+		return `/game/items/${ITEM_ICON[g.id] ?? g.id}.png`;
+	}
+	function invItem(p, id, x = -1, y = -1) {
+		const g = GEAR[id];
+		if (!g) return null;
+		const stack = p.bag.find((s) => s.id === id);
+		const size = itemSize(id);
+		const fits = EQUIP_SLOTS.filter((slot) => slotAccepts(slot, id));
+		return {
+			id,
+			name: g.name,
+			qty: stack ? Math.max(1, stack.qty - (x >= 0 ? wornCount(p, id) : stack.qty - 1)) : 1,
+			quality: g.quality,
+			note: g.note,
+			kind: g.kind,
+			family: g.family,
+			atk: g.atk,
+			def: g.def,
+			heal: g.heal,
+			worth: g.worth ?? 0,
+			w: size.w,
+			h: size.h,
+			x,
+			y,
+			fits,
+			icon: itemIcon(g)
+		};
+	}
+	let figureKey = "";
+	let figureUrl = "";
+	/** The hero's own front walk frame, dyed like the in-world sprite, scaled up for the pack screen. */
+	function heroFigure() {
+		if (!player) return "";
+		const family = GEAR[player.weaponId]?.family;
+		const name = family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero";
+		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}`;
+		if (key === figureKey && figureUrl) return figureUrl;
+		const img = images.get(name);
+		if (!img || !img.width) return "";
+		const src = heroSource(name, img);
+		const cw = img.width / 4, ch = img.height / 8;
+		const cv = document.createElement("canvas");
+		cv.width = cw * 2;
+		cv.height = ch * 2;
+		const g = cv.getContext("2d");
+		if (!g) return "";
+		g.imageSmoothingEnabled = false;
+		g.drawImage(src, 0, 0, cw, ch, 0, 0, cw * 2, ch * 2);
+		figureKey = key;
+		figureUrl = cv.toDataURL("image/png");
+		return figureUrl;
+	}
+	function invView(p) {
+		const lay = layoutGrid(p);
+		const slots = {};
+		const overlays = [];
+		for (const slot of EQUIP_SLOTS) {
+			const id = p[SLOT_FIELD[slot]];
+			slots[slot] = id ? invItem(p, id) : null;
+			if (id && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png`);
+			if (id) wantOverlay(id);
+		}
+		return {
+			cols: GRID_COLS,
+			rows: lay.rows,
+			over: lay.over,
+			items: lay.items.map((it) => invItem(p, it.id, it.x, it.y)).filter(Boolean),
+			slots,
+			figure: heroFigure(),
+			overlays,
+			atk: p.atk,
+			def: p.def
+		};
+	}
+	/** Armor overlay art, dropped in later by file name: public/game/overlay/<item id>.png (a sheet
+	 * laid out exactly like hero.png: 4 walk frames x 8 facings) is drawn over the in-world hero, and
+	 * <item id>-portrait.png over the pack-screen figure. Missing files are simply skipped. */
+	const overlayState = new Map();
+	let overlayList = null;
+	fetch("/game/overlay/index.json").then((r) => r.ok ? r.json() : []).then((list) => {
+		overlayList = new Set(Array.isArray(list) ? list : []);
+	}).catch(() => {
+		overlayList = new Set();
+	});
+	function wantOverlay(id) {
+		if (!overlayList) return;
+		for (const name of [id, `${id}-portrait`]) {
+			if (overlayState.has(name)) continue;
+			if (!overlayList.has(name)) {
+				overlayState.set(name, "none");
+				continue;
+			}
+			overlayState.set(name, "loading");
+			const img = new Image();
+			img.onload = () => {
+				overlayState.set(name, "ok");
+				if (!name.endsWith("-portrait")) {
+					const soft = img;
+					const hero = images.get("hero");
+					soft.foot = hero?.foot;
+					soft.feet = hero?.feet;
+					images.set(`overlay-${id}`, soft);
+				}
+				sync(true);
+			};
+			img.onerror = () => overlayState.set(name, "none");
+			img.src = `/game/overlay/${name}.png`;
+		}
+	}
+	function paintOverlays(frame, dir, lunge) {
+		if (!player) return;
+		for (const slot of EQUIP_SLOTS) {
+			const id = player[SLOT_FIELD[slot]];
+			if (!id) continue;
+			wantOverlay(id);
+			if (images.get(`overlay-${id}`)) blit(`overlay-${id}`, player.x, player.y, HERO_H, true, frame, dir, camX, camY, lunge);
+		}
 	}
 	function packView(p) {
 		return p.bag.filter((s) => s.qty > 0 && GEAR[s.id]).map((s) => {
@@ -725,7 +870,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				note: g.note,
 				quality: g.quality,
 				heal: g.heal,
-				equipped: g.id === p.weaponId || g.id === p.coatId || g.id === p.headId || g.id === p.legsId || g.id === p.handsId,
+				equipped: wornCount(p, g.id) > 0,
 				slot: g.kind === "weapon" ? "weapon" : armorSlot(g) ?? ""
 			};
 		});
@@ -873,6 +1018,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.headId = data.headId ?? "";
 			player.legsId = data.legsId ?? "";
 			player.handsId = data.handsId ?? "";
+			// v0.6 pack screen: old saves have no feet/off-hand/back or grid spots; the grid packs itself
+			player.feetId = data.feetId ?? "";
+			player.offId = data.offId ?? "";
+			player.backId = data.backId ?? "";
+			player.gridPos = data.gridPos ?? {};
+			for (const s of EQUIP_SLOTS) if (player[SLOT_FIELD[s]] && !player.bag.some((b) => b.id === player[SLOT_FIELD[s]] && b.qty > 0)) player[SLOT_FIELD[s]] = "";
 			const stats = roleStats(data.role);
 			player.strength = data.strength ?? stats.strength;
 			player.vigor = data.vigor ?? stats.vigor;
@@ -1003,6 +1154,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ty: p.ty
 		})), explored);
 		data.opened = [...openedDoors];
+		data.feetId = player.feetId ?? "";
+		data.offId = player.offId ?? "";
+		data.backId = player.backId ?? "";
+		data.gridPos = player.gridPos ?? {};
 		data.looted = [...lootedChests];
 		data.aim = aim;
 		data.turnBased = turnBased;
@@ -2129,6 +2284,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 				mask.set(grow);
 			}
+			if (colors.plate) {
+				// plate / rig: the vest mask is sparse on the painted coat, which left dark holes and pale
+				// specks in the iron. Close the holes, then the dye below works from smoothed brightness.
+				for (let pass = 0; pass < 3; pass++) {
+					const grow = mask.slice();
+					for (let y = box.top + 1; y < box.bottom; y++) for (let x = box.left + 1; x < box.right; x++) {
+						const mi = y * cw + x;
+						if (mask[mi] === 2 || mask[mi] === 5) continue;
+						const i = ((y0 + y) * stamp.width + (x0 + x)) * 4;
+						if (px[i + 3] < 40) continue;
+						const by = (y - box.top) / bh;
+						if (by < .28 || by > .6) continue;
+						let n2 = 0;
+						for (const d of [-1, 1, -cw, cw, -cw - 1, -cw + 1, cw - 1, cw + 1]) if (mask[mi + d] === 2) n2++;
+						if (n2 >= 5 || n2 >= 3 && mask[mi] === 0) grow[mi] = 2;
+					}
+					mask.set(grow);
+				}
+			}
 			const lumSum = [0, 0, 0, 0, 0, 0], lumN = [0, 0, 0, 0, 0, 0];
 			for (let y = box.top; y <= box.bottom; y++) for (let x = box.left; x <= box.right; x++) {
 				const tag = mask[y * cw + x];
@@ -2138,6 +2312,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				lumN[tag]++;
 			}
 			const ref = lumSum.map((v, k) => lumN[k] ? v / lumN[k] : 0);
+			const orig = colors.plate ? px.slice() : px;
 			for (let y = box.top; y <= box.bottom; y++) for (let x = box.left; x <= box.right; x++) {
 				const tag = mask[y * cw + x];
 				if (!tag) continue;
@@ -2145,7 +2320,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const r = px[i], gg = px[i + 1], b = px[i + 2];
 				let next = null;
 				if (tag === 1 && colors.shirt) next = dye(r, gg, b, colors.shirt, .9, ref[1]);
-				else if (tag === 2 && colors.plate) next = dye(r, gg, b, colors.plate, .92, ref[2], .6, .22);
+				else if (tag === 2 && colors.plate) {
+					// brightness from a 3x3 neighbourhood of the plate, so the iron reads as an even sheet
+					let ls = 0, ln = 0;
+					for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+						if (mask[(y + dy) * cw + x + dx] !== 2) continue;
+						const j = ((y0 + y + dy) * stamp.width + (x0 + x + dx)) * 4;
+						ls += orig[j] * .3 + orig[j + 1] * .59 + orig[j + 2] * .11;
+						ln++;
+					}
+					const own = r * .3 + gg * .59 + b * .11;
+					const l = ln ? (ls / ln) * .65 + own * .35 : own;
+					next = dye(l, l, l, colors.plate, .94, ref[2], .6, .22);
+				}
 				else if (tag === 2 && colors.vest) next = dye(r, gg, b, colors.vest, .86, ref[2]);
 				else if (tag === 3 && colors.legs) next = dye(r, gg, b, colors.legs, .88, ref[3]);
 				else if (tag === 4 && colors.head) next = dye(r, gg, b, colors.head, .78, ref[4], colors.helm ? .6 : .18);
@@ -2252,15 +2439,59 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return true;
 	}
+	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
+	const ITEM_ICON = {
+		"carbine-std": "carbine", "carbine-good": "carbine", scoped: "scoped",
+		"knife-std": "knife", "knife-good": "knife", skin: "knife",
+		"hatchet-std": "hatchet", "hatchet-good": "hatchet",
+		"pick-std": "pick", "pick-good": "pick",
+		"bandage-std": "bandage", "bandage-good": "bandage",
+		"lockpick-std": "lockpick", "lockpick-good": "lockpick",
+		"coat-std": "wool", "coat-good": "wool", patch: "wool", linen: "linen",
+		"boots-std": "boots"
+	};
+	/** Doors painted on the building art (source-image px): q = the doorway outline TL, TR, BR, BL;
+	 * g = the ground spot in front of it where the hero stands to go in. Keyed by image (the
+	 * shelter uses the shack art). The workshop art (anvil on a stump) has no door. */
+	const PAINTED_DOORS = {
+		shack: { q: [[49, 93], [71, 99], [71, 156], [49, 150]], g: [60, 166] },
+		barn: { q: [[51, 111], [64, 114], [64, 148], [51, 152]], g: [57, 162] },
+		farmhouse: { q: [[58, 146], [67, 147], [67, 172], [58, 171]], g: [40, 196] },
+		ruin: { q: [[31, 73], [39, 72], [39, 96], [31, 98]], g: [35, 108] }
+	};
 	function standingDoor(kind) {
 		return kind === "shack" || kind === "shelter" || kind === "workshop" || kind === "farmhouse" || kind === "barn" || kind === "ruin";
 	}
 	function canWalkIn(prop) {
 		return standingDoor(prop.kind) || prop.kind === "hatch";
 	}
+	/** Where the painted art puts a pixel (source-image px) of a building, as a world offset from the
+	 * building centre, using the same placement as blit(): foot at the centre, drawn PROP_SPEC.drawH tall. */
+	function houseArtToWorld(kind, px, py) {
+		const spec = PROP_SPEC[kind];
+		const house = spec && images.get(spec.image);
+		if (!house) return null;
+		const dh = spec.drawH;
+		const dw = dh * (house.width / house.height);
+		const ox = (px / house.width - .5) * dw;
+		const oy = -dh * (house.foot ?? .92) + py / house.height * dh;
+		return { x: oy + ox / 2, y: oy - ox / 2 };
+	}
 	function doorPoint(prop) {
 		const spec = PROP_SPEC[prop.kind];
 		const c = propCenter(prop);
+		const painted = PAINTED_DOORS[spec?.image];
+		const off = painted && houseArtToWorld(prop.kind, painted.g[0], painted.g[1]);
+		if (off && world) {
+			// stand on the ground in front of the door painted on the building, not at the middle of the footprint
+			const x = c.x + off.x, y = c.y + off.y;
+			// the art is bigger than the collision box: if the spot touches it, take the nearest clear spot
+			if (!pointBlocked(world, x, y, 12)) return { x, y };
+			for (let r = 6; r <= 72; r += 6) for (const [ax, ay] of [[0, 1], [-1, 0], [-.7, .7], [1, 0], [.7, .7], [-.7, -.7], [0, -1], [.7, -.7]]) {
+				if (!pointBlocked(world, x + ax * r, y + ay * r, 12)) return { x: x + ax * r, y: y + ay * r };
+			}
+			return { x, y };
+		}
 		return {
 			x: c.x,
 			y: c.y + spec.h * 64 * .5 + 4
@@ -4185,18 +4416,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					tractor.charge = 0;
 					tractorReady = false;
 					pushLog("The tractor coughs and stops. It wants another can.");
-				} else if (particles.length < 90) {
-					// snow and dirt kicked up behind the rear wheels
-					const kick = Math.random() < .6 ? "#f4f7fb" : "#d7c4a2";
+				} else if (particles.length < 120) {
+					// a soft cloud of snow and dirt rolling off the rear wheels (grows and thins as it drifts)
+					const snowy = Math.random() < .65;
 					particles.push({
-						x: c.x + shift.x - 34,
-						y: c.y + shift.y + 4,
-						vx: -80 - Math.random() * 50,
-						vy: -28 + Math.random() * 16,
-						life: .45 + Math.random() * .2,
-						max: .65,
-						color: kick,
-						size: 3 + Math.random() * 3
+						x: c.x + shift.x - 30 + Math.random() * 10,
+						y: c.y + shift.y + 10 + Math.random() * 10,
+						vx: -40 - Math.random() * 30,
+						vy: 6 + Math.random() * 10,
+						life: .8 + Math.random() * .5,
+						max: 1.3,
+						color: snowy ? "238,242,246" : "196,176,142",
+						size: 10 + Math.random() * 8,
+						puff: true
 					});
 				}
 			}
@@ -4364,51 +4596,118 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			npc.frame = Math.floor(npc.anim / 16) % 4;
 		} else npc.frame = 0;
 	}
-	function doorAnchor(kind) {
-		if (kind === "farmhouse") return {
-			ox: .37,
-			oy: .78,
-			scale: .16
-		};
-		if (kind === "barn") return {
-			ox: .46,
-			oy: .76,
-			scale: .2
-		};
-		if (kind === "workshop") return {
-			ox: .36,
-			oy: .74,
-			scale: .26
-		};
-		if (kind === "ruin") return {
-			ox: .42,
-			oy: .7,
-			scale: .22
-		};
-		return {
-			ox: .32,
-			oy: .78,
-			scale: .28
-		};
-	}
+	/** The building's own painted door: nothing is pasted over it. While it opens, the doorway darkens
+	 * (the room behind), following the door's painted outline. */
 	function paintDoorOnBuilding(kind, x, y, buildH, swing, dcx, dcy) {
-		const img = images.get("door");
-		const houseName = PROP_SPEC[kind]?.image;
-		const house = houseName ? images.get(houseName) : void 0;
-		if (!img || !house || !ctx) return;
+		const spec = PROP_SPEC[kind];
+		const painted = PAINTED_DOORS[spec?.image];
+		const house = spec ? images.get(spec.image) : void 0;
+		if (!painted || !house || !ctx || swing <= 0) return;
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const p = zoomPoint(raw.sx, raw.sy);
 		const dh = buildH * zoom;
-		const frac = house?.foot ?? .92;
 		const dw = dh * (house.width / house.height);
-		const top = p.sy - dh * frac;
+		const top = p.sy - dh * (house.foot ?? .92);
 		const left = p.sx - dw / 2;
-		const anchor = doorAnchor(kind);
-		const doorH = dh * anchor.scale;
-		const doorW = doorH * (img.width / img.height) * Math.max(.2, 1 - swing * .72);
-		const cx = left + dw * anchor.ox + swing * doorH * .22;
-		const bottom = top + dh * anchor.oy;
-		ctx.drawImage(img, cx - doorW / 2, bottom - doorH, doorW, doorH);
+		const pt = (q) => [left + q[0] / house.width * dw, top + q[1] / house.height * dh];
+		const [a, b, c2, d] = painted.q.map(pt);
+		ctx.save();
+		ctx.globalAlpha *= Math.min(1, swing * 1.4);
+		const grad = ctx.createLinearGradient(a[0], a[1], d[0], d[1]);
+		grad.addColorStop(0, "#0d0907");
+		grad.addColorStop(1, "#2a1a10");
+		ctx.fillStyle = grad;
+		ctx.beginPath();
+		ctx.moveTo(a[0], a[1]);
+		ctx.lineTo(b[0], b[1]);
+		ctx.lineTo(c2[0], c2[1]);
+		ctx.lineTo(d[0], d[1]);
+		ctx.closePath();
+		ctx.fill();
+		ctx.restore();
+	}
+	/** Lowest painted pixel per column of a building image (source px), for front/behind tests. */
+	const artBase = new Map();
+	function houseBase(name) {
+		if (artBase.has(name)) return artBase.get(name);
+		const img = images.get(name);
+		if (!img) return null;
+		const cv = document.createElement("canvas");
+		cv.width = img.width;
+		cv.height = img.height;
+		const g = cv.getContext("2d", { willReadFrequently: true });
+		g.drawImage(img, 0, 0);
+		const data = g.getImageData(0, 0, img.width, img.height).data;
+		const base = new Float32Array(img.width).fill(-1);
+		for (let xx = 0; xx < img.width; xx++) for (let yy = img.height - 1; yy >= 0; yy--) if (data[(yy * img.width + xx) * 4 + 3] > 60) {
+			base[xx] = yy;
+			break;
+		}
+		artBase.set(name, base);
+		return base;
+	}
+	/** Is a body standing at (x, y) in front of (screen-below) the painted base of this building? The
+	 * art is bigger than the 2x2 collision footprint, so sorting by footprint centre put the hero behind
+	 * the wall while he stood at the door. */
+	function inFrontOfHouse(prop, x, y) {
+		const spec = PROP_SPEC[prop.kind];
+		const house = images.get(spec.image);
+		const base = houseBase(spec.image);
+		if (!house || !base) return false;
+		const c = propCenter(prop);
+		const dh = spec.drawH;
+		const dw = dh * (house.width / house.height);
+		const sx = x - y - (c.x - c.y), sy = (x + y - c.x - c.y) / 2;
+		const col = Math.floor((sx / dw + .5) * house.width);
+		if (col < 0 || col >= house.width) return false;
+		const b = base[col];
+		if (b < 0) return false;
+		const baseSy = -dh * (house.foot ?? .92) + b / house.height * dh;
+		return sy >= baseSy - 3;
+	}
+	/** Draw-order key for a body: in front of any big building whose painted base it stands below. */
+	function bodyZ(x, y) {
+		let z = x + y;
+		if (!world) return z;
+		for (const prop of world.props) {
+			if (!standingDoor(prop.kind)) continue;
+			const c = propCenter(prop);
+			if (Math.abs(c.x - x) > 260 || Math.abs(c.y - y) > 260) continue;
+			const pz = c.x + c.y;
+			if (z <= pz && inFrontOfHouse(prop, x, y)) z = pz + 1;
+		}
+		return z;
+	}
+	/** A pale slash arc in the facing direction while a melee swing plays, so a swing reads from every
+	 * angle (the painted swing strips only face the camera). */
+	function paintSwingArc() {
+		if (!player || !ctx) return;
+		const family = GEAR[player.weaponId]?.family;
+		if (isGun(family)) return;
+		const u = 1 - swingAnim / .48;
+		if (u <= .05 || u >= .9) return;
+		const ang = [Math.PI / 2, Math.PI * .75, Math.PI, Math.PI * 1.25, Math.PI * 1.5, Math.PI * 1.75, 0, Math.PI * .25][player.dir & 7];
+		const raw = worldToScreen(player.x, player.y, camX, camY);
+		const p = zoomPoint(raw.sx, raw.sy);
+		const cx = p.sx, cy = p.sy - HERO_H * zoom * .45;
+		const r = HERO_H * zoom * (family === "knife" ? .32 : .46);
+		const a0 = ang - 1.3 + u * .6, a1 = a0 + .4 + u * 1.6;
+		ctx.save();
+		ctx.translate(cx, cy);
+		ctx.scale(1, .62);
+		ctx.globalAlpha = .55 * Math.sin(u * Math.PI);
+		ctx.strokeStyle = "#f3ead8";
+		ctx.lineCap = "round";
+		ctx.lineWidth = 5 * zoom;
+		ctx.beginPath();
+		ctx.arc(0, 0, r, a0, a1);
+		ctx.stroke();
+		ctx.globalAlpha *= .5;
+		ctx.lineWidth = 11 * zoom;
+		ctx.beginPath();
+		ctx.arc(0, 0, r * .9, a0 + .15, a1);
+		ctx.stroke();
+		ctx.restore();
 	}
 	function paintExitDoor() {
 		if (!inside || !ctx) return;
@@ -4933,7 +5232,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					}
 					// see-through: a tall prop drawn in front of the hero fades so the hero never vanishes behind it
 					let seeThrough = false;
-					if (player && !inside && h > 140 && c.x + c.y > player.x + player.y) {
+					if (player && !inside && h > 140 && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
 						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 						const ps = zoomPoint(pr.sx, pr.sy);
 						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
@@ -4982,7 +5281,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
 			draws.push({
-				z: npc.x + npc.y,
+				z: bodyZ(npc.x, npc.y),
 				draw: () => {
 					paintPerson(npc, drawCamX, drawCamY);
 					if (npc.hp < npc.maxHp) bar(npc.x, npc.y, folkHeight(npc), npc.hp / npc.maxHp, drawCamX, drawCamY);
@@ -4991,7 +5290,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (party && !inside) {
 			draws.push({
-				z: party.x + party.y,
+				z: bodyZ(party.x, party.y),
 				draw: () => {
 					paintPerson(party, drawCamX, drawCamY);
 					bar(party.x, party.y, folkHeight(party), Math.max(0, party.hp) / party.maxHp, drawCamX, drawCamY);
@@ -5024,7 +5323,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
 			if (!visible[t.ty * 156 + t.tx]) continue;
 			draws.push({
-				z: enemy.x + enemy.y,
+				z: bodyZ(enemy.x, enemy.y),
 				draw: () => {
 					const h = beastH(enemy);
 					// strips are drawn facing west; mirror them for anything facing east
@@ -5033,7 +5332,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const deadName = `${beastSheet(enemy)}-dead`;
 						const dimg = images.get(deadName);
 						if (dimg) {
-							if (stripFrames(deadName, dimg) > 1) {
+							if (TALL_COMBAT.has(deadName)) {
+								const u = 1 - Math.max(0, enemy.death) / 1.15;
+								blit(deadName, enemy.x, enemy.y, h, true, Math.max(0, Math.min(3, Math.floor(u * 4))), enemy.dir ?? 0, drawCamX, drawCamY);
+							} else if (stripFrames(deadName, dimg) > 1) {
 								const u = 1 - Math.max(0, enemy.death) / 1.15;
 								const f = Math.max(0, Math.min(3, Math.floor(u * 4)));
 								blit(deadName, enemy.x, enemy.y, h, false, f, 0, drawCamX, drawCamY, false, 0, 0, 1, east);
@@ -5043,7 +5345,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					}
 					const atk = `${beastSheet(enemy)}-atk`;
 					const aimg = images.get(atk);
-					if (aimg && stripFrames(atk, aimg) > 1) {
+					if (aimg && TALL_COMBAT.has(atk) && enemy.cooldown > .08) {
+						const swingMax = enemy.kind === "moose" ? 1.05 : enemy.elite ? .95 : .82;
+						const u = 1 - Math.min(swingMax, enemy.cooldown) / swingMax;
+						blit(atk, enemy.x, enemy.y, h, true, Math.max(0, Math.min(3, Math.floor(u * 4))), enemy.dir ?? 0, drawCamX, drawCamY);
+					} else if (aimg && stripFrames(atk, aimg) > 1) {
 						const swingMax = enemy.kind === "moose" ? 1.05 : enemy.elite ? .95 : .82;
 						if (enemy.cooldown > .08) {
 							const u = 1 - Math.min(swingMax, enemy.cooldown) / swingMax;
@@ -5071,7 +5377,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const tilt = pile.dir === 1 || pile.dir === 2 || pile.dir === 3 ? -1.2 : 1.2;
 					const deadName = pile.body ? `${pile.sheet || beastSheet({ kind: pile.body, id: pile.id })}-dead` : "";
 					const dimg = deadName ? images.get(deadName) : null;
-					if (dimg && stripFrames(deadName, dimg) > 1) {
+					if (dimg && TALL_COMBAT.has(deadName)) {
+						const dummy = { kind: pile.body, id: pile.id, variant: (pile.sheet || "").startsWith("boss-") || (pile.sheet || "").startsWith("raider-") && !["raider-gray", "raider-blue"].includes(pile.sheet) ? (pile.sheet || "").split("-")[1] : undefined };
+						blit(deadName, pile.x, pile.y, beastH(dummy), true, 3, pile.dir ?? 0, drawCamX, drawCamY);
+					} else if (dimg && stripFrames(deadName, dimg) > 1) {
 						// last frame of the death strip: the body as it came to rest
 						const east = pile.dir >= 5 && pile.dir <= 7;
 						const dummy = { kind: pile.body, id: pile.id, variant: (pile.sheet || "").startsWith("boss-") || (pile.sheet || "").startsWith("raider-") && !["raider-gray", "raider-blue"].includes(pile.sheet) ? (pile.sheet || "").split("-")[1] : undefined };
@@ -5098,7 +5407,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			});
 		}
 		draws.push({
-			z: player.x + player.y,
+			z: bodyZ(player.x, player.y),
 			draw: () => {
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
 				if (phase === "dead") {
@@ -5115,10 +5424,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const atkName = `${heroKey()}-atk`;
 				// the v19 swing strips are front views: use them when facing the camera, otherwise keep the lunge
 				const facingCam = player.dir === 0 || player.dir === 1 || player.dir === 7;
-				if (swingAnim > 0 && !work && facingCam && images.get(atkName)) {
+				if (swingAnim > 0 && !work && TALL_COMBAT.has(atkName)) {
+					blit(atkName, player.x, player.y, HERO_H, true, Math.min(3, Math.floor((1 - swingAnim / .48) * 4)), player.dir, drawCamX, drawCamY, false);
+				} else if (swingAnim > 0 && !work && facingCam && images.get(atkName)) {
 					const f = Math.min(3, Math.floor((1 - swingAnim / .48) * 4));
 					blit(atkName, player.x, player.y, HERO_H, false, f, 0, drawCamX, drawCamY, false);
 				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
+				if (!(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
+				if (swingAnim > 0 && !work && !TALL_COMBAT.has(atkName)) paintSwingArc();
 			}
 		});
 		for (const scar of scars) {
@@ -5183,6 +5496,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const part of particles) {
 			const raw = worldToScreen(part.x, part.y, drawCamX, drawCamY);
 			const p = zoomPoint(raw.sx, raw.sy);
+			if (part.puff) {
+				// soft dust puff: radial falloff, swells as it fades
+				const u = 1 - Math.max(0, part.life / part.max);
+				const r = part.size * (1 + u * 2.2) * zoom;
+				const g = ctx.createRadialGradient(p.sx, p.sy - r * .3, 0, p.sx, p.sy - r * .3, r);
+				const a = .34 * (1 - u) * Math.min(1, u * 6 + .2);
+				g.addColorStop(0, `rgba(${part.color},${a})`);
+				g.addColorStop(.6, `rgba(${part.color},${a * .5})`);
+				g.addColorStop(1, `rgba(${part.color},0)`);
+				ctx.fillStyle = g;
+				ctx.beginPath();
+				ctx.ellipse(p.sx, p.sy - r * .3, r, r * .7, 0, 0, Math.PI * 2);
+				ctx.fill();
+				continue;
+			}
 			ctx.globalAlpha = Math.max(0, part.life / part.max);
 			ctx.fillStyle = part.color;
 			if (part.spinV) {
@@ -5703,7 +6031,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const stack = player.bag.find((s) => s.id === need.id);
 				if (stack && stack.qty <= need.qty) slots -= 1;
 			}
-			if (slots >= 16) {
+			if (!canFit(player, recipe.item)) {
 				pushLog("Pack full.");
 				sfx("click");
 				sync(true);
@@ -6095,6 +6423,78 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 		},
 		dismissParty,
+		invEquip(id, slot) {
+			if (!player || !slotAccepts(slot, id)) return false;
+			const stack = player.bag.find((s) => s.id === id && s.qty > 0);
+			if (!stack) return false;
+			const field = SLOT_FIELD[slot];
+			if (player[field] === id) return true;
+			// one copy can't be in two slots (a single knife in both hands)
+			if (wornCount(player, id) >= stack.qty) {
+				const other = EQUIP_SLOTS.find((s2) => player[SLOT_FIELD[s2]] === id);
+				if (other) player[SLOT_FIELD[other]] = "";
+			}
+			const was = player[field];
+			player[field] = id;
+			refreshGear(player);
+			layoutGrid(player);
+			if (was && layoutGrid(player).over > 0) {
+				// the piece coming off has no room: keep it on
+				player[field] = was;
+				refreshGear(player);
+				pushLog("No room in the pack for what you'd take off.");
+				sync(true);
+				return false;
+			}
+			pushLog(slot === "main" ? `In hand: ${GEAR[id].name} (${GEAR[id].quality}).` : `Worn: ${GEAR[id].name}.`);
+			sfx("click");
+			saveGame();
+			sync(true);
+			return true;
+		},
+		invUnequip(slot, x, y) {
+			if (!player || !SLOT_FIELD[slot]) return false;
+			const field = SLOT_FIELD[slot];
+			const id = player[field];
+			if (!id) return false;
+			player[field] = "";
+			if (slot === "back" && layoutGrid(player).over > 0) {
+				player[field] = id;
+				pushLog("Empty the bottom rows first; the frame is holding them.");
+				sync(true);
+				return false;
+			}
+			if (x !== void 0 && y !== void 0) {
+				player.gridPos = player.gridPos ?? {};
+				if (fitsAt(player, id, x, y)) player.gridPos[id] = [x, y];
+			}
+			if (layoutGrid(player).over > 0) {
+				player[field] = id;
+				pushLog("No room in the pack for it.");
+				sync(true);
+				return false;
+			}
+			refreshGear(player);
+			pushLog(slot === "main" ? "Hands empty." : `You take off the ${GEAR[id]?.name ?? "piece"}.`);
+			sfx("click");
+			saveGame();
+			sync(true);
+			return true;
+		},
+		invMove(id, x, y) {
+			if (!player || !fitsAt(player, id, x, y)) return false;
+			player.gridPos = player.gridPos ?? {};
+			player.gridPos[id] = [x, y];
+			layoutGrid(player);
+			saveGame();
+			sync(true);
+			return true;
+		},
+		invUse(id) {
+			const def = GEAR[id];
+			if (!player || !def || def.kind === "weapon" || def.kind === "coat") return;
+			api.clickPack(id);
+		},
 		clickPack(id) {
 			if (!player) return;
 			const def = GEAR[id];
@@ -6112,7 +6512,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 			} else if (def.kind === "coat") {
 				const slot = armorSlot(def);
-				const field = slot === "head" ? "headId" : slot === "legs" ? "legsId" : slot === "hands" ? "handsId" : "coatId";
+				const field = slot === "head" ? "headId" : slot === "legs" ? "legsId" : slot === "hands" ? "handsId" : slot === "feet" ? "feetId" : slot === "back" ? "backId" : "coatId";
 				if (player[field] === id) {
 					player[field] = "";
 					refreshGear(player);
@@ -6276,6 +6676,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		forceEnter: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p || !player) return false; const d = doorPoint(p); player.x = d.x; player.y = d.y; finishEnter(p); sync(true); return true; },
 		walkTo: (x, y) => { if (!world || !player) return false; const path = pathTo(world, player.x, player.y, x, y); intent = { kind: "walk", x, y, path: path ?? [] }; return !!path; },
 		blockedHere: () => world && player ? { r: pointBlocked(world, player.x, player.y, RADIUS), c: pointBlocked(world, player.x, player.y, 0), x: player.x, y: player.y, w: pointBlocked(world, player.x - 20, player.y, RADIUS), e: pointBlocked(world, player.x + 20, player.y, RADIUS), n: pointBlocked(world, player.x, player.y - 20, RADIUS), s: pointBlocked(world, player.x, player.y + 20, RADIUS) } : null,
+		doorDbg: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p) return null; const sp = PROP_SPEC[p.kind]; const pd = PAINTED_DOORS[sp.image]; const c = propCenter(p); return { c, off: pd && houseArtToWorld(p.kind, pd.g[0], pd.g[1]), door: doorPoint(p), foot: images.get(sp.image)?.foot, w: images.get(sp.image)?.width, h: images.get(sp.image)?.height, locked: !!p.locked, opening: OPEN_TIME }; },
+		giveItem: (id, qty = 1) => giveItem(id, qty),
+		togglePack: () => api.togglePack(),
+		pressBack: () => api.back(),
+		dbgInv: () => player ? { slots: Object.fromEntries(EQUIP_SLOTS.map((s) => [s, player[SLOT_FIELD[s]]])), atk: player.atk, def: player.def, rows: layoutGrid(player).rows, over: layoutGrid(player).over, grid: player.gridPos } : null,
 		walkInKinds: () => world ? [...new Set(world.props.filter((p) => canWalkIn(p)).map((p) => p.kind))] : [],
 		die: () => {
 			if (!player) return;
@@ -6376,7 +6781,11 @@ function stripFrames(name, img) {
 	if (!(name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-"))) return 1;
 	return img.width / img.height > 2.2 ? 4 : 1;
 }
+/** 8-direction combat sheets (4 frames x 8 facing rows, taller than wide): drop-in for any *-atk / *-dead. */
+const TALL_COMBAT = new Set();
 function sheetRowsOf(name) {
+	if (TALL_COMBAT.has(name)) return 8;
+	if (name.startsWith("overlay-")) return 8;
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
 	if (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
 	return 4;
@@ -6485,13 +6894,15 @@ function loadImages(images) {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
+			if ((name.endsWith("-atk") || name.endsWith("-dead")) && img.height > img.width * 1.2) TALL_COMBAT.add(name);
 			const rows = sheetRowsOf(name);
 			const strips = stripFrames(name, img) > 1;
 			const posed = !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
 			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" ? 0 : posed ? 1 : 1;
-			const soft = softenSprite(img, radius, posed ? rows : 0);
-			if ((posed || strips) && name.startsWith("hero")) soft.sharp = img;
-			const pose = measurePose(img, posed || strips, strips ? 1 : rows);
+			const tall = TALL_COMBAT.has(name);
+			const soft = softenSprite(img, radius, posed || tall ? rows : 0);
+			if ((posed || strips || tall) && name.startsWith("hero")) soft.sharp = img;
+			const pose = measurePose(img, posed || strips || tall, strips ? 1 : rows);
 			soft.foot = pose.foot;
 			soft.feet = pose.feet;
 			soft.footX = pose.footX;

@@ -292,6 +292,11 @@ export interface Player {
   headId: string;
   legsId: string;
   handsId: string;
+  /** Diablo-style pack (v0.6): extra equipment slots and backpack grid spots by item id. */
+  feetId?: string;
+  offId?: string;
+  backId?: string;
+  gridPos?: Record<string, [number, number]>;
   look: LookId;
   strength: number;
   vigor: number;
@@ -324,6 +329,40 @@ export interface Dialogue {
   speaker: string;
   text: string;
   choices: Choice[];
+}
+
+export interface InvItem {
+  id: string;
+  name: string;
+  qty: number;
+  quality: string;
+  note: string;
+  kind: string;
+  family: string;
+  atk: number;
+  def: number;
+  heal: number;
+  worth: number;
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+  /** equipment slot this can go in ("" for things you use or keep) */
+  fits: string[];
+  icon: string;
+}
+export interface InvView {
+  cols: number;
+  rows: number;
+  /** rows past the grid holding stacks that did not fit (old saves); nothing new goes in until cleared */
+  over: number;
+  items: InvItem[];
+  slots: Record<string, InvItem | null>;
+  figure: string;
+  /** armor overlay art on the portrait, by slot, when a file exists */
+  overlays: string[];
+  atk: number;
+  def: number;
 }
 
 export interface PackSlot {
@@ -373,6 +412,7 @@ export interface HudSnapshot {
   def: number;
   packOpen: boolean;
   pack: PackSlot[];
+  inv: InvView | null;
   weaponName: string;
   coatName: string;
   headName: string;

@@ -32,6 +32,7 @@ export const useHud = create<HudSnapshot>(() => ({
   def: 2,
   packOpen: false,
   pack: [],
+  inv: null,
   weaponName: "Camp hatchet",
   coatName: "Wool coat",
   headName: "Bare head",
