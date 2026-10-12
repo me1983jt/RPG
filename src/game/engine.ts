@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2050;
+const ART_V = 2051;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
@@ -794,17 +794,64 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	let figureKey = "";
 	let figureUrl = "";
-	/** The hero's own front walk frame, dyed like the in-world sprite, scaled up for the pack screen. */
+	const dollPick = new Map();
+	/** Which cell of a hero sheet the pack-screen doll uses: the first front-facing walk frame whose two
+	 * feet stand apart (frame 0 of the front row is the passing pose, where the legs overlap into one).
+	 * Tries the front row (frames 2, 1, 3), then the slightly turned down-right / down-left rows, then frame 0. */
+	function dollCell(name, img) {
+		const hit = dollPick.get(name);
+		if (hit) return hit;
+		const cw = img.width / 4, ch = img.height / 8;
+		let pick = { row: 0, col: 0 };
+		try {
+			const cv = document.createElement("canvas");
+			cv.width = cw;
+			cv.height = ch;
+			const g = cv.getContext("2d", { willReadFrequently: true });
+			const apart = (row, col) => {
+				g.clearRect(0, 0, cw, ch);
+				g.drawImage(img, col * cw, row * ch, cw, ch, 0, 0, cw, ch);
+				const a = g.getImageData(0, 0, cw, ch).data;
+				let top = -1, bot = -1;
+				for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (a[(y * cw + x) * 4 + 3] > 24) { if (top < 0) top = y; bot = y; break; }
+				if (top < 0) return false;
+				// the lowest fifth of the figure (shins and boots): two separate runs on most lines
+				let lines = 0, two = 0;
+				for (let y = Math.floor(top + (bot - top) * .8); y <= bot - 1; y++) {
+					let runs = 0, inRun = false;
+					for (let x = 0; x < cw; x++) {
+						const on = a[(y * cw + x) * 4 + 3] > 24;
+						if (on && !inRun) runs++;
+						inRun = on;
+					}
+					lines++;
+					if (runs >= 2) two++;
+				}
+				return lines > 0 && two / lines > .7;
+			};
+			const order = [[0, 2], [0, 1], [0, 3], [7, 2], [1, 2], [7, 1], [1, 1]];
+			const found = order.find(([r, c]) => apart(r, c));
+			if (found) pick = { row: found[0], col: found[1] };
+		} catch {
+			pick = { row: 0, col: 2 };
+		}
+		dollPick.set(name, pick);
+		return pick;
+	}
+	/** The hero's own front walk frame, dyed like the in-world sprite, scaled up for the pack screen,
+	 * with worn armor overlays from their walk sheets drawn on the same cell (so they line up). */
 	function heroFigure() {
 		if (!player) return "";
 		const family = GEAR[player.weaponId]?.family;
 		const name = family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero";
-		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
+		const worn = EQUIP_SLOTS.map((slot) => player[SLOT_FIELD[slot]]).filter((id) => id && images.get(`overlay-${id}`));
+		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}:${worn.join(",")}`;
 		if (key === figureKey && figureUrl) return figureUrl;
 		const img = images.get(name);
 		if (!img || !img.width) return "";
 		const src = heroSource(name, img);
 		const cw = img.width / 4, ch = img.height / 8;
+		const { row, col } = dollCell(name, img);
 		const cv = document.createElement("canvas");
 		// 4x crisp pixels; the pack screen then scales it down smoothly, so the figure reads clean at any
 		// slot size instead of the uneven nearest-neighbour blocks a fractional 1.6x stretch gave
@@ -813,7 +860,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const g = cv.getContext("2d");
 		if (!g) return "";
 		g.imageSmoothingEnabled = false;
-		g.drawImage(src, 0, 0, cw, ch, 0, 0, cw * 4, ch * 4);
+		g.drawImage(src, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+		for (const id of worn) {
+			const ov = images.get(`overlay-${id}`);
+			if (ov && ov.width === img.width && ov.height === img.height) g.drawImage(ov, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+		}
 		figureKey = key;
 		figureUrl = cv.toDataURL("image/png");
 		return figureUrl;
@@ -825,7 +876,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const slot of EQUIP_SLOTS) {
 			const id = p[SLOT_FIELD[slot]];
 			slots[slot] = id ? invItem(p, id) : null;
-			if (id && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png?v=${ART_V}`);
+			// the -portrait file only when the item has no walk-sheet overlay (that one is drawn into the figure)
+			if (id && !images.get(`overlay-${id}`) && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png?v=${ART_V}`);
 			if (id) wantOverlay(id);
 		}
 		return {
