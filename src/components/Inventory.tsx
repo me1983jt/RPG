@@ -18,6 +18,17 @@ const SLOT_BOX: Record<Slot, { x: number; y: number; w: number; h: number; label
   feet: { x: 4, y: 10, w: 2, h: 2, label: "Feet" },
 };
 const SLOTS = Object.keys(SLOT_BOX) as Slot[];
+/** Faint silhouettes for empty slots (public/game/ui/slot-*.png). */
+const SLOT_HINT: Record<Slot, string> = {
+  head: "/game/ui/slot-helmet.png?v=2050",
+  body: "/game/ui/slot-coat.png?v=2050",
+  legs: "/game/ui/slot-pants.png?v=2050",
+  feet: "/game/ui/slot-boots.png?v=2050",
+  hands: "/game/ui/slot-gloves.png?v=2050",
+  main: "/game/ui/slot-weapon.png?v=2050",
+  off: "/game/ui/slot-weapon.png?v=2050",
+  back: "/game/ui/slot-back.png?v=2050",
+};
 type From = "grid" | Slot;
 interface Pick {
   id: string;
@@ -247,9 +258,9 @@ export function Inventory({ inv, api, turnBased, craft, onClose }: { inv: InvVie
             <div className="pointer-events-none absolute flex items-end justify-center" style={{ left: S(2), top: S(2), width: S(6), height: S(8) }}>
               {inv.figure ? (
                 <div className="relative h-full" style={{ aspectRatio: "88 / 124" }}>
-                  <img src={inv.figure} alt="" className="absolute inset-0 h-full w-full [image-rendering:pixelated]" />
+                  <img src={inv.figure} alt="" className="absolute inset-0 h-full w-full" />
                   {inv.overlays.map((src) => (
-                    <img key={src} src={src} alt="" className="absolute inset-0 h-full w-full [image-rendering:pixelated]" />
+                    <img key={src} src={src} alt="" className="absolute inset-0 h-full w-full" />
                   ))}
                 </div>
               ) : null}
@@ -273,7 +284,14 @@ export function Inventory({ inv, api, turnBased, craft, onClose }: { inv: InvVie
                   }}
                   onPointerUp={() => !drag?.live && tapSlot(slot)}
                 >
-                  {it ? itemBox(it, slot, { x: 0, y: 0, w: b.w, h: b.h }) : <span className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] uppercase tracking-wide text-[#6f6252]">{b.label}</span>}
+                  {it ? (
+                    itemBox(it, slot, { x: 0, y: 0, w: b.w, h: b.h })
+                  ) : (
+                    <>
+                      <img src={SLOT_HINT[slot]} alt="" draggable={false} className="pointer-events-none absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 opacity-45" style={{ width: S(b.w) * 0.66, height: Math.min(S(b.h) * 0.6, S(b.w) * 0.9), objectFit: "contain" }} />
+                      <span className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] uppercase tracking-wide text-[#6f6252]">{b.label}</span>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -325,9 +343,9 @@ export function Inventory({ inv, api, turnBased, craft, onClose }: { inv: InvVie
                               </button>
                             ))
                           : null}
-                        {picked.kind !== "weapon" && picked.kind !== "coat" && (picked.heal > 0 || picked.worth > 0 || ["bomb", "fuel", "baitpack"].includes(picked.id)) ? (
+                        {picked.kind !== "weapon" && picked.kind !== "coat" && (picked.heal > 0 || picked.worth > 0 || ["bomb", "fuel", "baitpack", "syrup", "radio"].includes(picked.id)) ? (
                           <button type="button" className="plank bg-primary px-3 py-1.5 text-xs font-semibold text-bg" onClick={() => api?.invUse(picked.id)}>
-                            {picked.worth > 0 ? "Trade for iron" : "Use"}
+                            {picked.worth > 0 ? "Trade for iron" : picked.id === "radio" ? "Crank it" : "Use"}
                           </button>
                         ) : null}
                       </div>

@@ -128,6 +128,7 @@ export interface SaveData {
   party?: SavedParty | null;
   partyReturn?: SavedParty | null;
   raidNight?: number;
+  warden?: number;
   tractorReady?: boolean;
   snow?: number;
   jackTrust?: number;

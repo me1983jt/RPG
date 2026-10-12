@@ -1,5 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
+/** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
+const ART_V = 2050;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
@@ -59,6 +61,10 @@ import {
   addProp,
   tryPlace,
   vacate,
+  HOLEB_ID,
+  PELLETIER_ID,
+  WARDEN_ENEMY_ID,
+  WARDEN_NPC_ID,
   type World,
 } from "@/game/world";
 
@@ -171,6 +177,13 @@ var IMAGES = [
 	"boss-fur-dead",
 	"boss-mask-dead",
 	"boss-saw-dead",
+	"boss-holeb",
+	"boss-holeb-dead",
+	"boss-warden",
+	"boss-warden-dead",
+	"boss-pelletier",
+	"boss-pelletier-atk",
+	"boss-pelletier-dead",
 	"raider-scout",
 	"raider-brute",
 	"raider-torch",
@@ -351,6 +364,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let party = null;
 	let partyReturn = null;
 	let raidNight = 0;
+	/** The Bangor Warden: 0 not met, 1 paid / slipped past, 2 fighting, 3 down. */
+	let wardenState = 0;
+	let millSeen = false;
+	let wardenAsked = false;
+	let radioWarned = false;
 	let nightLatch = false;
 	let bossThisNight = false;
 	let tractorReady = false;
@@ -492,7 +510,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		});
 		log = [text];
 	}
+	const allLog = [];
 	function pushLog(text) {
+		allLog.push(text);
+		if (allLog.length > 40) allLog.shift();
 		lines.push({
 			text,
 			t: 4
@@ -517,7 +538,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	function talkState() {
-		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet };
+		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0 };
 	}
 	function hudQuestText() {
 		if (snow < 3 && quest <= 0) {
@@ -728,6 +749,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// an off-hand knife or revolver adds a third of its bite
 		const off = GEAR[p.offId];
 		p.atk = p.baseAtk + Math.max(0, p.level - 1) + (w?.atk ?? 0) + Math.floor((off?.atk ?? 0) / 3) + Math.max(0, p.strength - 1);
+		// a moose-hide sling steadies a long gun
+		if (p.backId === "sling" && (w?.family === "carbine" || w?.family === "scatter")) p.atk += 1;
 		p.def = worn.reduce((n, id) => n + (GEAR[id]?.def ?? 0), 0);
 		if (p.perks?.includes("wool")) p.def += 2;
 		apMax = p.perks?.includes("quick") ? 10 : 8;
@@ -741,7 +764,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Icon file for an item: public/game/items/<id>.png, else the generic one for its shape. */
 	function itemIcon(g) {
-		return `/game/items/${ITEM_ICON[g.id] ?? g.id}.png`;
+		return `/game/items/${ITEM_ICON[g.id] ?? g.id}.png?v=${ART_V}`;
 	}
 	function invItem(p, id, x = -1, y = -1) {
 		const g = GEAR[id];
@@ -776,19 +799,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player) return "";
 		const family = GEAR[player.weaponId]?.family;
 		const name = family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero";
-		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}`;
+		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
 		if (key === figureKey && figureUrl) return figureUrl;
 		const img = images.get(name);
 		if (!img || !img.width) return "";
 		const src = heroSource(name, img);
 		const cw = img.width / 4, ch = img.height / 8;
 		const cv = document.createElement("canvas");
-		cv.width = cw * 2;
-		cv.height = ch * 2;
+		// 4x crisp pixels; the pack screen then scales it down smoothly, so the figure reads clean at any
+		// slot size instead of the uneven nearest-neighbour blocks a fractional 1.6x stretch gave
+		cv.width = cw * 4;
+		cv.height = ch * 4;
 		const g = cv.getContext("2d");
 		if (!g) return "";
 		g.imageSmoothingEnabled = false;
-		g.drawImage(src, 0, 0, cw, ch, 0, 0, cw * 2, ch * 2);
+		g.drawImage(src, 0, 0, cw, ch, 0, 0, cw * 4, ch * 4);
 		figureKey = key;
 		figureUrl = cv.toDataURL("image/png");
 		return figureUrl;
@@ -800,7 +825,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const slot of EQUIP_SLOTS) {
 			const id = p[SLOT_FIELD[slot]];
 			slots[slot] = id ? invItem(p, id) : null;
-			if (id && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png`);
+			if (id && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png?v=${ART_V}`);
 			if (id) wantOverlay(id);
 		}
 		return {
@@ -820,7 +845,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * <item id>-portrait.png over the pack-screen figure. Missing files are simply skipped. */
 	const overlayState = new Map();
 	let overlayList = null;
-	fetch("/game/overlay/index.json").then((r) => r.ok ? r.json() : []).then((list) => {
+	fetch(`/game/overlay/index.json?v=${ART_V}`).then((r) => r.ok ? r.json() : []).then((list) => {
 		overlayList = new Set(Array.isArray(list) ? list : []);
 	}).catch(() => {
 		overlayList = new Set();
@@ -847,11 +872,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				sync(true);
 			};
 			img.onerror = () => overlayState.set(name, "none");
-			img.src = `/game/overlay/${name}.png`;
+			img.src = `/game/overlay/${name}.png?v=${ART_V}`;
 		}
 	}
+	let overlayBase = "hero";
 	function paintOverlays(frame, dir, lunge) {
 		if (!player) return;
+		overlayBase = heroKey();
 		for (const slot of EQUIP_SLOTS) {
 			const id = player[SLOT_FIELD[slot]];
 			if (!id) continue;
@@ -914,6 +941,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		questKills = 0;
 		snow = 0;
 		jackTrust = 0;
+		wardenState = 0;
+		millSeen = false;
 		jackMet = false;
 		bunkerSeen = false;
 		kitchenDay = -1;
@@ -1118,10 +1147,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		spawnCrows();
 		clock = data.clock ?? morningClock();
 		raidNight = data.raidNight ?? 0;
+		wardenState = data.warden ?? 0;
 		tractorReady = !!data.tractorReady;
 		rotAcc = 0;
 		goneNpcs = new Set(data.goneNpcs ?? []);
 		if (world) world.npcs = world.npcs.filter((npc) => !goneNpcs.has(npc.id));
+		restoreWarden();
 		landReturn();
 		if (party) snapParty();
 		restorePiles(data.piles);
@@ -1163,6 +1194,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.turnBased = turnBased;
 		data.clock = clock;
 		data.raidNight = raidNight;
+		data.warden = wardenState;
 		data.tractorReady = tractorReady;
 		data.goneNpcs = [...goneNpcs];
 		data.seed = worldSeed;
@@ -1315,9 +1347,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		buildOpen = false;
 		dialogue = null;
 	}
+	/** Carried in the pack (not worn): binoculars, lantern, radio work from the bag. */
+	function carrying(id) {
+		return !!player?.bag.some((s) => s.id === id && s.qty > 0);
+	}
+	/** Perception with what you carry (binoculars +1). */
+	function perc() {
+		return (player?.perception ?? 1) + (carrying("binoculars") ? 1 : 0);
+	}
 	function sightRadius() {
 		const trail = skillOf("trail");
-		return 5 + (player?.perception ?? 1) + (trail >= 45 ? 1 : 0);
+		return 5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0);
 	}
 	function noticeRange(base) {
 		return base * (1 - Math.min(.4, skillOf("sneak") / 220));
@@ -1416,6 +1456,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				shiftRep(town, 1, 1);
 			}
 		}
+		if (id === "warden-pay" || id === "warden-sneak" || id === "warden-fight") {
+			wardenChoice(id);
+			return;
+		}
 		if (id === "accept" && quest <= 0) {
 			quest = 1;
 			pushLog("The Chopping sits east on the old Canada Road.");
@@ -1492,6 +1536,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (id === "buy-cal-wrap") jackSale(18, "trauma", 1, "A sealed trauma kit. Real medicine, not a road rag.");
 		else if (id === "buy-cal-coat") jackSale(34, "rig", 1, "A plate rig. Canvas, pouches, and a plate that stops more than wool.");
 		else if (id === "buy-cal-gun") jackSale(42, "scoped", 1, "A scoped carbine. The glass is clean and the bore is bright.");
+		else if (id === "buy-cal-radio") jackSale(12, "radio", 1, "A hand-crank radio, already on my channel. Keep it in your pack and I'll call you at dusk when they're moving.");
+		else if (id === "buy-binoculars") buyFromTrader("rejean", 16, "binoculars", 1, "Brass binoculars. Réjean breathes on the glass and wipes it.", "Not enough iron. Réjean doesn't keep a tab.");
 		dialogue = null;
 		phase = "play";
 		sfx("click");
@@ -1597,6 +1643,84 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.frame = 2;
 		deal = .55;
 		reach = .55;
+	}
+	function wardenNpc() {
+		return world?.npcs.find((n) => n.id === WARDEN_NPC_ID) ?? null;
+	}
+	/** The Warden turns hostile where he stands (or at his post after a reload mid-fight). */
+	function spawnWarden(x, y) {
+		if (!world || world.enemies.some((e) => e.id === WARDEN_ENEMY_ID)) return;
+		world.enemies.push({ id: WARDEN_ENEMY_ID, x, y, homeX: x, homeY: y, hp: 70, maxHp: 70, atk: 11, xp: 40, elite: true, quest: false, kind: "bandit", pack: 0, temper: "hostile", crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: .6, path: null, pathT: 0, aggro: true, dead: false, hurt: 0, name: "The Bangor Warden", variant: "warden" });
+	}
+	function restoreWarden() {
+		if (!world) return;
+		const npc = wardenNpc();
+		if (wardenState >= 2 && npc) {
+			world.npcs = world.npcs.filter((n) => n.id !== WARDEN_NPC_ID);
+			if (wardenState === 2) spawnWarden(npc.x, npc.y);
+		}
+	}
+	function wardenChoice(id) {
+		const npc = wardenNpc();
+		if (!player || !world || !npc) return;
+		let text = "";
+		if (id === "warden-pay") {
+			if (player.scrap < 12) {
+				dialogue = { speaker: npc.name, text: "\"Twelve. Not a plate less.\" He doesn't move off the gate.", choices: [{ label: "Slip past while he's on the radio", id: "warden-sneak" }, { label: "Take the gate from him", id: "warden-fight" }, { label: "Turn back", id: "close" }] };
+				sfx("click");
+				sync(true);
+				return;
+			}
+			player.scrap -= 12;
+			wardenState = 1;
+			text = "He counts it twice and swings the pole gate open. \"Holeb's down the road. Don't bring trouble back up it.\"";
+		} else if (id === "warden-sneak") {
+			const chance = Math.min(90, 30 + Math.round(skillOf("sneak") * .6) + (player.trait === "step" ? 10 : 0));
+			if (Math.random() * 100 < chance) {
+				wardenState = 1;
+				grantXp(12);
+				text = `He turns to crank his radio and you are past the gate and into the spruce before he looks up. (Sneak ${chance}%)`;
+			} else {
+				id = "warden-fight";
+				pushLog(`A stick snaps under your boot. (Sneak ${chance}%)`);
+			}
+		}
+		if (id === "warden-fight") {
+			wardenState = 2;
+			world.npcs = world.npcs.filter((n) => n.id !== WARDEN_NPC_ID);
+			spawnWarden(npc.x, npc.y);
+			dialogue = null;
+			talkNpc = null;
+			phase = "play";
+			pushLog("The Warden brings his rifle up. \"Wrong answer.\"");
+			sfx("hit");
+			saveGame();
+			sync(true);
+			return;
+		}
+		dialogue = { speaker: npc.name, text, choices: [{ label: "Walk on", id: "close" }] };
+		sfx("click");
+		saveGame();
+		sync(true);
+	}
+	/** First steps near the checkpoint: the Warden calls you over. Near the flooded mill: a line about it. */
+	function stepEncounters() {
+		if (!world || !player || inside || phase !== "play" || dialogue) return;
+		const npc = wardenState === 0 ? wardenNpc() : null;
+		const near = npc ? Math.hypot(npc.x - player.x, npc.y - player.y) : 1e9;
+		if (near > 340) wardenAsked = false;
+		if (npc && near < 190 && !wardenAsked) {
+			wardenAsked = true;
+			openTalk(npc);
+			return;
+		}
+		if (!millSeen && world.flood) {
+			const fx = (world.flood.tx + .5) * TILE, fy = (world.flood.ty + .5) * TILE;
+			if (Math.hypot(fx - player.x, fy - player.y) < TILE * 7) {
+				millSeen = true;
+				pushLog("The old Attean mill. Snowmelt has the floor under a foot of black water. A lantern moves inside.");
+			}
+		}
 	}
 	function openTalk(npc) {
 		if (!player) return;
@@ -1957,6 +2081,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.ellipse(p.sx, p.sy - 18 * z, 3.4 * z, 1.5 * z, 0, 0, Math.PI * 2);
 		ctx.stroke();
 	}
+	/** Snowmelt standing in the old Attean mill: flat dark water on the ground, under everything. */
+	function paintFlood(dcx, dcy) {
+		const f = world?.flood;
+		if (!f || !explored[f.ty * 156 + f.tx]) return;
+		const t = performance.now() / 1000;
+		const blobs = [[0, 0, 2.6], [-1.6, .8, 1.5], [1.7, -.6, 1.6], [.4, 1.9, 1.3], [-.8, -1.8, 1.2], [2.4, 1.4, 1]];
+		ctx.save();
+		for (const [dx, dy, r] of blobs) {
+			const raw = worldToScreen((f.tx + .5 + dx) * TILE, (f.ty + .5 + dy) * TILE, dcx, dcy);
+			const p = zoomPoint(raw.sx, raw.sy);
+			const rx = r * TILE * .78 * zoom, ry = rx * .5;
+			const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, rx);
+			g.addColorStop(0, "rgba(28,40,46,0.78)");
+			g.addColorStop(.75, "rgba(34,48,54,0.62)");
+			g.addColorStop(1, "rgba(40,52,56,0)");
+			ctx.fillStyle = g;
+			ctx.beginPath();
+			ctx.ellipse(p.sx, p.sy, rx, ry, 0, 0, Math.PI * 2);
+			ctx.fill();
+			// a slow glint across the surface
+			ctx.strokeStyle = `rgba(170,190,196,${.1 + .06 * Math.sin(t * 1.3 + dx)})`;
+			ctx.lineWidth = 1.2 * zoom;
+			ctx.beginPath();
+			ctx.ellipse(p.sx - rx * .15, p.sy - ry * .2, rx * .45, ry * .3, 0, Math.PI * 1.1, Math.PI * 1.7);
+			ctx.stroke();
+		}
+		ctx.restore();
+	}
 	function paintPit(x, y, dcx, dcy) {
 		const p = zoomPoint(worldToScreen(x, y, dcx, dcy).sx, worldToScreen(x, y, dcx, dcy).sy);
 		const z = zoom;
@@ -2181,7 +2333,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function heroSource(name, img) {
 		if (!name.startsWith("hero") || !player) return img;
 		const colors = wornColors();
-		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}`;
+		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
 		const cached = tinted.get(key);
 		if (cached) return cached;
 		if (!img.width) return img;
@@ -2782,7 +2934,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function swingOf() {
 		const family = player ? GEAR[player.weaponId]?.family : void 0;
-		const perception = Math.max(0, (player?.perception ?? 1) - 1);
+		const perception = Math.max(0, perc() - 1);
 		const reach = isGun(family) ? perception * 28 : 0;
 		if (family === "carbine" && player?.weaponId === "scoped") return {
 			range: 290 + reach,
@@ -2953,7 +3105,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const items = [];
 		let scrap = 0;
 		if (!player) return;
-		if (enemy.kind === "bandit") {
+		if (enemy.variant === "holeb") {
+			addStack(items, "antlers", 1);
+			addStack(items, "hide", 2);
+			addStack(items, "meat", 4);
+			scrap = 4;
+		} else if (enemy.variant === "pelletier") {
+			addStack(items, "winchester", 1);
+			addStack(items, "lantern", 1);
+			addStack(items, "dandelion", 2);
+			scrap = 9;
+		} else if (enemy.variant === "warden") {
+			addStack(items, "warden", 1);
+			addStack(items, "shotgun", 1);
+			addStack(items, "shells", 6);
+			scrap = 8;
+		} else if (enemy.kind === "bandit") {
 			scrap = enemy.elite ? 4 : 2;
 			const found = rollDrop(enemy.elite, player.luck);
 			if (found) addStack(items, found, 1);
@@ -2980,6 +3147,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		corpseOf(enemy);
 		grantXp(xp);
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
+		if (enemy.id === WARDEN_ENEMY_ID) {
+			wardenState = 3;
+			pushLog("The gate is yours. His vest and his pump gun are on him.");
+		}
+		if (enemy.id === HOLEB_ID) pushLog("The old bull of Holeb lies in the snow. They will talk about this in Lowelltown.");
+		if (enemy.id === PELLETIER_ID) pushLog("Her lantern rolls into the water and goes out. The mill is quiet.");
 		if (enemy.quest && quest === 1) {
 			questKills += 1;
 			const left = questTotal - questKills;
@@ -3231,7 +3404,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}[aim];
 		const familyNow = GEAR[player.weaponId]?.family;
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
-		const chance = Math.min(.97, aimRow.hit + player.perception * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
+		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
 		player.dir = facing8(enemy.x - player.x, enemy.y - player.y);
 		if (Math.random() > chance) {
 			sfx("click");
@@ -3275,6 +3448,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function strikeNpc(npc) {
 		if (!player || !world) return;
+		// swinging at the Warden starts the fight (he is not a townsman)
+		if (npc.id === WARDEN_NPC_ID) {
+			wardenChoice("warden-fight");
+			return;
+		}
 		if (!paySwing()) return;
 		const aimRow = {
 			head: {
@@ -3296,7 +3474,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}[aim];
 		const familyNow = GEAR[player.weaponId]?.family;
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
-		const chance = Math.min(.97, aimRow.hit + player.perception * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
+		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
 		player.dir = facing8(npc.x - player.x, npc.y - player.y);
 		if (Math.random() > chance) {
 			sfx("click");
@@ -3747,7 +3925,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				path: pathTo(world, player.x, player.y, holdWX, holdWY) ?? []
 			};
 		}
-		const pace = mounted ? SCREEN_SPEED * 2.4 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45;
+		// snowshoes: faster over snow
+		const shoeT = tileOf(player.x, player.y);
+		const shoes = player.feetId === "snowshoes" && world.tiles[shoeT.ty * MAP_W + shoeT.tx] === 4 ? 1.22 : 1;
+		const pace = (mounted ? SCREEN_SPEED * 2.4 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * (mounted ? 1 : shoes);
 		const fromX = player.x;
 		const fromY = player.y;
 		tickWork(dt);
@@ -3921,6 +4102,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (!turnBased) stepParty(dt);
 		if (!turnBased) stepRaid(dt);
+		stepEncounters();
 		snowAcc += dt;
 		if (snowAcc > .14 && particles.length < 48) {
 			snowAcc = 0;
@@ -4292,7 +4474,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mini.height = 132;
 	}
 	function folkSheet(npc) {
-		return npc.role === "villager" ? "villager" : `npc-${npc.role}`;
+		return npc.role === "villager" ? "villager" : npc.role === "warden" ? "boss-warden" : `npc-${npc.role}`;
 	}
 	function paintPerson(body, camX, camY) {
 		const id = body.id ?? body.homeId;
@@ -4309,6 +4491,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		blit(folkSheet(body), body.x, body.y, folkHeight(body), true, body.frame || 0, body.dir || 0, camX, camY);
 	}
 	function beastSheet(enemy) {
+		if (enemy.variant === "holeb") return "boss-holeb";
+		if (enemy.variant === "warden") return "boss-warden";
+		if (enemy.variant === "pelletier") return "boss-pelletier";
 		if (enemy.variant === "fur") return "boss-fur";
 		if (enemy.variant === "mask") return "boss-mask";
 		if (enemy.variant === "saw") return "boss-saw";
@@ -4328,6 +4513,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return enemy.id % 3 === 1 ? "raider-gray" : enemy.id % 3 === 2 ? "raider-blue" : "raider";
 	}
 	function beastH(enemy) {
+		if (enemy.variant === "holeb") return Math.round(NPC_H * 1.35 * 1.45);
+		if (enemy.variant === "warden") return Math.round(NPC_H * 1.04);
+		if (enemy.variant === "pelletier") return Math.round(NPC_H * 1.0);
 		if (enemy.variant === "fur" || enemy.variant === "saw" || enemy.variant === "armor") return Math.round(NPC_H * 1.22);
 		if (enemy.variant === "brute" || enemy.variant === "shield" || enemy.variant === "atv") return Math.round(NPC_H * 1.12);
 		if (enemy.variant === "mask") return Math.round(NPC_H * 1.08);
@@ -4350,6 +4538,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (npc.role === "cal") return Math.round(NPC_H * 1.02);
 		if (npc.role === "adele") return Math.round(NPC_H * .96);
 		if (npc.role === "pete") return Math.round(NPC_H * 1.05);
+		if (npc.role === "warden") return Math.round(NPC_H * 1.04);
 		return NPC_H;
 	}
 	function tractorShift(charge) {
@@ -4385,6 +4574,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const nearPost = world.props.some((p) => (DEFENSE[p.kind] || LURE.has(p.kind) || p.kind === "tractor" || p.kind === "farmhouse") && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
 		const dark = nightShade(clock) > .22;
 		const onFarm = inFarm(here.tx, here.ty) || nearPost;
+		// the hand-crank radio: Jack calls at dusk before a raid night
+		const shade = nightShade(clock);
+		if (shade > .1 && !dark && !radioWarned && carrying("radio") && jackTrust > 0) {
+			radioWarned = true;
+			const n = raidNight + 1;
+			const boss = n === 5 ? " Poulin's with them." : n === 10 ? " Gallant's walking with them." : n === 15 ? " I can hear a saw." : "";
+			pushLog(`Jack on the radio: "Dusk. ${3 + Math.min(4, n)} or so coming up Cambridge Road tonight.${boss} Get to the farm."`);
+			sfx("click");
+		}
+		if (shade < .05) radioWarned = false;
 		if (dark && onFarm && !nightLatch) {
 			nightLatch = true;
 			bossThisNight = false;
@@ -5073,8 +5272,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const flick = (k) => 1 + Math.sin(t * 9 + k) * .04 + Math.sin(t * 23 + k * 3) * .03;
 		// the hero carries a small light; sharper eyes see a little further into it
 		const pp = at(player.x, player.y - 40);
-		lights.push({ x: pp.sx, y: pp.sy, r: (120 + Math.min(10, player.perception ?? 1) * 9) * zoom, a: .8, warm: .3 });
+		lights.push({ x: pp.sx, y: pp.sy, r: (120 + Math.min(10, perc()) * 9) * zoom * (carrying("lantern") ? 1.7 : 1), a: carrying("lantern") ? .95 : .8, warm: carrying("lantern") ? .55 : .3 });
 		const margin = 320 * zoom;
+		// Mother Pelletier's lantern
+		for (const e of world.enemies) {
+			if (e.variant !== "pelletier" || e.dead) continue;
+			const q = at(e.x, e.y - 30);
+			if (q.sx < -margin || q.sy < -margin || q.sx > viewW + margin || q.sy > viewH + margin) continue;
+			lights.push({ x: q.sx, y: q.sy, r: 150 * zoom * flick(e.id), a: .85, warm: .75 });
+		}
 		for (const prop of world.props) {
 			if (!explored[prop.ty * 156 + prop.tx]) continue;
 			const fire = FIRES[prop.kind] ?? ((prop.burn || 0) > 0 ? 200 : 0);
@@ -5448,6 +5654,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 			});
 		}
+		paintFlood(drawCamX, drawCamY);
 		draws.sort((a, b) => a.z - b.z);
 		for (const item of draws) item.draw();
 		if (work && work.swing > 0 && player && !inside) paintToolSwing(drawCamX, drawCamY);
@@ -5557,10 +5764,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sx: foot.sx + lean.x * zoom,
 			sy: foot.sy + lean.y * zoom
 		};
-		ctx.fillStyle = "rgba(12,10,8,0.4)";
-		ctx.beginPath();
-		ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 8 * zoom, 0, 0, Math.PI * 2);
-		ctx.fill();
+		// armor overlays ride on the hero: no second shadow, and the hero sheet's planted-foot data
+		const layer = name.startsWith("overlay-");
+		if (!layer) {
+			ctx.fillStyle = "rgba(12,10,8,0.4)";
+			ctx.beginPath();
+			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 8 * zoom, 0, 0, Math.PI * 2);
+			ctx.fill();
+		}
 		if (!img) return;
 		const src = heroSource(name, img);
 		let sx = 0;
@@ -5576,9 +5787,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sx = frame % 4 * sw;
 			sy = (sheet ? dir % rows : 0) * sh;
 		}
-		let frac = img.foot ?? (sheet || strips ? .92 : .9);
-		if ((sheet || strips) && img.feet) {
-			const planted = img.feet[(sheet ? dir % rows : 0) * 4 + (frame % 4)];
+		const footSrc = layer ? images.get(overlayBase) ?? img : img;
+		let frac = footSrc.foot ?? (sheet || strips ? .92 : .9);
+		if ((sheet || strips) && footSrc.feet) {
+			const planted = footSrc.feet[(sheet ? dir % rows : 0) * 4 + (frame % 4)];
 			if (planted) frac = planted;
 		}
 		const dh = drawH * zoom;
@@ -6522,6 +6734,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					refreshGear(player);
 					pushLog(`Worn on the ${slot}: ${def.name}.`);
 				}
+			} else if (def.id === "syrup") {
+				stack.qty -= 1;
+				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+				player.stamina = player.maxStamina;
+				sfx("click");
+				pushLog("Maple syrup straight from the jar. Your legs come back.");
+			} else if (def.id === "dandelion") {
+				stack.qty -= 1;
+				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+				player.hp = Math.min(player.maxHp, player.hp + def.heal);
+				player.stamina = Math.min(player.maxStamina, player.stamina + 30);
+				sfx("click");
+				pushLog("Bitter dandelion tea. The chill goes out of you.");
+			} else if (def.id === "radio") {
+				sfx("click");
+				const dark = nightShade(clock) > .22;
+				pushLog(jackTrust > 0 ? (dark ? "Jack, through the static: \"Lights on the road. Keep your head down.\"" : "Jack, through the static: \"Quiet so far. I'll call at dusk if they move.\"") : "Static. Somebody else's channel, maybe. Jack hasn't given you his.");
 			} else if (def.heal > 0) {
 				stack.qty -= 1;
 				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
@@ -6666,6 +6895,26 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 		},
 		choose: (id) => applyChoice(id),
+		invEquip: (id, slot) => api.invEquip(id, slot),
+		invUnequip: (slot) => api.invUnequip(slot),
+		invUse: (id) => api.invUse(id),
+		craft: (id) => craft(id),
+		dropItem: (id) => { if (player) { player.bag = player.bag.filter((s) => s.id !== id); refreshGear(player); } },
+		countOf: (id) => player?.bag.reduce((n, s) => n + (s.id === id ? s.qty : 0), 0) ?? 0,
+		addWood: (n) => { if (player) player.wood += n; },
+		logTail: () => [...allLog],
+		snowTile: () => {
+			if (!world || !player) return null;
+			let best = null, bd = 1e18;
+			for (let ty = 2; ty < MAP_H - 2; ty++) for (let tx = 2; tx < MAP_W - 8; tx++) {
+				let ok = true;
+				for (let k = 0; k < 8 && ok; k++) if (world.tiles[ty * MAP_W + tx + k] !== 4 || world.blocked[ty * MAP_W + tx + k]) ok = false;
+				if (!ok) continue;
+				const x = (tx + .5) * TILE, y = (ty + .5) * TILE, d = Math.hypot(x - player.x, y - player.y);
+				if (d < bd) { bd = d; best = { x, y }; }
+			}
+			return best;
+		},
 		leave: () => leaveHouse(),
 		insideInfo: () => inside ? { id: inside.id, kind: world?.props.find((p) => p.id === inside.id)?.kind ?? "", rx: inside.rx, ry: inside.ry, origin: roomOrigin(), scale: roomScale(), dims: roomDims(), door: roomDoor(), phase } : null,
 		exitCheck: () => world ? world.props.filter((p) => canWalkIn(p)).map((p) => { const d = doorPoint(p); const t = tileOf(d.x, d.y); const o = clearOutside(d.x, d.y); const ot = tileOf(o.x, o.y); const seen = new Set([ot.ty * 156 + ot.tx]); const q = [[ot.tx, ot.ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const k = ay * 156 + ax; if (ax < 0 || ay < 0 || ax >= 156 || ay >= 156 || seen.has(k) || cellBlocked(world, ax, ay)) continue; seen.add(k); q.push([ax, ay]); } } return { kind: p.kind, id: p.id, blocked: cellBlocked(world, t.tx, t.ty), moved: Math.round(Math.hypot(o.x - d.x, o.y - d.y)), reach: seen.size }; }) : [],
@@ -6678,6 +6927,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		blockedHere: () => world && player ? { r: pointBlocked(world, player.x, player.y, RADIUS), c: pointBlocked(world, player.x, player.y, 0), x: player.x, y: player.y, w: pointBlocked(world, player.x - 20, player.y, RADIUS), e: pointBlocked(world, player.x + 20, player.y, RADIUS), n: pointBlocked(world, player.x, player.y - 20, RADIUS), s: pointBlocked(world, player.x, player.y + 20, RADIUS) } : null,
 		doorDbg: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p) return null; const sp = PROP_SPEC[p.kind]; const pd = PAINTED_DOORS[sp.image]; const c = propCenter(p); return { c, off: pd && houseArtToWorld(p.kind, pd.g[0], pd.g[1]), door: doorPoint(p), foot: images.get(sp.image)?.foot, w: images.get(sp.image)?.width, h: images.get(sp.image)?.height, locked: !!p.locked, opening: OPEN_TIME }; },
 		giveItem: (id, qty = 1) => giveItem(id, qty),
+		encounters: () => {
+			const e = (id) => { const x = world?.enemies.find((q) => q.id === id); return x ? { x: x.x, y: x.y, hp: x.hp, dead: x.dead, aggro: x.aggro } : null; };
+			const w = wardenNpc();
+			return { holeb: e(HOLEB_ID), pelletier: e(PELLETIER_ID), wardenFoe: e(WARDEN_ENEMY_ID), wardenNpc: w ? { x: w.x, y: w.y } : null, wardenState, flood: world?.flood ?? null, checkpoint: world?.checkpoint ?? null, dialogue: dialogue ? { speaker: dialogue.speaker, choices: dialogue.choices.map((c) => c.id) } : null };
+		},
+		stats: () => player ? { scrap: player.scrap, stamina: player.stamina, maxStamina: player.maxStamina, hp: player.hp, atk: player.atk, def: player.def, sight: sightRadius(), perc: perc(), feet: player.feetId, back: player.backId } : null,
+		setScrap: (n) => { if (player) player.scrap = n; },
+		setStamina: (n) => { if (player) player.stamina = n; },
 		togglePack: () => api.togglePack(),
 		pressBack: () => api.back(),
 		dbgInv: () => player ? { slots: Object.fromEntries(EQUIP_SLOTS.map((s) => [s, player[SLOT_FIELD[s]]])), atk: player.atk, def: player.def, rows: layoutGrid(player).rows, over: layoutGrid(player).over, grid: player.gridPos } : null,
@@ -6910,6 +7167,6 @@ function loadImages(images) {
 			resolve();
 		};
 		img.onerror = () => resolve();
-		img.src = `/game/${name}.png?v=2040`;
+		img.src = `/game/${name}.png?v=${ART_V}`;
 	}))).then(() => void 0);
 }

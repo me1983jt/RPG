@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
   Axe,
@@ -248,24 +249,30 @@ export function RPG() {
               </section>
             ) : null}
 
-            {hud.dialogue ? (
-              <section className="pointer-events-auto mx-auto w-full max-w-lg plank border border-border bg-surface p-4">
-                <p className="font-display text-lg text-primary">{hud.dialogue.speaker}</p>
-                <p className="mt-2 leading-relaxed">{hud.dialogue.text}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {hud.dialogue.choices.map((choice) => (
-                    <button
-                      key={choice.id}
-                      type="button"
-                      className="plank bg-primary px-4 py-3 text-left text-sm font-semibold leading-snug text-bg"
-                      onClick={() => apiRef.current?.choose(choice.id)}
-                    >
-                      {choice.label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+            {hud.dialogue && typeof document !== "undefined"
+              ? createPortal(
+                  // over the HUD, and scrolls if the choices don't fit a short landscape phone
+                  <div className="pointer-events-none fixed inset-0 z-[58] flex items-center justify-center p-2">
+                    <section className="pointer-events-auto max-h-full w-full max-w-xl overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 shadow-2xl sm:p-4">
+                      <p className="font-display text-lg leading-tight text-primary">{hud.dialogue.speaker}</p>
+                      <p className="mt-1.5 text-sm leading-snug sm:text-base sm:leading-relaxed">{hud.dialogue.text}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {hud.dialogue.choices.map((choice) => (
+                          <button
+                            key={choice.id}
+                            type="button"
+                            className="plank min-h-[40px] bg-primary px-3 py-2 text-left text-sm font-semibold leading-snug text-bg"
+                            onClick={() => apiRef.current?.choose(choice.id)}
+                          >
+                            {choice.label}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  </div>,
+                  document.body,
+                )
+              : null}
 
             {hud.packOpen && hud.inv ? (
               <Inventory

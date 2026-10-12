@@ -56,7 +56,8 @@ export function itemSize(id: string): { w: number; h: number } {
     if (s === "back") return { w: 2, h: 3 };
     return { w: 2, h: 2 };
   }
-  if (id === "hide" || id === "pelt") return { w: 2, h: 2 };
+  if (id === "hide" || id === "pelt" || id === "antlers") return { w: 2, h: 2 };
+  if (id === "lantern") return { w: 1, h: 2 };
   if (id === "stew" || id === "trauma" || id === "kit" || id === "fuel") return { w: 1, h: 2 };
   return { w: 1, h: 1 };
 }
@@ -94,7 +95,7 @@ export function wornCount(p: Holder, id: string): number {
   return n;
 }
 export function gridRows(p: Holder): number {
-  return GRID_ROWS + (p.backId === "packframe" ? 2 : 0);
+  return GRID_ROWS + (p.backId === "packframe" ? 2 : p.backId === "backpack" ? 1 : 0);
 }
 
 /** Place every loose stack: keep saved spots that still fit, then pack the rest top-left first

@@ -90,6 +90,30 @@ export const GEAR: Record<string, GearDef> = {
   bracers: { id: "bracers", name: "Leather bracers", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "hands", note: "Cuffs that take a cut." },
   boots: { id: "boots", name: "Work boots", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 1, heal: 0, slot: "feet", note: "Cracked leather, dry inside." },
   "boots-std": { id: "boots-std", name: "Lumber boots", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "feet", note: "Steel shank, felt liners. Good in snow." },
+  // v0.7 (items v21 drew icons for; stats and effects are ours)
+  scraphelm: { id: "scraphelm", name: "Scrap helm", kind: "coat", family: "coat", quality: "good", atk: 0, def: 3, heal: 0, slot: "head", note: "Stove plate hammered into a helm." },
+  toque: { id: "toque", name: "Knit toque", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 1, heal: 0, slot: "head", note: "Wool pulled over the ears." },
+  huntcap: { id: "huntcap", name: "Hunting cap", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 1, heal: 0, slot: "head", note: "Blaze orange, ear flaps. Other hunters see you first." },
+  hockey: { id: "hockey", name: "Hockey mask", kind: "coat", family: "coat", quality: "good", atk: 0, def: 3, heal: 0, slot: "head", note: "A pond goalie's mask. The eyes are cut out." },
+  canvas: { id: "canvas", name: "Canvas coat", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 2, heal: 0, slot: "chest", note: "Work canvas. It turns the wind." },
+  waxed: { id: "waxed", name: "Waxed coat", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 3, heal: 0, slot: "chest", note: "Oiled cloth. Rain runs off it." },
+  warden: { id: "warden", name: "Warden's vest", kind: "coat", family: "coat", quality: "rare", atk: 0, def: 6, heal: 0, slot: "chest", note: "A game warden's armored vest, the patch half torn off." },
+  shinguard: { id: "shinguard", name: "Shin guards", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 2, heal: 0, slot: "legs", note: "Hockey pads strapped over the shins." },
+  snowshoes: { id: "snowshoes", name: "Snowshoes", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 1, heal: 0, slot: "feet", note: "Ash frames and rawhide. Faster over snow." },
+  steeltoes: { id: "steeltoes", name: "Steel-toe boots", kind: "coat", family: "coat", quality: "good", atk: 0, def: 3, heal: 0, slot: "feet", note: "Mill boots. The toes are capped." },
+  backpack: { id: "backpack", name: "Canvas pack", kind: "coat", family: "coat", quality: "poor", atk: 0, def: 0, heal: 0, slot: "back", note: "A camp pack. One more row in the pack while you wear it." },
+  sling: { id: "sling", name: "Moose-hide sling", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 0, heal: 0, slot: "back", note: "Carries a long gun steady. +1 attack with rifles and shotguns." },
+  winchester: { id: "winchester", name: "Winchester", kind: "weapon", family: "carbine", quality: "rare", atk: 12, def: 0, heal: 0, note: "A lever gun from somebody's camp wall. It reaches." },
+  shotgun: { id: "shotgun", name: "Pump shotgun", kind: "weapon", family: "scatter", quality: "good", atk: 11, def: 0, heal: 0, note: "Twelve gauge. Close, and it ends a fight." },
+  hudson: { id: "hudson", name: "Hudson Bay axe", kind: "weapon", family: "axe", quality: "good", atk: 10, def: 0, heal: 0, note: "A camp axe with a long bit." },
+  syrup: { id: "syrup", name: "Maple syrup", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "A jar from the sugar bush. Use it: stamina back all at once." },
+  smokedfish: { id: "smokedfish", name: "Smoked fish", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 14, note: "Lake trout, smoked. Use it from the pack." },
+  dandelion: { id: "dandelion", name: "Dandelion tea", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 6, note: "Bitter tea. Clears a cold and a bleed, and warms you through." },
+  radio: { id: "radio", name: "Hand-crank radio", kind: "supply", family: "supply", quality: "good", atk: 0, def: 0, heal: 0, note: "Tuned to Jack's channel. Carry it and he calls before a raid." },
+  binoculars: { id: "binoculars", name: "Binoculars", kind: "supply", family: "supply", quality: "good", atk: 0, def: 0, heal: 0, note: "Brass and glass. Carry them: +1 Perception, and you see farther." },
+  lantern: { id: "lantern", name: "Lantern", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "A barn lantern. Carry it: a much bigger ring of light at night." },
+  antlers: { id: "antlers", name: "Antlers", kind: "supply", family: "trade", quality: "good", atk: 0, def: 0, heal: 0, worth: 6, note: "A rack off a bull moose. Tap to trade it." },
+  sapbucket: { id: "sapbucket", name: "Sap bucket", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Full of maple sap. Boil it at a cookfire for syrup." },
   packframe: { id: "packframe", name: "Pack frame", kind: "coat", family: "coat", quality: "standard", atk: 0, def: 0, heal: 0, slot: "back", note: "Ash frame and straps. Two more rows in the pack while you wear it." },
   trauma: { id: "trauma", name: "Trauma kit", kind: "supply", family: "bandage", quality: "rare", atk: 0, def: 0, heal: 52, note: "Sealed. Use it from the pack. Not road medicine." },
   kit: { id: "kit", name: "Healing kit", kind: "supply", family: "bandage", quality: "standard", atk: 0, def: 0, heal: 30, note: "Needle, cloth, and a boiled wrap. Use it from the pack." },
@@ -202,6 +226,7 @@ export const CRAFT: CraftRecipe[] = [
   { id: "stew", item: "stew", qty: 1, iron: 0, wood: 1, need: [{ id: "meat", qty: 1 }, { id: "apple", qty: 1 }], name: "Camp stew", blurb: "Meat and a windfall apple in the pot." },
   { id: "bandage", item: "bandage", qty: 1, iron: 0, wood: 0, need: [{ id: "cloth", qty: 2 }], name: "Rag bandage", blurb: "Tear cloth into a wrap." },
   { id: "kit", item: "kit", qty: 1, iron: 1, wood: 0, need: [{ id: "bandage", qty: 2 }, { id: "cloth", qty: 1 }], name: "Healing kit", blurb: "Bandages, cloth, and a needle." },
+  { id: "syrup", item: "syrup", qty: 1, iron: 0, wood: 2, need: [{ id: "sapbucket", qty: 1 }], name: "Boil syrup", blurb: "Boil a bucket of sap down to a jar." },
   { id: "cloth", item: "cloth", qty: 2, iron: 0, wood: 0, need: [{ id: "hide", qty: 1 }], name: "Cut cloth", blurb: "A hide becomes two twists of cloth." },
 ];
 
@@ -241,7 +266,7 @@ export function traitOf(id: string | undefined): { id: TraitId; title: string; b
   return TRAITS.find((t) => t.id === id) ?? null;
 }
 
-const DROP_POOL = ["hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate", "boots", "boots-std", "packframe"];
+const DROP_POOL = ["hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate", "boots", "boots-std", "packframe", "scraphelm", "toque", "huntcap", "hockey", "canvas", "waxed", "shinguard", "snowshoes", "steeltoes", "backpack", "sling", "shotgun", "hudson", "smokedfish", "dandelion", "sapbucket", "lantern"];
 
 export function rollDrop(elite: boolean, luck = 1): string | null {
   const lift = Math.max(0, luck - 1) * 0.04;

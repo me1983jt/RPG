@@ -222,7 +222,8 @@ export interface Npc {
     | "emile"
     | "paul"
     | "mae"
-    | "walter";
+    | "walter"
+    | "warden";
   name: string;
   x: number;
   y: number;
@@ -264,7 +265,7 @@ export interface Enemy {
   dead: boolean;
   hurt: number;
   name?: string;
-  variant?: "fur" | "mask" | "saw" | "scout" | "brute" | "torch" | "jumper" | "armor" | "shield" | "atv";
+  variant?: "fur" | "mask" | "saw" | "scout" | "brute" | "torch" | "jumper" | "armor" | "shield" | "atv" | "holeb" | "pelletier" | "warden";
   slow?: number;
   death?: number;
 }

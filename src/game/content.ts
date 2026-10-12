@@ -25,6 +25,9 @@ export interface TalkState {
   /** Purchases made from Jack Ready. One is enough to earn his trust. */
   jackTrust: number;
   bunkerSeen: boolean;
+  /** The Bangor Warden's checkpoint: 0 not met, 1 paid or slipped past, 2+ fought. */
+  warden?: number;
+  scrap?: number;
 }
 
 export const SNOW_WOOD = 3;
@@ -139,7 +142,26 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
         { label: "Trauma kit — 18 iron", id: "buy-cal-wrap" },
         { label: "Plate rig — 34 iron", id: "buy-cal-coat" },
         { label: "Scoped carbine — 42 iron", id: "buy-cal-gun" },
+        ...(trusted ? [{ label: "Hand-crank radio on my channel — 12 iron", id: "buy-cal-radio" }] : []),
         { label: "That's all", id: "jack-bye" },
+      ],
+    };
+  }
+  if (role === "warden") {
+    if ((t.warden ?? 0) >= 1)
+      return {
+        speaker: name,
+        text: "\"Road's open for you. Don't make me write it down twice.\" He goes back to watching the tree line.",
+        choices: [{ label: "Move along", id: "close" }],
+      };
+    return {
+      speaker: name,
+      text: "A green coat with the state patch still on it, a rifle across his arms, a pole gate dragged over the gravel. \"Bangor Warden. Nobody comes down to Holeb unchecked. Twelve iron covers the toll, and you keep walking.\"",
+      choices: [
+        { label: (t.scrap ?? 0) >= 12 ? "Pay the toll — 12 iron" : "Pay the toll — 12 iron (you have " + (t.scrap ?? 0) + ")", id: "warden-pay" },
+        { label: "Slip past while he's on the radio", id: "warden-sneak" },
+        { label: "Take the gate from him", id: "warden-fight" },
+        { label: "Turn back", id: "close" },
       ],
     };
   }
@@ -152,6 +174,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
         { label: "Field bandage — 6 iron", id: "buy-wrap" },
         { label: "Trail coat — 14 iron", id: "buy-coat" },
         { label: "Service carbine — 18 iron", id: "buy-carbine" },
+        { label: "Binoculars — 16 iron", id: "buy-binoculars" },
         { label: "That's all", id: "close" },
       ],
     };

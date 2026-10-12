@@ -207,4 +207,28 @@ bundle("pelt", (110, 74, 46), 2, 2, "hide"); bundle("hide", (150, 110, 80), 2, 2
 bundle("apple", (176, 44, 36), kind="apple"); bundle("stew", (0, 0, 0), 1, 2, "stew")
 from_art("cider-cups", "cider", 1, 1); from_art("donuts", "donut", 1, 1)
 from_art("icon-bomb", "bomb", 1, 1); from_art("icon-fuel", "fuel", 1, 2); from_art("icon-bait", "baitpack", 1, 1)
+# v0.7 items (v21 added them; its icons for these were flat rectangles)
+longgun("winchester", (150, 96, 52)); longgun("shotgun", (96, 66, 40))
+blade_tool("hudson", (160, 160, 166), handle=(132, 92, 54), kind="axe")
+coat("canvas", (168, 146, 104)); coat("waxed", (78, 82, 58)); plate("warden", (84, 96, 64))
+cap("scraphelm", (126, 96, 70), helm=True); cap("toque", (150, 44, 40)); cap("huntcap", (196, 96, 40), brim=True)
+cap("hockey", (214, 210, 196), helm=True); legs("shinguard", (120, 118, 112)); boots("steeltoes", (64, 56, 50))
+def pack(name):
+    im = canvas(2, 3)
+    layer(im, rect(im, .16, .14, .84, .92, 14), (124, 112, 78), seed=1)
+    layer(im, rect(im, .22, .5, .78, .74, 8), (104, 94, 64), seed=2)
+    layer(im, rect(im, .3, .04, .4, .2, 3), (80, 60, 40), seed=3); layer(im, rect(im, .6, .04, .7, .2, 3), (80, 60, 40), seed=4)
+    save(im, name)
+def sling(name):
+    im = canvas(2, 3)
+    layer(im, poly(im, [(.2, .06), (.32, .04), (.86, .9), (.74, .94)]), (128, 90, 58), seed=1)
+    layer(im, rect(im, .4, .4, .62, .56, 4), (100, 70, 44), seed=2)
+    save(im, name)
+def snowshoes(name):
+    im = canvas(2, 2)
+    for ox in (0, .48):
+        layer(im, ell(im, ox + .06, .06, ox + .46, .94), (140, 104, 64), seed=int(ox * 10) + 1)
+        layer(im, ell(im, ox + .12, .14, ox + .4, .86), (204, 190, 150), seed=int(ox * 10) + 2, noise=16)
+    save(im, name)
+pack("backpack"); sling("sling"); snowshoes("snowshoes")
 print(len(os.listdir(OUT)), "icons")

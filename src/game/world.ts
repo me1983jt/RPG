@@ -50,6 +50,9 @@ export interface World {
   exits: number[];
   gates: Gate[];
   questBandits: number;
+  /** v0.7: Mother Pelletier's flooded mill and the Warden's road checkpoint (home map only) */
+  flood?: { tx: number; ty: number };
+  checkpoint?: { tx: number; ty: number };
 }
 
 let genSalt = 0;
@@ -216,6 +219,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   world.gates = layExits(world, mouths, null);
   finishFarm(world);
   finishCal(world);
+  placeEncounters(world);
   world.questBandits = world.enemies.filter((e) => e.quest).length;
 
   const cot = world.props.find((p) => p.kind === "cot");
@@ -854,6 +858,51 @@ function addNpc(world: World, role: Npc["role"], name: string, tx: number, ty: n
     hp: role === "villager" ? 16 : 26,
     maxHp: role === "villager" ? 16 : 26,
   });
+}
+
+/** v0.7 encounters, added last so every older enemy keeps its id (saves list the slain by id).
+ * Fixed ids in the 90000s for the same reason. */
+export const HOLEB_ID = 90001;
+export const PELLETIER_ID = 90002;
+export const WARDEN_ENEMY_ID = 90003;
+export const WARDEN_NPC_ID = 990;
+function placeEncounters(world: World): void {
+  const keep = world.nextEnemyId;
+  // The Moose of Holeb roams the ground west of the pond
+  const h = PLACES.bonehollow;
+  addBeast(world, "moose", h.tx - 18, h.ty - 3, 0);
+  const moose = world.enemies[world.enemies.length - 1]!;
+  Object.assign(moose, { id: HOLEB_ID, variant: "holeb", name: "The Moose of Holeb", hp: 110, maxHp: 110, atk: 14, xp: 50, elite: true });
+  // Mother Pelletier holds the flooded mill below Attean, with two of her boys
+  const m = PLACES.millcross;
+  const mill = nearestFree(world, m.tx + 17, m.ty + 15);
+  const mtx = Math.floor(mill.x / TILE), mty = Math.floor(mill.y / TILE);
+  world.flood = { tx: mtx, ty: mty };
+  for (const [dx, dy] of [[-3, -3], [3, 2]] as const) {
+    if (!world.blocked[idx(mtx + dx, mty + dy)]) addProp(world, "logs", mtx + dx, mty + dy);
+  }
+  addEnemy(world, mtx, mty, false, true);
+  const ma = world.enemies[world.enemies.length - 1]!;
+  Object.assign(ma, { id: PELLETIER_ID, variant: "pelletier", name: "Mother Pelletier", hp: 64, maxHp: 64, atk: 9, xp: 38 });
+  addEnemy(world, mtx - 2, mty + 1, false, false);
+  world.enemies[world.enemies.length - 1]!.id = 90004;
+  addEnemy(world, mtx + 2, mty + 1, false, false);
+  world.enemies[world.enemies.length - 1]!.id = 90005;
+  // The Bangor Warden keeps a checkpoint on the road between Attean and Holeb
+  const cx = Math.round((m.tx + h.tx) / 2), cy = Math.round((m.ty + h.ty) / 2);
+  let best: [number, number] | null = null;
+  for (let r = 0; r < 24 && !best; r++)
+    for (let y = cy - r; y <= cy + r && !best; y++)
+      for (let x = cx - r; x <= cx + r && !best; x++)
+        if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) === r && world.tiles[idx(x, y)] === ROAD && !world.blocked[idx(x, y)]) best = [x, y];
+  const [wx, wy] = best ?? [cx, cy];
+  addNpc(world, "warden", "The Bangor Warden", wx, wy, 9999);
+  const w = world.npcs[world.npcs.length - 1]!;
+  w.id = WARDEN_NPC_ID;
+  w.hp = 70;
+  w.maxHp = 70;
+  world.checkpoint = { tx: wx, ty: wy };
+  world.nextEnemyId = keep;
 }
 
 function addEnemy(world: World, tx: number, ty: number, quest: boolean, elite: boolean): void {
