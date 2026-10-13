@@ -30,6 +30,9 @@ preview visitor is signed out until they sign in):
 - `useCurrentUserState()` → `{ user, isPending }` — for guards: wait for
   `isPending` to clear before treating `user: null` as signed out, or a hard
   reload bounces signed-in users to sign-in.
+- Key effects that load data on `user?.id`, never on an object or array built
+  during render: an effect that sets state re-runs on every render that
+  rebuilds its dependency, so its server calls loop forever.
 
 **State components** from `@/lib/auth/gates`: `SignedIn`, `SignedOut`,
 `SignInGate` (`{ children, fallback? }` — nothing while pending, `children`
