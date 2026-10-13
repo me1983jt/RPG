@@ -1,9 +1,10 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2053;
+const ART_V = 2054;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
+import { POSE } from "@/game/pose-table";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import {
   PERKS,
@@ -1805,7 +1806,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		intent = null;
 		player.dir = facing8(npc.x - player.x, npc.y - player.y);
 		npc.dir = facing8(player.x - npc.x, player.y - npc.y);
-		player.frame = 1;
+		player.frame = 0;
 		sfx("talk");
 		sync(true);
 	}
@@ -1944,6 +1945,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (moving) party.anim = (party.anim || 0) + dt * 8;
 		party.frame = moving ? Math.floor(party.anim) % 4 : 0;
+		party.still = !moving;
 	}
 	let work = null;
 	function toolReady(mode) {
@@ -2957,7 +2959,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (moving) player.stamina = Math.max(0, player.stamina - 12 * dt);
 		else player.stamina = Math.min(player.maxStamina, player.stamina + staminaBack() * dt);
-		player.frame = moving ? Math.floor(player.anim / 22) % 4 : 1;
+		player.frame = moving ? Math.floor(player.anim / 22) % 4 : 0;
 		// walking onto the door mat takes you out, the same as tapping the door
 		if (moving && inside.ry >= roomDims().h - 36 && Math.abs(inside.rx - roomDims().w / 2) < 40) {
 			leaveHouse();
@@ -4131,7 +4133,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		} else {
 			player.stamina = Math.min(player.maxStamina, player.stamina + staminaBack() * dt);
 			lastSpeed = 0;
-			player.frame = work && work.fall > 0 ? 1 : reach > 0 ? 2 : 1;
+			player.frame = work && work.fall > 0 ? 1 : reach > 0 ? 2 : 0; // 0 = feet-together standing frame (1 was mid-stride)
 		}
 		stamHud += dt;
 		if (stamHud > .35) {
@@ -4538,7 +4540,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			blit(posed, body.x, body.y, folkHeight(body), false, 0, 0, camX, camY, firing, 0, 0, breath);
 			return;
 		}
-		blit(folkSheet(body), body.x, body.y, folkHeight(body), true, body.frame || 0, body.dir || 0, camX, camY);
+		// Standing still uses each sheet's cleanest upright feet-together cell; walking skips rows whose
+		// art is slanted (most NPC diagonals lean ~18px) or mis-sized (Loki's N row). See pose-table.ts.
+		const sheet = folkSheet(body);
+		const pose = POSE[sheet];
+		const dir = (body.dir || 0) % 8;
+		let row = dir;
+		let frame = body.frame || 0;
+		if (pose && body.still !== false) [row, frame] = pose.idle[dir];
+		else if (pose) row = pose.walk[dir];
+		blit(sheet, body.x, body.y, folkHeight(body), true, frame, row, camX, camY);
 	}
 	function beastSheet(enemy) {
 		if (enemy.variant === "holeb") return "boss-holeb";
@@ -4843,7 +4854,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (moving && stepped > .2) {
 			npc.anim += stepped;
 			npc.frame = Math.floor(npc.anim / 16) % 4;
-		} else npc.frame = 0;
+			npc.still = false;
+		} else {
+			npc.frame = 0;
+			npc.still = true;
+		}
 	}
 	/** The building's own painted door: nothing is pasted over it. While it opens, the doorway darkens
 	 * (the room behind), following the door's painted outline. */
@@ -6885,6 +6900,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				y: c.y
 			};
 		},
+		folk: () => (world?.npcs ?? []).map((n) => { const r = worldToScreen(n.x, n.y, camX, camY); const z = zoomPoint(r.sx, r.sy); return { role: n.role, name: n.name, dir: n.dir, frame: n.frame, sx: Math.round(z.sx ?? z.x ?? 0), sy: Math.round(z.sy ?? z.y ?? 0) }; }),
+		placeNpc: (role, x, y, dir = 0) => { const n = world?.npcs.find((m) => m.role === role); if (!n) return false; n.x = n.homeX = x; n.y = n.homeY = y; n.path = []; n.pause = 99; n.dir = dir; return true; },
 		npcOf: (role) => {
 			const npc = world?.npcs.find((n) => n.role === role);
 			return npc ? {
