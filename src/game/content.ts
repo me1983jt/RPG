@@ -212,7 +212,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     }
     return {
       speaker: name,
-      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing.",
+      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing. My kids pick the low limbs, so mind them.",
       choices: [
         { label: "I'll leave the rows standing", id: "close" },
         { label: "Come hold the orchard", id: "join-justin" },
@@ -230,7 +230,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     if (t.snow < 2) {
       return {
         speaker: name,
-        text: "Sarah. I run the kitchen and the cider press. First snow tonight. Help Justin with the wood, then come see me and we'll warm you up.",
+        text: "Sarah. Justin and I run this place. I've got the kitchen and the cider press, and our two kids underfoot. First snow tonight. Help Justin with the wood, then come see me and we'll warm you up.",
         choices: [{ label: "I'll help him", id: "close" }],
       };
     }
@@ -257,17 +257,17 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "cyndal") {
     return {
       speaker: name,
-      text: "Cyndal. I'm thirteen. I can reach the lower limbs on these two rows without a box. The high ones are Justin's.",
+      text: "Cyndal. I'm thirteen. Justin's my dad, and Loki's my little brother. I can reach the lower limbs on these two rows without a box. The high ones are Dad's. Raid nights I'm lookout from the loft window. I call the waves, then I help Mom with anyone hurt inside.",
       choices: [
         { label: "I'll leave the high ones", id: "close" },
-        { label: "You can take a post", id: "join-cyndal" },
+        { label: "Watch from the loft tonight", id: "cyndal-lookout" },
       ],
     };
   }
   if (role === "loki") {
     return {
       speaker: name,
-      text: "Loki. I'm nine. I stacked the kindling and fed the hens already. Justin said the press is not a ladder, so I stay in the lane. Why do the apples go brown when you bite them? If they come at night I stay inside with the door barred and bring shells and lanterns to the porch. I don't go out.",
+      text: "Loki. I'm nine. Justin's my dad. I stacked the kindling and fed the hens already. Dad said the press is not a ladder, so I stay in the lane. Why do the apples go brown when you bite them? If they come at night I stay inside with the door barred and bring shells and lanterns to the porch. I don't go out.",
       choices: [
         { label: "Good work on the chores", id: "close" },
         { label: "Stay inside if they come", id: "loki-safe" },

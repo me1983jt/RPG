@@ -189,7 +189,6 @@ var IMAGES = [
 	"raider-torch",
 	"guard-sarah",
 	"guard-justin",
-	"guard-cyndal",
 	"guard-adele",
 	"guard-pete",
 	"guard-sera",
@@ -242,7 +241,6 @@ var IMAGES = [
 	"raider-brute-dead",
 	"guard-watch-sarah",
 	"guard-watch-justin",
-	"guard-watch-cyndal",
 	"guard-watch-adele",
 	"guard-watch-pete",
 	"guard-watch-sera",
@@ -444,7 +442,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
 	/** A night raider. The Chopping's named bosses (quest enemies) use the same boss art but stay home. */
 	const isRaider = (e) => !!e && RAID_VAR.has(e.variant) && !e.quest;
-	const GUARD_ROLES = new Set(["sarah", "justin", "cyndal", "adele", "pete", "sera", "holt"]);
+	const GUARD_ROLES = new Set(["sarah", "justin", "adele", "pete", "sera", "holt"]);
 	let raidClock = 10;
 	let piles = [];
 	let nextPile = 1;
@@ -1573,7 +1571,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			shiftRep("lowelltown", 1, 2);
 			grantXp(12);
 			pushLog("Mira says the choppers bunch on the north gravel. Come at them from the south spruce.");
-		} else if (id === "loki-safe") pushLog("Loki nods. Door barred, lanterns lit, shells on the porch. He stays inside.");
+		} else if (id === "cyndal-lookout") pushLog("Cyndal takes the loft window. She'll shout when the next wave comes, then help Sarah with the hurt inside.");
+		else if (id === "loki-safe") pushLog("Loki nods. Door barred, lanterns lit, shells on the porch. He stays inside.");
 		else if (id.startsWith("join-")) recruitTalk();
 		else if (id === "bench-up") upgradeDefense();
 		else if (id === "bench-bomb") benchBuy("bomb", 0, 6, "A pipe bomb. Short fuse.");
@@ -4743,7 +4742,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				slow: 0,
 				death: 0
 			});
-			if (raiders.length === 0) { pushLog("Lanterns at the orchard edge. They are coming in."); if (world.npcs.some((n) => n.role === "loki")) pushLog("Loki stays in the farmhouse with the door barred, running shells and lanterns to the porch."); }
+			if (raiders.length === 0) { pushLog("Lanterns at the orchard edge. They are coming in."); if (world.npcs.some((n) => n.role === "cyndal")) pushLog("Cyndal, from the loft: \"Lanterns coming, Dad! Here they come!\""); if (world.npcs.some((n) => n.role === "loki")) pushLog("Loki stays in the farmhouse with the door barred, running shells and lanterns to the porch."); }
 			}
 		}
 		for (const prop of world.props) {
