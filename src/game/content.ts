@@ -267,10 +267,10 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "loki") {
     return {
       speaker: name,
-      text: "Loki. I'm nine. Justin said the press is not a ladder, so I stay in the lane. I can see over the crate if I stand on my toes.",
+      text: "Loki. I'm nine. I stacked the kindling and fed the hens already. Justin said the press is not a ladder, so I stay in the lane. Why do the apples go brown when you bite them? If they come at night I stay inside with the door barred and bring shells and lanterns to the porch. I don't go out.",
       choices: [
-        { label: "Stay off the press", id: "close" },
-        { label: "Stay by me tonight", id: "join-loki" },
+        { label: "Good work on the chores", id: "close" },
+        { label: "Stay inside if they come", id: "loki-safe" },
       ],
     };
   }

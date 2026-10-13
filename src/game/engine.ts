@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2052;
+const ART_V = 2053;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
@@ -190,7 +190,6 @@ var IMAGES = [
 	"guard-sarah",
 	"guard-justin",
 	"guard-cyndal",
-	"guard-loki",
 	"guard-adele",
 	"guard-pete",
 	"guard-sera",
@@ -244,7 +243,6 @@ var IMAGES = [
 	"guard-watch-sarah",
 	"guard-watch-justin",
 	"guard-watch-cyndal",
-	"guard-watch-loki",
 	"guard-watch-adele",
 	"guard-watch-pete",
 	"guard-watch-sera",
@@ -446,7 +444,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
 	/** A night raider. The Chopping's named bosses (quest enemies) use the same boss art but stay home. */
 	const isRaider = (e) => !!e && RAID_VAR.has(e.variant) && !e.quest;
-	const GUARD_ROLES = new Set(["sarah", "justin", "cyndal", "loki", "adele", "pete", "sera", "holt"]);
+	const GUARD_ROLES = new Set(["sarah", "justin", "cyndal", "adele", "pete", "sera", "holt"]);
 	let raidClock = 10;
 	let piles = [];
 	let nextPile = 1;
@@ -1575,7 +1573,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			shiftRep("lowelltown", 1, 2);
 			grantXp(12);
 			pushLog("Mira says the choppers bunch on the north gravel. Come at them from the south spruce.");
-		} else if (id.startsWith("join-")) recruitTalk();
+		} else if (id === "loki-safe") pushLog("Loki nods. Door barred, lanterns lit, shells on the porch. He stays inside.");
+		else if (id.startsWith("join-")) recruitTalk();
 		else if (id === "bench-up") upgradeDefense();
 		else if (id === "bench-bomb") benchBuy("bomb", 0, 6, "A pipe bomb. Short fuse.");
 		else if (id === "bench-fuel") benchBuy("fuel", 0, 4, "A can for the tractor.");
@@ -4585,7 +4584,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (npc.role === "justin") return Math.round(NPC_H * 1.08);
 		if (npc.role === "sarah") return Math.round(NPC_H * .94);
 		if (npc.role === "cyndal") return Math.round(NPC_H * 66 / 70);
-		if (npc.role === "loki") return Math.round(NPC_H * 61 / 70);
+		if (npc.role === "loki") return Math.round(NPC_H * 62 / 70); // ~5'1" (Justin 6'2" = 1.08)
 		if (npc.role === "rejean") return Math.round(NPC_H * 1.04);
 		if (npc.role === "cal") return Math.round(NPC_H * 1.02);
 		if (npc.role === "adele") return Math.round(NPC_H * .96);
@@ -4744,7 +4743,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				slow: 0,
 				death: 0
 			});
-			if (raiders.length === 0) pushLog("Lanterns at the orchard edge. They are coming in.");
+			if (raiders.length === 0) { pushLog("Lanterns at the orchard edge. They are coming in."); if (world.npcs.some((n) => n.role === "loki")) pushLog("Loki stays in the farmhouse with the door barred, running shells and lanterns to the porch."); }
 			}
 		}
 		for (const prop of world.props) {
