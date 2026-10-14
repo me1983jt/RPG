@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2055;
+const ART_V = 2056;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
@@ -4548,7 +4548,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let row = dir;
 		let frame = body.frame || 0;
 		if (pose && body.still !== false) [row, frame] = pose.idle[dir];
-		else if (pose) row = pose.walk[dir];
+		else if (pose) {
+			row = pose.walk[dir];
+			const cyc = pose.cycle[dir];
+			frame = cyc[frame % cyc.length];
+		}
 		blit(sheet, body.x, body.y, folkHeight(body), true, frame, row, camX, camY);
 	}
 	function beastSheet(enemy) {
