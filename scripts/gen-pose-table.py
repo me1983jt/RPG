@@ -12,6 +12,8 @@ def met(cell):
     feet = np.nonzero(a[int(b - h * .06):b + 1].any(0))[0]
     return dict(lean=float(cx(b - h * .12, b) - cx(t, t + h * .15)), spread=int(feet.max() - feet.min()), w=int(xs.max() - xs.min()), h=int(h))
 out = {}
+# rows checked by eye and allowed despite the width rule (Loki's v28 back view: wide coat, legs now drawn)
+ALLOW = {"npc-loki": (4,)}
 root = "public/game"
 names = ["hero", "villager"] + [os.path.basename(f)[:-4] for f in sorted(glob.glob(f"{root}/npc-*.png"))]
 for n in names:
@@ -22,7 +24,7 @@ for n in names:
     bad = []
     for r in range(8):
         lean = np.median([abs(m["lean"]) for m in M[r]]); wid = np.median([m["w"] for m in M[r]])
-        bad.append(bool(lean > 8 or (r == 4 and wid > sw * 1.35)))
+        bad.append(bool(lean > 8 or (r == 4 and wid > sw * 1.35 and r not in ALLOW.get(n, ()))))
     walk, idle = [], []
     side = {1: 2, 3: 2, 5: 6, 7: 6, 0: 0, 2: 2, 4: 4, 6: 6}
     alt = {4: [3, 5, 2, 6], 0: [1, 7, 2, 6]}
