@@ -1,10 +1,11 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2058;
+const ART_V = 2059;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
+import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import {
   PERKS,
@@ -4577,34 +4578,31 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.kind === "squirrel") return "squirrel";
 		return enemy.id % 3 === 1 ? "raider-gray" : enemy.id % 3 === 2 ? "raider-blue" : "raider";
 	}
-	function beastH(enemy) {
-		if (enemy.variant === "holeb") return Math.round(NPC_H * 1.35 * 1.45);
-		if (enemy.variant === "warden") return Math.round(NPC_H * 1.04);
-		if (enemy.variant === "pelletier") return Math.round(NPC_H * 1.0);
-		if (enemy.variant === "fur" || enemy.variant === "saw" || enemy.variant === "armor") return Math.round(NPC_H * 1.22);
-		if (enemy.variant === "brute" || enemy.variant === "shield" || enemy.variant === "atv") return Math.round(NPC_H * 1.12);
-		if (enemy.variant === "mask") return Math.round(NPC_H * 1.08);
-		if (enemy.variant === "jumper") return Math.round(NPC_H * .96);
-		if (enemy.variant === "scout") return Math.round(NPC_H * .92);
-		if (enemy.kind === "moose") return Math.round(NPC_H * 1.35);
-		if (enemy.kind === "deer") return Math.round(NPC_H * .84);
-		if (enemy.kind === "wolf") return Math.round(NPC_H * .76);
-		if (enemy.kind === "coyote") return Math.round(NPC_H * .68);
-		if (enemy.kind === "rabbit") return Math.round(NPC_H * .5);
-		if (enemy.kind === "squirrel") return Math.round(NPC_H * .42);
-		return NPC_H;
+	/** v29 real-world sizing: every body is drawn so its *visible* figure (alpha bbox, SPRITE_FIT)
+	 * stands at a real height in inches, on the hero's scale (6'2" = HERO_H x hero fit). Hit tests,
+	 * health bars and click targets all read these same functions, so they stay in sync. */
+	const PX_PER_IN = HERO_H * (SPRITE_FIT.hero ?? .806) / 74;
+	function realH(sheet, inches) {
+		return Math.round(inches * PX_PER_IN / (SPRITE_FIT[sheet] ?? .79));
 	}
+	/** Full visible height (top of head/antlers to hooves) in inches. */
+	const BEAST_IN = {
+		holeb: 120, warden: 74, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
+		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
+		moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
+	};
+	function beastH(enemy) {
+		const key = enemy.variant && BEAST_IN[enemy.variant] ? enemy.variant : enemy.kind;
+		const inches = BEAST_IN[key] ?? 70;
+		return realH(beastSheet(enemy), inches);
+	}
+	const FOLK_IN = {
+		justin: 74, sarah: 67, cyndal: 61.5, loki: 61, villager: 69,
+		rejean: 72, cal: 71, pete: 73, warden: 74, bram: 72, emile: 70, gus: 69, holt: 73, ivo: 70, paul: 71, walter: 69,
+		adele: 66, sera: 66, mira: 65, nora: 66, ruth: 65, mae: 64, etta: 66
+	};
 	function folkHeight(npc) {
-		if (npc.role === "justin") return Math.round(NPC_H * 1.08);
-		if (npc.role === "sarah") return Math.round(NPC_H * .94);
-		if (npc.role === "cyndal") return Math.round(NPC_H * 66 / 70);
-		if (npc.role === "loki") return Math.round(NPC_H * 62 / 70); // ~5'1" (Justin 6'2" = 1.08)
-		if (npc.role === "rejean") return Math.round(NPC_H * 1.04);
-		if (npc.role === "cal") return Math.round(NPC_H * 1.02);
-		if (npc.role === "adele") return Math.round(NPC_H * .96);
-		if (npc.role === "pete") return Math.round(NPC_H * 1.05);
-		if (npc.role === "warden") return Math.round(NPC_H * 1.04);
-		return NPC_H;
+		return realH(folkSheet(npc), FOLK_IN[npc.role] ?? 69);
 	}
 	function tractorShift(charge) {
 		const t = Math.min(1, Math.max(0, charge || 0));
@@ -5899,7 +5897,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function bodyContains(wx, wy, drawH, sx, sy) {
 		const raw = worldToScreen(wx, wy, camX, camY);
 		const p = zoomPoint(raw.sx, raw.sy);
-		const h = drawH * zoom;
+		// v29: real-size rabbits/squirrels are ~10px tall; keep a finger-sized minimum target
+		const h = Math.max(drawH, 40) * zoom;
 		const half = Math.max(22, h * .36);
 		return sx >= p.sx - half && sx <= p.sx + half && sy <= p.sy + 14 * zoom && sy >= p.sy - h;
 	}
