@@ -23,7 +23,7 @@ function tone(freq: number, dur: number, type: OscillatorType, gain: number, del
   osc.stop(t + dur + 0.02);
 }
 
-export function sfx(name: "hit" | "hurt" | "build" | "talk" | "level" | "gather" | "die" | "click" | "chop" | "mine"): void {
+export function sfx(name: "hit" | "hurt" | "build" | "talk" | "level" | "gather" | "die" | "click" | "chop" | "mine" | "shoot"): void {
   unlockAudio();
   if (!ctx) return;
   switch (name) {
@@ -62,6 +62,10 @@ export function sfx(name: "hit" | "hurt" | "build" | "talk" | "level" | "gather"
     case "mine":
       tone(720, 0.04, "square", 0.04);
       tone(210, 0.1, "triangle", 0.05, 0.02);
+      break;
+    case "shoot":
+      tone(140, 0.05, "sawtooth", 0.06);
+      tone(60, 0.16, "triangle", 0.05, 0.01);
       break;
     default:
       break;

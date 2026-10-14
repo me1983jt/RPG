@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
-import { useHud } from "@/game/store";
+import { useHud, useRaidMode } from "@/game/store";
 import { RECIPES } from "@/game/types";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import type { PerkId, SkillId } from "@/game/progress";
@@ -32,6 +32,7 @@ export function RPG() {
   const pinchMid = useRef({ x: 0, y: 0 });
   const pinching = useRef(false);
   const hud = useHud();
+  const raidResult = useRaidMode((s) => s.result);
   const [name, setName] = useState("Packer");
   const [role, setRole] = useState<RoleId>("fighter");
   const [look, setLook] = useState<LookId>("wool");
@@ -743,6 +744,15 @@ export function RPG() {
                       </button>
                     </div>
                   ) : null}
+                  {step === "trade" ? (
+                    <button
+                      type="button"
+                      className="plank border border-accent bg-surface-2 px-4 py-3 font-semibold"
+                      onClick={() => apiRef.current?.raidMode()}
+                    >
+                      Raid Mode
+                    </button>
+                  ) : null}
                   {hud.hasSave && step === "trade" ? (
                     <button
                       type="button"
@@ -762,6 +772,19 @@ export function RPG() {
           </div>
           </div>
         </div>
+      ) : null}
+
+      {hud.phase === "menu" && raidResult ? (
+        <Overlay title={raidResult.won ? `Night ${raidResult.night}: the farm held` : `Night ${raidResult.night}: the farm fell`}>
+          <p className="text-sm leading-relaxed text-muted">{raidResult.text}</p>
+          <p className="text-sm">Raiders down: {raidResult.kills} · Waves held: {raidResult.wavesDone} of {raidResult.waves}</p>
+          <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.raidMode()}>
+            Raid again
+          </button>
+          <button type="button" className="plank border border-border px-4 py-3" onClick={() => useRaidMode.setState({ result: null })}>
+            Back to menu
+          </button>
+        </Overlay>
       ) : null}
 
       {confirmExit ? (

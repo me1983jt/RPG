@@ -27,7 +27,7 @@ import {
 } from "@/game/progress";
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, hasSave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
-import { useHud } from "@/game/store";
+import { useHud, useRaidMode } from "@/game/store";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import {
@@ -74,6 +74,8 @@ export interface GameApi {
   destroy: () => void;
   begin: (name: string, role: RoleId, bonus: { strength: number; vigor: number; endurance: number; intellect: number; perception: number; luck: number }, trait: TraitId, look: LookId) => void;
   continueGame: () => void;
+  /** Title menu "Raid Mode": a standalone raid night at the farm that never touches the story save. */
+  raidMode: () => void;
   setStick: (x: number, y: number) => void;
   tap: (action: "attack" | "interact" | "build" | "pause" | "resume" | "menu" | "respawn" | "save") => void;
   choose: (id: string) => void;
@@ -450,6 +452,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let raid = null;
 	let raidsHeld = 0;
 	let raidEndedByReload = false;
+	/** true while a title-menu Raid Mode run is going: saving is off, the end returns to the menu. */
+	let raidMode = false;
 	let piles = [];
 	let nextPile = 1;
 	let lootId = -1;
@@ -1209,6 +1213,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		raidsHeld = data.raidsHeld ?? 0;
 		raid = null;
 		raidEndedByReload = !!data.raidOn;
+		if (raidEndedByReload) {
+			pushLog("The raid ended while you were away. The farm made it to morning; no reward for a night you didn't finish.");
+			raidEndedByReload = false;
+		}
 		wardenState = data.warden ?? 0;
 		tractorReady = !!data.tractorReady;
 		rotAcc = 0;
@@ -1240,7 +1248,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return nearestRespawn(home.tx, home.ty, spec.w, spec.h);
 	}
 	function saveGame() {
-		if (!world || !player) return;
+		if (!world || !player || raidMode) return;
 		const data = playerToSave(player, quest, questKills, collectRemoved(world), world.enemies.filter((e) => e.dead).map((e) => e.id), world.props.filter((p) => p.built).map((p) => ({
 			kind: p.kind,
 			tx: p.tx,
@@ -3229,6 +3237,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		enemy.dead = true;
 		enemy.aggro = false;
 		enemy.death = 1.15;
+		if (enemy.raid && raid) raid.kills += 1;
 		corpseOf(enemy);
 		grantXp(xp);
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
@@ -4828,7 +4837,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function endRaid(won, why) {
 		if (!raid || !player || !world) return;
 		const n = raid.night;
+		const summary = { won, night: n, kills: raid.kills, waves: raid.waves, wavesDone: won ? raid.waves : Math.max(0, raid.wave - 1), text: why };
 		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
+		if (raidMode) {
+			guardPost.clear();
+			raid = null;
+			raidMode = false;
+			useRaidMode.setState({ result: summary });
+			sfx(won ? "level" : "die");
+			phase = "menu";
+			dialogue = null;
+			buildOpen = false;
+			sync(true);
+			return;
+		}
 		guardPost.clear();
 		raid = null;
 		pushLog(why);
@@ -4877,9 +4899,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			nightLatch = false;
 			bossThisNight = false;
 		}
-		if (raid) stepRaidNight(dt, raiders);
 		const night = (dark && onFarm && !!raid) || (!!raid && !inside);
 		const raiders = world.enemies.filter((e) => !e.dead && isRaider(e));
+		// (v29 fix) this ran before `raiders` existed: a TDZ crash that froze the game on raid night
+		if (raid) stepRaidNight(dt, raiders);
+		if (!world || !player) return;
 		if (night && tractorReady) {
 			const tractor = world.props.find((p) => p.kind === "tractor");
 			if (tractor) {
@@ -6664,6 +6688,31 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("click");
 			bootNew(name, role, bonus, trait, look);
 		},
+		raidMode() {
+			unlockAudio();
+			sfx("click");
+			raidMode = true;
+			useRaidMode.setState({ result: null });
+			bootNew("Justin", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
+			snow = Math.max(snow, 3);
+			jackMet = true;
+			raidNight = 0;
+			// starter gear for a fight: carbine in hand, a box of shells, a warm coat already on
+			if (GEAR.carbine) { giveItem("carbine", 1); player.weaponId = "carbine"; }
+			giveItem("shells", 12);
+			refreshGear(player);
+			player.hp = player.maxHp;
+			const fh = world.props.find((q) => q.kind === "farmhouse");
+			if (fh) { const d = doorPoint(fh); player.x = d.x; player.y = d.y + 48; }
+			const span = DAY_LENGTH_SEC;
+			clock = Math.floor(clock / span) * span + (21.5 / 24) * span;
+			setLog("Raid Mode. One night at Cambridge Road. Justin and Sarah take the posts; Cyndal watches from the loft, Loki runs shells.");
+			startRaid();
+			if (!raid) { raidMode = false; phase = "menu"; }
+			camX = player.x - player.y - viewW / 2;
+			camY = (player.x + player.y) / 2 - viewH / 2;
+			sync(true);
+		},
 		continueGame() {
 			unlockAudio();
 			const data = readSave();
@@ -7326,6 +7375,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			tractorReady = true;
 			return propCenter(t);
 		},
+		raidState: () => raid ? { night: raid.night, wave: raid.wave, waves: raid.waves, phase: raid.phase, house: raid.house, kills: raid.kills, mode: raidMode } : { none: true, mode: raidMode, held: raidsHeld },
+		raidHouseHit: (n) => { if (raid) raid.house -= n; },
+		raidMode: () => api.raidMode(),
+		setSnow: (n) => { snow = n; sync(true); },
+		startRaidNow: () => { startRaid(); return !!raid; },
+		saveNow: () => saveGame(),
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (h / 24) * span;

@@ -72,3 +72,7 @@ export const useHud = create<HudSnapshot>(() => ({
   canRetag: true,
   party: null,
 }));
+
+/** Raid Mode (title menu): the result card shown back on the menu after a standalone raid night. */
+export interface RaidResult { won: boolean; night: number; kills: number; waves: number; wavesDone: number; text: string }
+export const useRaidMode = create<{ result: RaidResult | null }>(() => ({ result: null }));
