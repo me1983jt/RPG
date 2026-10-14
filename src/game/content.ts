@@ -28,6 +28,10 @@ export interface TalkState {
   /** The Bangor Warden's checkpoint: 0 not met, 1 paid or slipped past, 2+ fought. */
   warden?: number;
   scrap?: number;
+  /** Night at the farm with the base built: a raid can be started from Justin. */
+  raidReady?: boolean;
+  raidOn?: boolean;
+  raidNext?: number;
 }
 
 export const SNOW_WOOD = 3;
@@ -210,9 +214,22 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
         choices: [{ label: "I will", id: "close" }],
       };
     }
+    if (t.raidOn) {
+      return { speaker: name, text: "Get back on a post! They're still out there.", choices: [{ label: "Going", id: "close" }] };
+    }
+    if (t.raidReady) {
+      return {
+        speaker: name,
+        text: "Dark's down. If they come tonight I'd rather we pick the hour. Light the yard and we'll hold the farm together.",
+        choices: [
+          { label: `Start raid night ${t.raidNext ?? 1}`, id: "raid-ask" },
+          { label: "Not tonight", id: "close" },
+        ],
+      };
+    }
     return {
       speaker: name,
-      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing. My kids pick the low limbs, so mind them.",
+      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing. My kids pick the low limbs, so mind them. Come find me after dark if you want to hold the farm.",
       choices: [
         { label: "I'll leave the rows standing", id: "close" },
         { label: "Come hold the orchard", id: "join-justin" },

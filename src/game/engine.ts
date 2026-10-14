@@ -446,6 +446,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const isRaider = (e) => !!e && RAID_VAR.has(e.variant) && !e.quest;
 	const GUARD_ROLES = new Set(["sarah", "justin", "adele", "pete", "sera", "holt"]);
 	let raidClock = 10;
+	/** Raid Night (started from Justin at night once the farm is a base). Not saved: a reload mid-raid ends it safely. */
+	let raid = null;
+	let raidsHeld = 0;
+	let raidEndedByReload = false;
 	let piles = [];
 	let nextPile = 1;
 	let lootId = -1;
@@ -536,9 +540,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	function talkState() {
-		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0 };
+		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0, raidReady: raidCanStart(), raidOn: !!raid, raidNext: raidNight + 1 };
 	}
 	function hudQuestText() {
+		if (raid) {
+			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
+			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} soon`;
+			return `Raid night ${raid.night}: ${stage}. Farmhouse ${pct}%.`;
+		}
 		if (snow < 3 && quest <= 0) {
 			if (snow <= 0) return "First Snow: talk to Justin at the Cambridge Road farm.";
 			if (snow === 1) return `First Snow: bring Justin ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
@@ -1197,6 +1206,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		spawnCrows();
 		clock = data.clock ?? morningClock();
 		raidNight = data.raidNight ?? 0;
+		raidsHeld = data.raidsHeld ?? 0;
+		raid = null;
+		raidEndedByReload = !!data.raidOn;
 		wardenState = data.warden ?? 0;
 		tractorReady = !!data.tractorReady;
 		rotAcc = 0;
@@ -1244,6 +1256,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.turnBased = turnBased;
 		data.clock = clock;
 		data.raidNight = raidNight;
+		data.raidsHeld = raidsHeld;
+		data.raidOn = !!raid;
 		data.warden = wardenState;
 		data.tractorReady = tractorReady;
 		data.goneNpcs = [...goneNpcs];
@@ -1505,6 +1519,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 				shiftRep(town, 1, 1);
 			}
+		}
+		if (id === "raid-ask") {
+			const n = raidNight + 1;
+			dialogue = {
+				speaker: "Justin",
+				text: `Night ${n}. If we light the yard they'll come at us in ${raidWaves(n)} waves off the road and the tree line. Sarah and I take the posts. Cyndal watches from the loft, Loki stays in with the door barred. We hold till they quit or the sun's up. Ready?`,
+				choices: [{ label: "Light the yard. Hold the farm", id: "raid-go" }, { label: "Not tonight", id: "close" }]
+			};
+			sfx("click");
+			sync(true);
+			return;
+		}
+		if (id === "raid-go") {
+			dialogue = null;
+			phase = "play";
+			startRaid();
+			sync(true);
+			return;
 		}
 		if (id === "warden-pay" || id === "warden-sneak" || id === "warden-fight") {
 			wardenChoice(id);
@@ -3575,6 +3607,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dy = player.y - fromY;
 		const m = Math.hypot(dx, dy) || 1;
 		nudge(player, dx / m * 16, dy / m * 16);
+		if (player.hp <= 0 && raid) {
+			player.hp = Math.max(1, Math.ceil(player.maxHp * .5));
+			player.invuln = 2;
+			sfx("die");
+			endRaid(false, "You go down by the porch. Justin drags you inside and they bar the door. The raiders take what they can carry and go.");
+			sync(true);
+			return;
+		}
 		if (player.hp <= 0) {
 			player.hp = 0;
 			phase = "dead";
@@ -4265,6 +4305,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						goalY = lure.y;
 					}
 				}
+				if (enemy.raid && raid) {
+					const fh = raidHouse();
+					if (fh && dist > 300) {
+						const d = Math.hypot(fh.x - enemy.x, fh.y - enemy.y);
+						goalX = fh.x;
+						goalY = fh.y;
+						if (d < 96) {
+							raid.house -= enemy.atk * .55 * dt;
+							enemy.dir = facing8(fh.x - enemy.x, fh.y - enemy.y);
+							enemy.anim += dt * 6;
+							enemy.frame = Math.floor(enemy.anim) % 4;
+							if (Math.random() < dt * 1.5) burst(fh.x + (Math.random() - .5) * 60, fh.y - 20, "#c9a26a", 3);
+							raidHudTick();
+							continue;
+						}
+					}
+				}
 				if (enemy.variant === "torch" && dist > 110) {
 					let best = null;
 					let bestD = 340;
@@ -4625,6 +4682,171 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return null;
 	}
+	function raidHouse() {
+		if (!world || mapId !== 0) return null;
+		const fh = world.props.find((p) => p.kind === "farmhouse");
+		if (!fh) return null;
+		const c = propCenter(fh);
+		return { x: c.x, y: c.y + 40 };
+	}
+	function raidWaves(n) {
+		return Math.min(5, 3 + Math.floor((n - 1) / 3));
+	}
+	function raidCanStart() {
+		if (!player || !world || raid || inside || snow < 3 || mapId !== 0) return false;
+		return nightShade(clock) > .22;
+	}
+	let raidHudPct = 100;
+	function raidHudTick() {
+		if (!raid) return;
+		const pct = Math.round(raid.house / raid.houseMax * 20);
+		if (pct !== raidHudPct) {
+			raidHudPct = pct;
+			sync(true);
+		}
+	}
+	const COMPASS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
+	function startRaid() {
+		if (!raidCanStart() || !world || !player) return;
+		raidNight += 1;
+		const n = raidNight;
+		// clear any stragglers so the waves start clean
+		for (const e of world.enemies) if (!e.dead && isRaider(e) && !e.quest) { e.dead = true; e.death = 0; }
+		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 90 + 15 * n, houseMax: 90 + 15 * n, warned: false, kills: 0 };
+		raidHudPct = 20;
+		pushLog(`Raid night ${n}. Justin and Sarah take the posts. Hold the farm.`);
+		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
+		sfx("click");
+		saveGame();
+		sync(true);
+	}
+	function raidPool(n, wave) {
+		const level = n + wave - 1;
+		const pool = ["scout", "scout"];
+		if (level >= 2) pool.push("jumper");
+		if (level >= 3) pool.push("torch");
+		if (level >= 4) pool.push("shield");
+		if (level >= 5) pool.push("brute");
+		if (level >= 7) pool.push("armor");
+		if (level >= 8) pool.push("atv");
+		return pool;
+	}
+	function raidSpawnAt(cx, cy, ang, minR, maxR) {
+		if (!world) return null;
+		for (let tries = 0; tries < 24; tries++) {
+			const a = ang + (Math.random() - .5) * 1.4;
+			const rad = minR + Math.random() * (maxR - minR);
+			const x = cx + Math.cos(a) * rad;
+			const y = cy + Math.sin(a) * rad;
+			const t = tileOf(x, y);
+			if (t.tx < 1 || t.ty < 1 || t.tx > 154 || t.ty > 154) continue;
+			if (cellBlocked(world, t.tx, t.ty)) continue;
+			if (!pathTo(world, x, y, cx, cy)) continue;
+			return { x: (t.tx + .5) * 64, y: (t.ty + .5) * 64 };
+		}
+		return null;
+	}
+	function spawnRaider(variant, spot, boss = null) {
+		const stats = variant === "armor" || variant === "brute" ? [46, 8, 16] : variant === "shield" ? [36, 6, 12] : variant === "atv" ? [28, 7, 14] : variant === "torch" ? [22, 5, 10] : variant === "jumper" ? [16, 4, 9] : [14, 4, 8];
+		const label = { scout: "Scout", jumper: "Climber", armor: "Plate", shield: "Shield", brute: "Brute", torch: "Torch", atv: "Rider" };
+		const hp = boss ? boss.hp : stats[0];
+		world.enemies.push({
+			id: world.nextEnemyId++, x: spot.x, y: spot.y, homeX: spot.x, homeY: spot.y,
+			hp, maxHp: hp, atk: boss ? boss.atk : stats[1], xp: boss ? boss.xp : stats[2],
+			elite: !!boss || variant === "armor" || variant === "brute", quest: false, kind: "bandit", pack: 90, temper: "hostile",
+			crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0, path: null, pathT: 0, aggro: true, dead: false, hurt: 0,
+			variant, name: boss ? boss.name : label[variant] || "Raider", slow: 0, death: 0, raid: true
+		});
+	}
+	function stepRaidNight(dt, raiders) {
+		if (!raid || !player || !world) return;
+		const fh = raidHouse();
+		if (!fh) { endRaid(false, "The raid breaks off."); return; }
+		if (nightShade(clock) < .12) {
+			endRaid(!inside, inside ? "Dawn. You sat it out behind the door. The raiders drift off with what they could carry." : "Dawn comes up grey over the orchard. They pull back to the road.");
+			return;
+		}
+		if (raid.house <= 0) {
+			endRaid(false, "The farmhouse door splinters. Justin fires the last shells and they scatter with the woodpile and a sack of apples.");
+			return;
+		}
+		if (inside) return;
+		const live = raiders.filter((e) => e.raid).length;
+		if (raid.phase === "lull") {
+			raid.t -= dt;
+			if (raid.t < 4 && !raid.warned) {
+				raid.warned = true;
+				const dir = COMPASS[((Math.round(raid.ang / (Math.PI / 4)) % 8) + 8) % 8];
+				if (world.npcs.some((m) => m.role === "cyndal")) pushLog(`Cyndal, from the loft: "Dad! Lanterns to the ${dir}! Here they come!"`);
+				else pushLog(`Lanterns to the ${dir}.`);
+				sfx("click");
+			}
+			if (raid.t <= 0) {
+				raid.wave += 1;
+				raid.phase = "wave";
+				raid.left = 2 + raid.wave + Math.floor(raid.night / 2);
+				raid.spawnT = 0;
+				pushLog(`Wave ${raid.wave} of ${raid.waves}.`);
+				sync(true);
+			}
+			return;
+		}
+		if (raid.left > 0) {
+			raid.spawnT -= dt;
+			if (raid.spawnT <= 0) {
+				raid.spawnT = 1.1;
+				const last = raid.wave === raid.waves && raid.left === 1;
+				const boss = last && (raid.night % 5 === 0) ? (raid.night >= 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raid.night >= 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 }) : null;
+				const pool = raidPool(raid.night, raid.wave);
+				const variant = boss ? boss.variant : pool[Math.floor(Math.random() * pool.length)];
+				const spot = raidSpawnAt(fh.x, fh.y, raid.ang, 13 * 64, 17 * 64) || raidSpawnAt(fh.x, fh.y, raid.ang + Math.PI, 11 * 64, 15 * 64);
+				if (spot) {
+					spawnRaider(variant, spot, boss);
+					raid.left -= 1;
+					if (boss) pushLog(`${boss.name} walks in behind them.`);
+				}
+			}
+			return;
+		}
+		if (live === 0) {
+			if (raid.wave >= raid.waves) {
+				endRaid(true, "The last of them breaks for the road.");
+				return;
+			}
+			raid.phase = "lull";
+			raid.t = 14;
+			raid.warned = false;
+			raid.ang = Math.random() * Math.PI * 2;
+			if (world.npcs.some((m) => m.role === "loki")) {
+				giveItem("shells", 3);
+				pushLog("Loki slips a box of shells and a fresh lantern out the door to the porch. +3 shells.");
+			}
+			pushLog(`Wave ${raid.wave} is down. ${raid.waves - raid.wave} to go.`);
+			sync(true);
+		}
+	}
+	function endRaid(won, why) {
+		if (!raid || !player || !world) return;
+		const n = raid.night;
+		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
+		guardPost.clear();
+		raid = null;
+		pushLog(why);
+		if (won) {
+			raidsHeld += 1;
+			const scrap = 6 + 4 * n;
+			player.scrap += scrap;
+			grantXp(20 + 10 * n);
+			pushLog(`You held the farm. Night ${n} is done: +${scrap} iron, +${20 + 10 * n} XP.`);
+			sfx("level");
+		} else pushLog(`The farm still stands. You keep what you took off them. Try again tomorrow night.`);
+		// morning comes
+		const span = DAY_LENGTH_SEC;
+		const into = ((clock % span) + span) % span;
+		clock = Math.floor(clock / span) * span + (into > span * 7 / 24 ? span : 0) + span * 7 / 24;
+		saveGame();
+		sync(true);
+	}
 	function stepRaid(dt) {
 		if (!world || !player || inside) {
 			guardPost.clear();
@@ -4647,18 +4869,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("click");
 		}
 		if (shade < .05) radioWarned = false;
-		if (dark && onFarm && !nightLatch) {
+		if (dark && onFarm && !nightLatch && !raid) {
 			nightLatch = true;
-			bossThisNight = false;
-			raidNight += 1;
-			const names = { 5: "Night five. Harland Poulin is with them.", 10: "Night ten. René Gallant walks in off the road.", 15: "Night fifteen. You can hear the saw." };
-			pushLog(names[raidNight] || `Night ${raidNight} on Cambridge Road.`);
+			if (snow >= 3 && mapId === 0) pushLog("Night on Cambridge Road. Talk to Justin when you're ready to hold the farm.");
 		}
 		if (!dark) {
 			nightLatch = false;
 			bossThisNight = false;
 		}
-		const night = dark && onFarm;
+		if (raid) stepRaidNight(dt, raiders);
+		const night = (dark && onFarm && !!raid) || (!!raid && !inside);
 		const raiders = world.enemies.filter((e) => !e.dead && isRaider(e));
 		if (night && tractorReady) {
 			const tractor = world.props.find((p) => p.kind === "tractor");
@@ -4700,8 +4920,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return;
 		}
 		raidClock -= dt;
-		const cap = 3 + Math.min(4, raidNight);
-		if (!bossThisNight && (raidNight === 5 || raidNight === 10 || raidNight === 15)) {
+		const cap = raid ? 0 : 3 + Math.min(4, raidNight);
+		if (false) {
 			bossThisNight = true;
 			const boss = raidNight === 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raidNight === 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 };
 			const spot = raidSpawn(12 * 64, 15 * 64);
@@ -4716,7 +4936,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				variant: boss.variant, name: boss.name, slow: 0, death: 0
 			});
 		}
-		if (raidClock <= 0 && raiders.length < cap) {
+		if (!raid && raidClock <= 0 && raiders.length < cap) {
 			raidClock = 14 + Math.random() * 8;
 			const pool = ["scout"];
 			if (raidNight >= 2) pool.push("jumper", "scout");
@@ -4793,12 +5013,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (GUARD_ROLES.has(n.role) && Math.hypot(n.x - player.x, n.y - player.y) < 4200) crew.push(n);
 		}
 		guardPost.clear();
-		for (let i = 0; i < posts.length && i < crew.length; i++) {
+		const spots = posts.map((p) => ({ id: p.id, c: propCenter(p), real: true }));
+		const fh = raid ? raidHouse() : null;
+		if (fh) {
+			const ring = [[-150, 120], [150, 120], [-190, -40], [190, -40], [0, 190]];
+			for (let k = 0; spots.length < crew.length && k < ring.length; k++) spots.push({ id: -100 - k, c: { x: fh.x + ring[k][0], y: fh.y + ring[k][1] }, real: false });
+		}
+		for (let i = 0; i < spots.length && i < crew.length; i++) {
 			const who = crew[i];
-			const post = posts[i];
+			const spot = spots[i];
 			const id = who.id ?? who.homeId;
-			guardPost.set(id, post.id);
-			const c = propCenter(post);
+			guardPost.set(id, spot.id);
+			const c = spot.c;
 			const dx = c.x - who.x;
 			const dy = c.y - who.y;
 			const dist = Math.hypot(dx, dy);
@@ -4809,6 +5035,30 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				who.dir = facing8(vel.vx, vel.vy);
 				who.anim = (who.anim || 0) + dt * 8;
 				who.frame = Math.floor(who.anim) % 4;
+			} else if (raid) {
+				// raid guards pick the nearest raider in rifle range and fire on a steady beat
+				let foe = null;
+				let foeD = 400;
+				for (const e of raiders) {
+					const d = Math.hypot(e.x - who.x, e.y - who.y);
+					if (d < foeD) { foe = e; foeD = d; }
+				}
+				who.shootT = Math.max(0, (who.shootT || 0) - dt);
+				who.flashT = Math.max(0, (who.flashT || 0) - dt);
+				if (foe) {
+					who.dir = facing8(foe.x - who.x, foe.y - who.y);
+					if (who.shootT <= 0) {
+						who.shootT = 1.25;
+						who.flashT = .18;
+						foe.hp -= who.role === "justin" ? 5 : 4;
+						foe.hurt = .08;
+						burst(foe.x, foe.y - 10, "#f4e2a0", 3);
+						sfx("shoot");
+						if (foe.hp <= 0) markDead(foe, Math.max(1, Math.round(foe.xp * .5)));
+					}
+				}
+				who.cooldown = who.flashT > 0 ? .4 : 0;
+				who.anim = (who.anim || 0) + dt;
 			} else {
 				const foe = raiders[0];
 				if (foe) who.dir = facing8(foe.x - who.x, foe.y - who.y);
@@ -5553,6 +5803,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const npc of world.npcs) {
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (raid && (npc.role === "cyndal" || npc.role === "loki")) continue;
 			draws.push({
 				z: bodyZ(npc.x, npc.y),
 				draw: () => {
