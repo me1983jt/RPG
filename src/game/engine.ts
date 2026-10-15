@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2060;
+const ART_V = 2061;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
@@ -130,6 +130,11 @@ var IMAGES = [
 	"hero-pick-atk",
 	"hero-knife-atk",
 	"hero-gun-atk",
+	"hero-down",
+	"hero-hit",
+	"v2/hero-idle",
+	"v2/hero-axe",
+	"v2/hero-death",
 	"tool-axe",
 	"tool-pick",
 	"raider",
@@ -479,6 +484,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let reach = 0;
 	/** Hero attack strip timer (v19 4-frame swings). */
 	let swingAnim = 0;
+	let heroLog = null;
 	/** When the hero went down (ms), for the fall animation. */
 	let fellAt = 0;
 	let deal = 0;
@@ -814,7 +820,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function dollCell(name, img) {
 		const hit = dollPick.get(name);
 		if (hit) return hit;
-		const cw = img.width / 4, ch = img.height / 8;
+		const cols = sheetCols(img);
+		const cw = img.width / cols, ch = img.height / 8;
 		let pick = { row: 0, col: 0 };
 		try {
 			const cv = document.createElement("canvas");
@@ -863,7 +870,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const img = images.get(name);
 		if (!img || !img.width) return "";
 		const src = heroSource(name, img);
-		const cw = img.width / 4, ch = img.height / 8;
+		const cols = sheetCols(img);
+		const cw = img.width / cols, ch = img.height / 8;
 		const { row, col } = dollCell(name, img);
 		const cv = document.createElement("canvas");
 		// 4x crisp pixels; the pack screen then scales it down smoothly, so the figure reads clean at any
@@ -2780,6 +2788,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function hasPick() {
 		return !!player && GEAR[player.weaponId]?.family === "pickaxe";
 	}
+	function walkFrame(moving) {
+		if (!moving) return 0;
+		const img = images.get(heroKey());
+		const cols = sheetCols(img);
+		const step = cols === 8 ? 11 : 22;
+		return Math.floor(player.anim / step) % cols;
+	}
 	function heroKey() {
 		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack" || intent?.kind === "chop" || intent?.kind === "mine";
 		if (!player || !using || !player.weaponId) return "hero";
@@ -2790,6 +2805,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (family === "carbine" || family === "revolver" || family === "scatter") return "hero-gun";
 		if (family === "knife") return "hero-knife";
 		return "hero";
+	}
+	function heroActionPose() {
+		if (phase === "dead" && images.get("hero-down")) {
+			if (!fellAt) fellAt = performance.now();
+			const u = Math.min(1, (performance.now() - fellAt) / 520);
+			return { name: "hero-down", frame: u >= 1 ? 3 : Math.min(2, Math.floor(u * 3)) };
+		}
+		if (player && player.hurt > 0 && images.get("hero-hit") && !(swingAnim > 0 && !work)) return { name: "hero-hit", frame: 0 };
+		return null;
 	}
 	const LOOK_RGB = {
 		wool: [140, 98, 66],
@@ -2854,7 +2878,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		};
 	}
 	function heroSource(name, img) {
-		if (!name.startsWith("hero") || !player) return img;
+		if (!/^(v2\/)?hero/.test(name) || !player) return img;
 		const colors = wornColors();
 		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
 		const cached = tinted.get(key);
@@ -2868,7 +2892,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		g.drawImage(img.sharp || img, 0, 0);
 		const data = g.getImageData(0, 0, stamp.width, stamp.height);
 		const px = data.data;
-		const cols = 4;
+		const cols = sheetCols({ width: stamp.width });
 		const rows = name.endsWith("-atk") && stamp.width / stamp.height > 2.2 ? 1 : 8;
 		const cw = stamp.width / cols;
 		const ch = stamp.height / rows;
@@ -3430,7 +3454,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (moving) player.stamina = Math.max(0, player.stamina - 12 * dt);
 		else player.stamina = Math.min(player.maxStamina, player.stamina + staminaBack() * dt);
-		player.frame = moving ? Math.floor(player.anim / 22) % 4 : 0;
+		player.frame = walkFrame(moving);
 		// walking onto the door mat takes you out, the same as tapping the door
 		if (moving && inside.ry >= roomDims().h - 36 && Math.abs(inside.rx - roomDims().w / 2) < 40) {
 			leaveHouse();
@@ -4038,7 +4062,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dmg = Math.max(1, amount - player.def);
 		player.hp -= dmg;
 		player.invuln = .38;
-		player.hurt = .15;
+		player.hurt = .4;
 		sfx("hurt");
 		if (!reduceMotion) shake = Math.min(10, shake + 5);
 		burst(player.x, player.y, "#f0e6d4", 6);
@@ -4602,7 +4626,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			lastSpeed = mounted ? SCREEN_SPEED * 2.4 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45;
 			if (deal > 0) deal = 0;
-			player.frame = Math.floor(player.anim / 22) % 4;
+			player.frame = walkFrame(true);
 		} else if (swinging) {
 			player.frame = laborFrame(work.swing);
 			lastSpeed = 0;
@@ -5827,17 +5851,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function paintHeroInRoom() {
 		if (!inside || !ctx || !player) return;
 		const o = roomOrigin();
-		const img = images.get(heroKey());
+		const pose = heroActionPose();
+		const name = pose ? pose.name : heroKey();
+		const img = images.get(name);
 		if (!img) return;
-		const src = heroSource(heroKey(), img);
+		const src = heroSource(name, img);
 		const rows = 8;
-		const sw = img.width / 4;
+		const cols = sheetCols(img);
+		const sw = img.width / cols;
 		const sh = img.height / rows;
-		const dh = roomDims().farm ? 124 : 110;
+		const dh = (roomDims().farm ? 124 : 110) * heroScale(name);
 		const dw = dh * (sw / sh);
-		const col = player.frame % 4;
+		const col = (pose ? pose.frame : player.frame) % cols;
 		const row = player.dir % rows;
-		ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * 4 + (player.frame % 4)] : img.foot ?? .92), dw, dh);
+		ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
 	}
 	function drawRoom() {
 		if (!inside || !ctx) return;
@@ -5871,17 +5898,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillRect(o.x + 132, o.y + 46, 56, 40);
 		ctx.fillStyle = "#efe6d4";
 		ctx.fillText(taken ? "Empty" : "Chest", o.x + 140, o.y + 70);
-		const img = images.get(heroKey());
+		const pose = heroActionPose();
+		const name = pose ? pose.name : heroKey();
+		const img = images.get(name);
 		if (img && player) {
-			const src = heroSource(heroKey(), img);
+			const src = heroSource(name, img);
 			const rows = 8;
-			const sw = img.width / 4;
+			const cols = sheetCols(img);
+			const sw = img.width / cols;
 			const sh = img.height / rows;
-			const dh = 110;
+			const dh = 110 * heroScale(name);
 			const dw = dh * (sw / sh);
-			const col = player.frame % 4;
+			const col = (pose ? pose.frame : player.frame) % cols;
 			const row = player.dir % rows;
-			ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * 4 + (player.frame % 4)] : img.foot ?? .92), dw, dh);
+			ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
 		}
 	}
 	var groundPat = new Map();
@@ -6397,7 +6427,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			draw: () => {
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
 				if (phase === "dead") {
-					// fall: the (dyed) side-view walk frame tips backwards onto the snow over ~0.7 s
+					if (images.get("v2/hero-death")) {
+						if (!fellAt) fellAt = performance.now();
+						const f = Math.min(5, Math.floor((performance.now() - fellAt) / 150));
+						blit("v2/hero-death", player.x, player.y, HERO_H, true, f, player.dir, drawCamX, drawCamY, false);
+						return;
+					}
+					const fallen = heroActionPose();
+					if (fallen) {
+						blit(fallen.name, player.x, player.y, HERO_H, true, fallen.frame, player.dir, drawCamX, drawCamY, false);
+						return;
+					}
 					if (!fellAt) fellAt = performance.now();
 					const u = Math.min(1, (performance.now() - fellAt) / 700);
 					const ease = 1 - (1 - u) * (1 - u);
@@ -6410,14 +6450,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const atkName = `${heroKey()}-atk`;
 				// the v19 swing strips are front views: use them when facing the camera, otherwise keep the lunge
 				const facingCam = player.dir === 0 || player.dir === 1 || player.dir === 7;
-				if (swingAnim > 0 && !work && TALL_COMBAT.has(atkName)) {
+				const flinch = heroActionPose();
+				const axeSwing = !flinch && swingAnim > 0 && !work && heroKey() === "hero-axe" && images.get("v2/hero-axe");
+				const idle = !flinch && !axeSwing && !(swingAnim > 0) && heroKey() === "hero" && player.anim === player.idleAnim && images.get("v2/hero-idle");
+				player.idleAnim = player.anim;
+				if (flinch) blit(flinch.name, player.x, player.y, HERO_H, true, flinch.frame, player.dir, drawCamX, drawCamY, false);
+				else if (axeSwing) blit("v2/hero-axe", player.x, player.y, HERO_H, true, Math.min(5, Math.floor((1 - swingAnim / .48) * 6)), player.dir, drawCamX, drawCamY, false);
+				else if (idle) blit("v2/hero-idle", player.x, player.y, HERO_H, true, Math.floor(performance.now() / 300) % 4, player.dir, drawCamX, drawCamY, false);
+				else if (swingAnim > 0 && !work && TALL_COMBAT.has(atkName)) {
 					blit(atkName, player.x, player.y, HERO_H, true, Math.min(3, Math.floor((1 - swingAnim / .48) * 4)), player.dir, drawCamX, drawCamY, false);
 				} else if (swingAnim > 0 && !work && facingCam && images.get(atkName)) {
 					const f = Math.min(3, Math.floor((1 - swingAnim / .48) * 4));
 					blit(atkName, player.x, player.y, HERO_H, false, f, 0, drawCamX, drawCamY, false);
 				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
-				if (!(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
-				if (swingAnim > 0 && !work && !TALL_COMBAT.has(atkName)) paintSwingArc();
+				if (!flinch && !axeSwing && !idle && !HERO69.has(heroKey()) && !(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
+				if (swingAnim > 0 && !work && !axeSwing && !TALL_COMBAT.has(atkName)) paintSwingArc();
 			}
 		});
 		for (const scar of scars) {
@@ -6535,6 +6582,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		const img = images.get(name);
+		if (heroLog && /^(v2\/)?hero/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
 		const lean = lunge ? lungeOf(dir) : {
@@ -6563,17 +6611,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const strips = !sheet && stripFrames(name, img) > 1;
 		if (sheet || strips) {
 			rows = sheet ? sheetRowsOf(name) : 1;
-			sw = img.width / 4;
+			const cols = sheetCols(img);
+			sw = img.width / (strips ? 4 : cols);
 			sh = img.height / rows;
-			sx = frame % 4 * sw;
+			sx = frame % (strips ? 4 : cols) * sw;
 			sy = (sheet ? dir % rows : 0) * sh;
 		}
 		const footSrc = layer ? images.get(overlayBase) ?? img : img;
 		let frac = footSrc.foot ?? (sheet || strips ? .92 : .9);
 		if ((sheet || strips) && footSrc.feet) {
-			const planted = footSrc.feet[(sheet ? dir % rows : 0) * 4 + (frame % 4)];
+			const fcols = sheetCols(footSrc);
+			const planted = footSrc.feet[(sheet ? dir % rows : 0) * fcols + (frame % fcols)];
 			if (planted) frac = planted;
 		}
+		drawH *= heroScale(name);
 		const dh = drawH * zoom;
 		const dw = dh * (sw / sh);
 		const spriteY = -dh * frac - lift * zoom;
@@ -7805,6 +7856,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			return n;
 		},
+		heroLogStart: () => { heroLog = []; },
+		heroLogTake: () => { const l = heroLog || []; heroLog = []; return l; },
+		hurtNow: () => { if (player) player.hurt = .4; },
 		swingNow: () => {
 			swingAnim = .48;
 			reach = .22;
@@ -7867,7 +7921,20 @@ function sheetRowsOf(name) {
 	if (TALL_COMBAT.has(name)) return 8;
 	if (name.startsWith("overlay-")) return 8;
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
-	if (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
+	if (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
+	return 4;
+}
+/** v10.1: the gw12 Justin sheets are a 69 px figure in an 88x124 cell; draw them at the same 69 px hero height as the walk. */
+const HERO69 = new Set(["hero", "hero-gun", "hero-gun-atk", "hero-hit", "hero-down", "v2/hero-idle", "v2/hero-axe", "v2/hero-death"]);
+function heroScale(name) {
+	return HERO69.has(name) ? 0.806 * 124 / 69 : 1;
+}
+/** 4 frames across (352px), 6 (528px) or 8 (704px). Anything else stays 4. */
+function sheetCols(img) {
+	if (img && img.width % 88 === 0) {
+		const c = img.width / 88;
+		if (c === 4 || c === 6 || c === 8) return c;
+	}
 	return 4;
 }
 function measureFoot(img, sheet, sheetRows = 4) {
@@ -7896,19 +7963,20 @@ function measurePose(img, sheet, sheetRows = 4) {
 		return { foot: b / img.height, feet: new Float32Array([b / img.height]), footX: new Float32Array([.5]) };
 	}
 	const rows = sheetRows ?? 4;
-	const cw = img.width / 4;
+	const cols = sheetCols(img);
+	const cw = img.width / cols;
 	const ch = img.height / rows;
-	const feet = new Float32Array(rows * 4);
-	const footX = new Float32Array(rows * 4);
+	const feet = new Float32Array(rows * cols);
+	const footX = new Float32Array(rows * cols);
 	let frac = 0;
-	for (let row = 0; row < rows; row++) for (let col = 0; col < 4; col++) {
+	for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
 		const y0 = row * ch;
 		const x0 = col * cw;
 		const bottom = bottomOf(x0, y0, cw, ch);
 		let sx = 0, n = 0;
 		const yStart = Math.max(0, bottom - 12);
 		for (let y = yStart; y < bottom; y++) for (let x = 0; x < cw; x++) if (data[((y0 + y) * img.width + (x0 + x)) * 4 + 3] > 24) { sx += x; n++; }
-		const i = row * 4 + col;
+		const i = row * cols + col;
 		feet[i] = bottom / ch;
 		footX[i] = n ? (sx / n) / cw : .5;
 		frac = Math.max(frac, feet[i]);
@@ -7953,8 +8021,9 @@ function softenSprite(img, radius, protectRows = 0) {
 	}
 	if (protectRows > 0) {
 		const ch = Math.floor(h / protectRows);
-		const cw = Math.floor(w / 4);
-		for (let row = 0; row < protectRows; row++) for (let col = 0; col < 4; col++) {
+		const cols = (w % 88 === 0 && (w / 88 === 4 || w / 88 === 6 || w / 88 === 8)) ? w / 88 : 4;
+		const cw = Math.floor(w / cols);
+		for (let row = 0; row < protectRows; row++) for (let col = 0; col < cols; col++) {
 			const x0 = col * cw;
 			const y0 = row * ch;
 			let bottom = -1;
@@ -7977,11 +8046,11 @@ function loadImages(images) {
 			if ((name.endsWith("-atk") || name.endsWith("-dead")) && img.height > img.width * 1.2) TALL_COMBAT.add(name);
 			const rows = sheetRowsOf(name);
 			const strips = stripFrames(name, img) > 1;
-			const posed = !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (name.startsWith("hero") || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
+			const posed = !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
 			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" ? 0 : posed ? 1 : 1;
 			const tall = TALL_COMBAT.has(name);
 			const soft = softenSprite(img, radius, posed || tall ? rows : 0);
-			if ((posed || strips || tall) && name.startsWith("hero")) soft.sharp = img;
+			if ((posed || strips || tall) && /^(v2\/)?hero/.test(name)) soft.sharp = img;
 			const pose = measurePose(img, posed || strips || tall, strips ? 1 : rows);
 			soft.foot = pose.foot;
 			soft.feet = pose.feet;
