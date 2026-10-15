@@ -1,12 +1,13 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2059;
+const ART_V = 2060;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
+import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
 import {
   PERKS,
   SKILLS,
@@ -557,7 +558,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (snow === 1) return `First Snow: bring Justin ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
 			return "First Snow: go see Sarah at the farm.";
 		}
-		return questText(quest, questKills);
+		const side = snow >= 3 ? q10Hud(q10) : "";
+		return side || questText(quest, questKills);
 	}
 	function sync(force = false) {
 		if (!force) return;
@@ -579,7 +581,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			quest,
 			questKills,
 			questText: hudQuestText(),
-			journal: journalEntries(quest, questKills, talkState()),
+			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3)]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
 			recipe,
@@ -1009,6 +1011,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		jackMet = false;
 		bunkerSeen = false;
 		kitchenDay = -1;
+		q10 = freshQ10();
+		q10World();
 		openedDoors.clear();
 		lootedChests.clear();
 		questTotal = world.enemies.filter((e) => e.quest).length;
@@ -1182,6 +1186,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		jackMet = !!data.jackMet;
 		bunkerSeen = !!data.bunkerSeen;
 		kitchenDay = data.kitchenDay ?? -1;
+		q10 = loadQ10(data.q10);
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -1227,6 +1232,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (party) snapParty();
 		restorePiles(data.piles);
 		setScars(data.scars);
+		q10World();
 		phase = "play";
 		camX = player.x - player.y - viewW / 2;
 		camY = (player.x + player.y) / 2 - viewH / 2;
@@ -1278,6 +1284,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.jackMet = jackMet;
 		data.bunkerSeen = bunkerSeen;
 		data.kitchenDay = kitchenDay;
+		data.q10 = q10;
 		data.regions = [...regions.values()];
 		data.piles = piles.map((pile) => ({
 			id: pile.id,
@@ -1528,6 +1535,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				shiftRep(town, 1, 1);
 			}
 		}
+		if (id.startsWith("q10-") && q10Choice(id)) return;
 		if (id === "raid-ask") {
 			const n = raidNight + 1;
 			dialogue = {
@@ -1568,6 +1576,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				lootedChests.add(91001);
 				giveItem("cider");
 			}
+			if (!hadCup && q10.seed >= 5) giveItem("stew");
 			if (!hadDonut) {
 				lootedChests.add(91002);
 				giveItem("donut");
@@ -1814,6 +1823,424 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 	}
+	// ---------------------------------------------------------------- beta v10 side quests (src/game/quests10.ts)
+	let q10 = freshQ10();
+	let q10Spots = new Map();
+	const q10Latch = new Set();
+	/** Biscuit, Loki's dog: drawn with the existing coyote sheet, never an enemy. */
+	let dogBody = null;
+	function q10Tile(rtx, rty) {
+		if (!world) return { x: 0, y: 0 };
+		const tx0 = rtx + WORLD_OX, ty0 = rty + WORLD_OY;
+		const open = (x, y) => x > 1 && y > 1 && x < 154 && y < 154 && !cellBlocked(world, x, y) && !cellBlocked(world, x + 1, y) && !cellBlocked(world, x, y + 1) && !cellBlocked(world, x - 1, y) && !cellBlocked(world, x, y - 1);
+		for (let r = 0; r < 14; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
+			if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) !== r) continue;
+			if (open(x, y)) return { x: (x + .5) * TILE, y: (y + .5) * TILE };
+		}
+		return { x: (tx0 + .5) * TILE, y: (ty0 + .5) * TILE };
+	}
+	function q10Spot(key) {
+		if (!q10Spots.has(key)) {
+			const s = key.startsWith("trail") ? DOG_TRAIL[Number(key.slice(5))] : [Q10_SITES[key].tx, Q10_SITES[key].ty];
+			q10Spots.set(key, q10Tile(s[0], s[1]));
+		}
+		return q10Spots.get(key);
+	}
+	function farmCenter() {
+		const fh = world?.props.find((p) => p.kind === "farmhouse");
+		return fh ? propCenter(fh) : { x: (36 + WORLD_OX) * TILE, y: (16 + WORLD_OY) * TILE };
+	}
+	function q10Spawn(kind, variant, name, spot, stats, tag, aggro = false) {
+		if (!world) return null;
+		const t = tileOf(spot.x, spot.y);
+		let x = spot.x, y = spot.y;
+		if (cellBlocked(world, t.tx, t.ty)) { const s = q10Tile(t.tx - WORLD_OX, t.ty - WORLD_OY); x = s.x; y = s.y; }
+		const e = { id: q10.nextId++, x, y, homeX: x, homeY: y, hp: stats[0], maxHp: stats[0], atk: stats[1], xp: stats[2], elite: !!stats[3], quest: false, kind, pack: 70, temper: kind === "moose" ? "wary" : "hostile", crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0, path: null, pathT: 0, aggro, dead: false, hurt: 0, slow: 0, death: 0, q10: tag };
+		if (variant) e.variant = variant;
+		if (name) e.name = name;
+		world.enemies.push(e);
+		return e;
+	}
+	function q10SeedCamp() {
+		const c = q10Spot("coop");
+		const offs = [[-90, -40], [70, -70], [-30, 110], [120, 60]];
+		for (let i = 0; i < q10.seedLeft && i < 4; i++) {
+			const o = offs[i];
+			const spot = { x: c.x + o[0], y: c.y + o[1] };
+			if (i < 2) q10Spawn("bandit", "scout", i === 0 ? "Co-op squatter" : "Co-op lookout", spot, [18, 4, 9], "seed");
+			else q10Spawn("coyote", null, null, spot, [13, 4, 6], "seed");
+		}
+	}
+	function q10Bull() {
+		const b = q10Spot("bog");
+		return q10Spawn("moose", null, "Bog bull", { x: b.x + 60, y: b.y + 40 }, [52, 10, 22, true], "moose");
+	}
+	/** Dress the quest sites with props that already exist (no new art): the co-op yard, the ferry landing, the wrecks. */
+	function q10Props() {
+		const place = (site, kind, dx, dy) => {
+			const b = Q10_SITES[site];
+			const tx0 = b.tx + WORLD_OX + dx, ty0 = b.ty + WORLD_OY + dy;
+			for (let r = 0; r < 4; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
+				if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) !== r) continue;
+				if (addProp(world, kind, x, y, { q10: true })) return;
+			}
+		};
+		place("coop", "stall", 2, -3);
+		place("coop", "wall", -3, -2);
+		place("coopBins", "crates", 2, 1);
+		place("coopBins", "crates", 1, 3);
+		place("ferry", "crates", 2, -1);
+		place("ferry", "wall", -2, -2);
+		place("winch", "car-truck", 2, 0);
+		place("part2", "car-sedan", 2, 1);
+		place("rope", "crates", 2, 0);
+	}
+	/** After any home-map world build (new game, load, crossing back): find the sites and put live quest bodies back. */
+	function q10World() {
+		q10Spots = new Map();
+		q10Latch.clear();
+		dogBody = null;
+		if (!world || mapId !== 0) return;
+		q10Props();
+		if (q10.seed === 2 && q10.seedLeft > 0) q10SeedCamp();
+		if (q10.moose === 2) q10Bull();
+		if (q10.dog >= 2) q10PlaceDog();
+	}
+	function q10PlaceDog() {
+		if (q10.dog === 2) {
+			const end = q10Spot(`trail${DOG_TRAIL.length - 1}`);
+			dogBody = { x: end.x + 20, y: end.y + 10, dir: 3, frame: 0, anim: 0, moving: false };
+		} else if (q10.dog === 3 && player) dogBody = { x: player.x + 40, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
+		else if (q10.dog >= 4) {
+			const loki = world?.npcs.find((n) => n.role === "loki");
+			const f = loki ?? farmCenter();
+			dogBody = { x: f.x + 46, y: f.y + 28, dir: 1, frame: 0, anim: 0, moving: false };
+		}
+	}
+	function npcSpot(role) {
+		const n = world?.npcs.find((m) => m.role === role);
+		return n ? { x: n.x, y: n.y, npc: true } : null;
+	}
+	/** Active objectives: where to put markers, and which spots open a talk or fire on arrival. */
+	function q10Targets() {
+		const out = [];
+		if (!world || mapId !== 0 || snow < 3) return out;
+		const add = (key, mode, color = "#e8c15a") => { const s = q10Spot(key); out.push({ key, x: s.x, y: s.y, mode, color }); };
+		const npc = (role, color = "#e8c15a") => { const s = npcSpot(role); if (s) out.push({ key: `npc-${role}`, x: s.x, y: s.y, mode: "npc", color }); };
+		if (q10.seed === 1) add("coop", "arrive");
+		if (q10.seed === 2) add("coop", "mark", "#d0644a");
+		if (q10.seed === 3) add("coopBins", "talk");
+		if (q10.seed === 4) npc("sarah");
+		if (q10.ferry === 1) { if (!q10.planks) add("planks", "talk"); if (!q10.rope) add("rope", "talk"); if (!q10.winch) add("winch", "talk"); }
+		if (q10.ferry === 2) add("ferry", "talk");
+		if (q10.ferry >= 3) { const s = q10Spot("ferry"); out.push({ key: "ferry", x: s.x, y: s.y, mode: "talk", color: "#7fb0d8", quiet: true }); }
+		if (q10.dog === 1) npc("loki", "#c9a0e0");
+		if (q10.dog === 2) {
+			const last = DOG_TRAIL.length - 1;
+			if (q10.dogStep < last) add(`trail${q10.dogStep}`, "arrive", "#c9a0e0");
+			else add(`trail${last}`, "talk", "#c9a0e0");
+		}
+		if (q10.dog === 3) npc("loki", "#c9a0e0");
+		if (q10.radio === 1) RADIO_SITES.forEach((k, i) => { if (!q10.parts[i]) add(k, "talk", "#8fd07a"); });
+		if (q10.radio === 2) npc("cyndal", "#8fd07a");
+		if (q10.moose === 1) add("bog", "arrive", "#d89a5a");
+		if (q10.moose === 2) { const bull = world.enemies.find((e) => e.q10 === "moose" && !e.dead); if (bull) out.push({ key: "bull", x: bull.x, y: bull.y, mode: "mark", color: "#d0644a" }); }
+		if (q10.moose === 3) { const f = farmCenter(); out.push({ key: "farm", x: f.x, y: f.y + 80, mode: "mark", color: "#d89a5a" }); }
+		if (q10.moose === 4) npc("justin", "#d89a5a");
+		return out;
+	}
+	const Q10_SITE_TALK = {
+		coopBins: () => ({ speaker: "Co-op seed bins", text: "Back of the co-op the bins are still covered with feed sacks. Under them, cold and dry: Kennebec russets, firm as stones. Somebody knew what they were doing.", choices: [{ label: "Fill a sack with seed", id: "q10-seed-take" }, { label: "Leave them", id: "close" }] }),
+		planks: () => ({ speaker: "Lowelltown sawpile", text: "Rough-sawn hemlock under a tarp, stickered and dry. A dozen boards would deck the ferry.", choices: [{ label: "Take a bundle of planks", id: "q10-take-planks" }, { label: "Leave it", id: "close" }] }),
+		rope: () => ({ speaker: "Attean boathouse", text: "The boathouse door hangs by one hinge. Coiled on a peg inside: a hank of three-strand manila, stiff with cold but sound.", choices: [{ label: "Take the rope", id: "q10-take-rope" }, { label: "Leave it", id: "close" }] }),
+		winch: () => ({ speaker: "Wrecked log truck", text: "A loader rig on its side in the ditch, ice in the cab. The winch drum's still bolted on, and the pawl will knock loose with a hammer and some cussing.", choices: [{ label: "Knock the pawl loose", id: "q10-take-winch" }, { label: "Leave it", id: "close" }] }),
+		ferry: () => q10.ferry === 2
+			? { speaker: "Kennebec ferry landing", text: "The cable barge sits half up on the gravel, deck boards gone soft and the winch rusted solid. The river's running black and fast. You've got everything she needs.", choices: [{ label: "Deck her, rig the rope, seat the pawl", id: "q10-ferry-fix" }, { label: "Not yet", id: "close" }] }
+			: { speaker: "Kennebec ferry", text: "The ferry rides easy on her cable. North across the Kennebec the spruce goes on forever. They say The Grok walks up there.", choices: [{ label: "Pole across to the north woods", id: "q10-ferry-cross" }, { label: "Stay this side", id: "close" }] },
+		part0: () => ({ speaker: "Lowelltown grange hall", text: "The grange hall's radio cabinet was gutted long ago, but in a drawer under the stage there's a sock with something hard in it: a 6V6 tube, glass not cracked.", choices: [{ label: "Pocket the tube", id: "q10-part-0" }, { label: "Leave it", id: "close" }] }),
+		part1: () => ({ speaker: "Attean fire tower shed", text: "The ranger's shed at the foot of the tower. On the bench, under mouse leavings, a spool of enamel copper wire.", choices: [{ label: "Take the spool", id: "q10-part-1" }, { label: "Leave it", id: "close" }] }),
+		part2: () => ({ speaker: "Holeb camp road", text: "A camp truck in the ditch, its hood up. A big square lantern battery sits on the seat. You touch it to your tongue. It still kicks.", choices: [{ label: "Take the battery", id: "q10-part-2" }, { label: "Leave it", id: "close" }] }),
+	};
+	Q10_SITE_TALK[`trail${DOG_TRAIL.length - 1}`] = () => ({ speaker: "Biscuit", text: "Under a blowdown in the spruce, a muddy brown dog with one ear up. He thumps his tail and won't come out. He's shaking.", choices: [{ label: "Come on, Biscuit. Let's go home", id: "q10-dog-found" }, { label: "Give him a minute", id: "close" }] });
+	function q10Step(dt) {
+		if (!world || !player || mapId !== 0 || inside || phase !== "play") return;
+		// Biscuit tags along once found
+		if (dogBody && q10.dog === 3) {
+			const tx = player.x + 46, ty = player.y + 30;
+			const d = Math.hypot(tx - dogBody.x, ty - dogBody.y);
+			dogBody.moving = d > 24;
+			if (d > 600) { dogBody.x = tx; dogBody.y = ty; }
+			else if (dogBody.moving) {
+				const sp = Math.min(d, (d > 180 ? 360 : 220) * dt);
+				dogBody.dir = facing8(tx - dogBody.x, ty - dogBody.y);
+				dogBody.x += (tx - dogBody.x) / d * sp;
+				dogBody.y += (ty - dogBody.y) / d * sp;
+			}
+			dogBody.anim += dt * (dogBody.moving ? 9 : 0);
+		}
+		if (dialogue) return;
+		for (const t of q10Targets()) {
+			if (t.mode === "mark" || t.mode === "npc") continue;
+			const d = Math.hypot(t.x - player.x, t.y - player.y);
+			const r = t.mode === "arrive" ? (t.key === "coop" || t.key === "bog" ? 5 * TILE : 1.6 * TILE) : 1.4 * TILE;
+			if (d > r + TILE * 2) q10Latch.delete(t.key);
+			if (d > r || q10Latch.has(t.key)) continue;
+			q10Latch.add(t.key);
+			if (t.mode === "arrive") q10Arrive(t.key);
+			else if (Q10_SITE_TALK[t.key]) {
+				dialogue = Q10_SITE_TALK[t.key]();
+				talkNpc = null;
+				phase = "dialogue";
+				intent = null;
+				sfx("talk");
+				sync(true);
+			}
+			return;
+		}
+		// Moose Season: the bear on the walk home, then the yard
+		if (q10.moose === 3) {
+			const f = farmCenter(), b = q10Spot("bog");
+			const home = Math.hypot(f.x - player.x, f.y - player.y);
+			const span = Math.hypot(f.x - b.x, f.y - b.y);
+			if (!q10.bearDone && home < span * .62 && home > 14 * TILE) {
+				q10.bearDone = true;
+				const ux = (f.x - player.x) / home, uy = (f.y - player.y) / home;
+				q10Spawn("wolf", "bear", "Black bear", { x: player.x + ux * 7 * TILE, y: player.y + uy * 7 * TILE }, [58, 9, 26, true], "bear", true);
+				pushLog("Something big stands up out of the alders ahead of you. A black bear, and it wants that meat.");
+				sfx("hit");
+				saveGame();
+			}
+			if (home < 9 * TILE) {
+				q10.moose = 4;
+				pushLog("You drag the last of the moose into the yard. Tell Justin.");
+				saveGame();
+				sync(true);
+			}
+		}
+	}
+	function q10Arrive(key) {
+		if (key === "coop" && q10.seed === 1) {
+			q10.seed = 2;
+			q10.seedLeft = 4;
+			q10SeedCamp();
+			for (const e of world.enemies) if (e.q10 === "seed") e.aggro = true;
+			pushLog("The Pittsfield co-op. Smoke from the stovepipe and a dog-pack of coyotes nosing the loading dock. Somebody's moved in, and they don't want company.");
+			sfx("hit");
+		} else if (key === "bog" && q10.moose === 1) {
+			q10.moose = 2;
+			q10Bull();
+			pushLog("Heald Stream bog. There he is, up to his knees in the water, a bull as tall as a truck cab. Take him clean.");
+		} else if (key.startsWith("trail") && q10.dog === 2) {
+			q10.dogStep += 1;
+			const left = DOG_TRAIL.length - 1 - q10.dogStep;
+			pushLog(left > 0 ? ["Paw prints in the mud, headed for the spruce.", "More tracks. He was running flat out here.", "A tuft of brown fur on a raspberry cane.", "Tracks along the old tote road. He slowed down.", "Muddy prints, close together now. He's tired.", "He went under a fence wire here. Not far now."][Math.min(5, q10.dogStep - 1)] : "You hear a whine from under a blowdown.");
+		}
+		saveGame();
+		sync(true);
+	}
+	function q10Kill(enemy) {
+		if (!enemy.q10) return;
+		if (enemy.q10 === "seed" && q10.seed === 2) {
+			q10.seedLeft = Math.max(0, q10.seedLeft - 1);
+			if (q10.seedLeft <= 0) { q10.seed = 3; pushLog("The co-op's quiet. The seed bins are around back."); }
+		} else if (enemy.q10 === "moose" && q10.moose === 2) {
+			q10.moose = 3;
+			pushLog("The bull goes down in the bog. You dress him out and quarter him on a sled of spruce poles. Now haul him home.");
+		} else if (enemy.q10 === "bear") pushLog("The bear's down. The meat's still yours.");
+		sync(true);
+	}
+	/** A story raid night just ended: Biscuit bolted during the shooting. */
+	function q10AfterRaid() {
+		if (q10.dog !== 0 || raidMode) return;
+		q10.dog = 1;
+		pushLog("Loki's yelling from the porch. Biscuit went under the fence when the shooting started.");
+	}
+	function q10Reward(items) {
+		for (const [id, n] of items) giveItem(id, n);
+	}
+	/** Ferry crossing to the north woods (the second map). Arrives at that map's first road gate. */
+	function q10FerryCross() {
+		if (!world || !player || mapId !== 0) return;
+		parkBike(false);
+		const leaving = world.name;
+		regions.set(mapId, captureRegion());
+		mapId = 1;
+		world = createWorld(worldSeed, mapId, exitSides);
+		applyRegion(regions.get(mapId));
+		regions.delete(mapId);
+		const arrive = world.gates[0];
+		if (arrive) { player.x = arrive.arriveTx * 64 + 32; player.y = arrive.arriveTy * 64 + 32; }
+		intent = null; work = null; holdWalk = false; inside = null; opening = null; travelLock = 1.6;
+		q10World();
+		spawnCrows();
+		const land = tileOf(player.x, player.y);
+		reveal(land.tx, land.ty, sightRadius(), true);
+		pushLog(`The ferry grinds onto the far bank. You leave ${leaving} behind and step off into ${world.name}, the north woods.`);
+		camX = player.x - player.y - viewW / 2;
+		camY = (player.x + player.y) / 2 - viewH / 2;
+		snapParty();
+		landReturn();
+		saveGame();
+	}
+	/** Handles every "q10-*" choice. Returns true when it left a dialogue open. */
+	function q10Choice(id) {
+		const open = (d) => { dialogue = d; phase = "dialogue"; sfx("click"); sync(true); return true; };
+		if (id === "q10-seed-ask") return open(Q10_TEXT.seedAsk);
+		if (id === "q10-ferry-ask") return open(Q10_TEXT.ferryAsk);
+		if (id === "q10-moose-ask") return open(Q10_TEXT.mooseAsk);
+		if (id === "q10-radio-ask") return open(Q10_TEXT.radioAsk);
+		if (id === "q10-seed-accept" && q10.seed === 0) { q10.seed = 1; pushLog("Seed Run: the Pittsfield co-op is south and east, down past Attean. Get there before the frost."); }
+		else if (id === "q10-seed-take" && q10.seed === 3) { q10.seed = 4; pushLog("You fill a feed sack with seed potatoes and wrap it in your coat to keep the cold off. Back to Sarah."); }
+		else if (id === "q10-seed-done" && q10.seed === 4) {
+			q10.seed = 5; q10.stores += 4;
+			q10Reward([["stew", 2], ["apple", 3]]);
+			grantXp(34); shiftRep("ponds", 2, 8);
+			pushLog("Seed Run: done. The seed's in the cellar. From now on Sarah sends a bowl of camp stew along with the cider.");
+			sfx("level");
+		}
+		else if (id === "q10-ferry-accept" && q10.ferry === 0) { q10.ferry = 1; pushLog("Kennebec Crossing: planks at the Lowelltown sawpile, rope at the Attean boathouse, a winch pawl off the log truck east of the farm."); }
+		else if (id === "q10-take-planks" && q10.ferry === 1) { q10.planks = true; pushLog("You lash a bundle of hemlock planks to your pack frame. Heavy."); }
+		else if (id === "q10-take-rope" && q10.ferry === 1) { q10.rope = true; pushLog("You sling the coil of manila over your shoulder."); }
+		else if (id === "q10-take-winch" && q10.ferry === 1) { q10.winch = true; pushLog("Three good whacks and the pawl drops into the snow. Got it."); }
+		if (q10.ferry === 1 && q10.planks && q10.rope && q10.winch) { q10.ferry = 2; pushLog("That's planks, rope and the winch part. Take them up to the ferry landing on the Kennebec."); }
+		if (id === "q10-ferry-fix" && q10.ferry === 2) {
+			q10.ferry = 3;
+			grantXp(40); shiftRep("ponds", 1, 6);
+			pushLog("Kennebec Crossing: done. New deck, new rope, and the winch clacks over like it should. The ferry runs to the north woods.");
+			sfx("build");
+		}
+		else if (id === "q10-ferry-cross" && q10.ferry >= 3) { dialogue = null; phase = "play"; q10FerryCross(); sync(true); return true; }
+		else if (id === "q10-dog-accept" && q10.dog === 1) { q10.dog = 2; q10.dogStep = 0; q10PlaceDog(); pushLog("Lost Dog: Biscuit's paw prints start in the mud by the orchard."); }
+		else if (id === "q10-dog-found" && q10.dog === 2) { q10.dog = 3; q10PlaceDog(); pushLog("Biscuit crawls out and leans on your leg. Walk him home to Loki."); }
+		else if (id === "q10-dog-done" && q10.dog === 3) {
+			q10.dog = 4; q10PlaceDog();
+			q10Reward([["maple", 1]]);
+			grantXp(24); shiftRep("ponds", 2, 8);
+			pushLog("Lost Dog: done. Loki slips you his maple candy tin.");
+			sfx("level");
+		}
+		else if (id === "q10-radio-accept" && q10.radio === 0) { q10.radio = 1; pushLog("Cyndal's Radio: a tube, a coil and a battery. Lowelltown grange, the Attean fire tower shed, the Holeb camp road."); }
+		else if (id.startsWith("q10-part-") && q10.radio === 1) {
+			const i = Number(id.slice(9));
+			q10.parts[i] = true;
+			const n = q10.parts.filter(Boolean).length;
+			if (n >= 3) { q10.radio = 2; pushLog("That's all three radio parts. Bring them to Cyndal."); }
+			else pushLog(`Radio part ${n} of 3.`);
+		}
+		else if (id === "q10-radio-done" && q10.radio === 2) {
+			q10.radio = 3;
+			grantXp(30); shiftRep("ponds", 2, 8);
+			pushLog("Cyndal's Radio: done. Talk to Cyndal to call Marcel the trader on the radio.");
+			sfx("level");
+		}
+		else if (id === "q10-trader" && q10.radio >= 3) return open({
+			speaker: "Marcel Thibodeau (radio)",
+			text: "\"Thibodeau, go ahead.\" Static, then a laugh. \"The Cambridge Road farm? Ayuh, I can run the sled up. Cash is iron. Here's what's on it this week.\"",
+			choices: [
+				{ label: "Eight shells — 10 iron", id: "q10-buy-shells" },
+				{ label: "Field bandage — 6 iron", id: "q10-buy-wrap" },
+				{ label: "Snowshoes — 16 iron", id: "q10-buy-snowshoes" },
+				{ label: "Barn lantern — 12 iron", id: "q10-buy-lantern" },
+				{ label: "Smoked jerky — 5 iron", id: "q10-buy-jerky" },
+				{ label: "Over and out", id: "close" },
+			],
+		});
+		else if (id === "q10-buy-shells") buyFromTrader("sarah", 10, "shells", 8, "Marcel's sled comes up the road at dusk. Eight shells in a coffee can.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-buy-wrap") buyFromTrader("sarah", 6, "bandage-std", 1, "A field bandage off Marcel's sled.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-buy-snowshoes") buyFromTrader("sarah", 16, "snowshoes", 1, "Ash-frame snowshoes, rawhide laced. Marcel says his uncle made them.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-buy-lantern") buyFromTrader("sarah", 12, "lantern", 1, "A barn lantern with a good wick.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-buy-jerky") buyFromTrader("sarah", 5, "jerky", 1, "A twist of smoked jerky.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-moose-accept" && q10.moose === 0) { q10.moose = 1; pushLog("Moose Season: the Heald Stream bog is south of the farm, toward Attean."); }
+		else if (id === "q10-moose-done" && q10.moose === 4) {
+			q10.moose = 5; q10.stores += 10;
+			q10Reward([["meat", 6], ["hide", 2], ["jerky", 4]]);
+			grantXp(44); shiftRep("ponds", 2, 8);
+			pushLog("Moose Season: done. Six quarters hanging, the hide on the barn wall. Justin cuts you a share: meat, a hide and jerky.");
+			sfx("level");
+		}
+		return false;
+	}
+	/** Ground rings under every objective and Biscuit's paw prints; drawn flat on the ground plane. */
+	function q10DrawGround(dcx, dcy, dpr) {
+		if (!world || mapId !== 0) return;
+		const z = zoom;
+		ctx.save();
+		ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
+		const t = performance.now() / 1000;
+		for (const m of q10Targets()) {
+			if (m.quiet || m.mode === "npc") continue;
+			const pulse = .5 + .5 * Math.sin(t * 3);
+			ctx.strokeStyle = m.color;
+			ctx.globalAlpha = .45 + .35 * pulse;
+			ctx.lineWidth = 5;
+			ctx.beginPath();
+			ctx.arc(m.x, m.y, 46 + pulse * 10, 0, Math.PI * 2);
+			ctx.stroke();
+			ctx.globalAlpha = .18;
+			ctx.fillStyle = m.color;
+			ctx.fill();
+		}
+		if (q10.dog === 2) {
+			ctx.globalAlpha = .92;
+			ctx.fillStyle = "#24170d";
+			const steps = Math.min(q10.dogStep + 1, DOG_TRAIL.length);
+			let prev = farmCenter();
+			for (let i = 0; i < steps; i++) {
+				const s = q10Spot(`trail${i}`);
+				const dx = s.x - prev.x, dy = s.y - prev.y, L = Math.hypot(dx, dy) || 1;
+				const n = Math.max(2, Math.floor(L / 52));
+				for (let k = 1; k <= n; k++) {
+					const u = k / n, px = prev.x + dx * u, py = prev.y + dy * u;
+					const side = k % 2 ? 1 : -1, ox = -dy / L * 9 * side, oy = dx / L * 9 * side;
+					ctx.beginPath(); ctx.ellipse(px + ox, py + oy, 9, 7, Math.atan2(dy, dx), 0, Math.PI * 2); ctx.fill();
+					for (let c = -1; c <= 1; c++) { ctx.beginPath(); ctx.arc(px + ox + dx / L * 11 + -dy / L * c * 6, py + oy + dy / L * 11 + dx / L * c * 6, 3.2, 0, Math.PI * 2); ctx.fill(); }
+				}
+				prev = s;
+			}
+		}
+		ctx.restore();
+	}
+	/** Floating diamonds over objectives (and over the person to talk to) plus Biscuit, depth-sorted with the world. */
+	function q10Draws(draws, dcx, dcy) {
+		if (!world || mapId !== 0) return;
+		const t = performance.now() / 1000;
+		for (const m of q10Targets()) {
+			if (m.quiet) continue;
+			const tile = tileOf(m.x, m.y);
+			if (!explored[tile.ty * 156 + tile.tx] && m.mode !== "npc") continue;
+			draws.push({ z: m.x + m.y + 1e5, draw: () => {
+				const raw = worldToScreen(m.x, m.y, dcx, dcy);
+				const p = zoomPoint(raw.sx, raw.sy);
+				const lift = (m.mode === "npc" ? 118 : 70) * zoom + Math.sin(t * 3) * 5 * zoom;
+				const s = 9 * zoom;
+				ctx.save();
+				ctx.globalAlpha = .95;
+				ctx.fillStyle = m.color;
+				ctx.strokeStyle = "#2a2116";
+				ctx.lineWidth = 2;
+				ctx.beginPath();
+				ctx.moveTo(p.sx, p.sy - lift - s * 1.4); ctx.lineTo(p.sx + s, p.sy - lift); ctx.lineTo(p.sx, p.sy - lift + s * 1.4); ctx.lineTo(p.sx - s, p.sy - lift);
+				ctx.closePath(); ctx.fill(); ctx.stroke();
+				ctx.restore();
+			} });
+		}
+		if (dogBody) {
+			const tile = tileOf(dogBody.x, dogBody.y);
+			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
+				const frame = dogBody.moving ? Math.floor(dogBody.anim) % 4 : 0;
+				blit("coyote", dogBody.x, dogBody.y, realH("coyote", 27), true, frame, dogBody.dir, dcx, dcy);
+			} });
+		}
+	}
+	function q10Mini(mctx, sx, sy) {
+		if (!world || mapId !== 0) return;
+		for (const m of q10Targets()) {
+			if (m.quiet) continue;
+			const t = tileOf(m.x, m.y);
+			mctx.fillStyle = m.color;
+			mctx.fillRect(t.tx * sx - 1.5, t.ty * sy - 1.5, 4, 4);
+		}
+	}
 	function openTalk(npc) {
 		if (!player) return;
 		ensureProgress(player);
@@ -1834,6 +2261,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (npc.role === "cal") jackMet = true;
 			if (npc.role === "sarah") restockKitchen();
 			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002), talkState());
+			const q10x = q10Talk(npc.role, q10, snow >= 3, !!raid);
+			if (q10x?.replace) Object.assign(line, q10x.replace);
+			else if (q10x?.add) line.choices = [...line.choices.slice(0, -1), ...q10x.add, ...line.choices.slice(-1)];
 			if (rep <= -10) line.text = `You are not welcome here, and they do not pretend otherwise. ${line.text}`;
 			line.choices = line.choices.map((choice) => {
 				if (!choice.check) return choice;
@@ -3247,6 +3677,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (enemy.id === HOLEB_ID) pushLog("The old bull of Holeb lies in the snow. They will talk about this in Lowelltown.");
 		if (enemy.id === PELLETIER_ID) pushLog("Her lantern rolls into the water and goes out. The mill is quiet.");
+		q10Kill(enemy);
 		if (enemy.quest && quest === 1) {
 			questKills += 1;
 			const left = questTotal - questKills;
@@ -3857,6 +4288,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		world = createWorld(worldSeed, mapId, exitSides);
 		applyRegion(regions.get(mapId));
 		regions.delete(mapId);
+		q10World();
 		const arrive = world.gates.find((g) => g.side === arriveSide) ?? world.gates[0];
 		if (arrive) {
 			player.x = arrive.arriveTx * 64 + 32;
@@ -4205,6 +4637,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!turnBased) stepParty(dt);
 		if (!turnBased) stepRaid(dt);
 		stepEncounters();
+		q10Step(dt);
 		snowAcc += dt;
 		if (snowAcc > .14 && particles.length < 48) {
 			snowAcc = 0;
@@ -4655,7 +5088,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const BEAST_IN = {
 		holeb: 120, warden: 74, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
 		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
-		moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
+		bear: 40, moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
 	function beastH(enemy) {
 		const key = enemy.variant && BEAST_IN[enemy.variant] ? enemy.variant : enemy.kind;
@@ -4862,6 +5295,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog(`You held the farm. Night ${n} is done: +${scrap} iron, +${20 + 10 * n} XP.`);
 			sfx("level");
 		} else pushLog(`The farm still stands. You keep what you took off them. Try again tomorrow night.`);
+		q10AfterRaid();
 		// morning comes
 		const span = DAY_LENGTH_SEC;
 		const into = ((clock % span) + span) % span;
@@ -5733,6 +6167,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		drawGround(drawCamX, drawCamY);
+		q10DrawGround(drawCamX, drawCamY, dpr);
 		if (buildOpen) {
 			ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
 			const tile = hoverTile();
@@ -5874,6 +6309,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				z: bodyZ(enemy.x, enemy.y),
 				draw: () => {
 					const h = beastH(enemy);
+					if (enemy.variant === "bear") { ctx.save(); ctx.filter = "brightness(0.38) saturate(0.5)"; }
+					try {
 					// strips are drawn facing west; mirror them for anything facing east
 					const east = (enemy.dir ?? 0) >= 5 && (enemy.dir ?? 0) <= 7;
 					if (enemy.dead) {
@@ -5910,6 +6347,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
 					}
 					if (enemy.aggro || enemy.hp < enemy.maxHp || enemy.id === lockedId) bar(enemy.x, enemy.y, h, enemy.hp / enemy.maxHp, drawCamX, drawCamY);
+					} finally { if (enemy.variant === "bear") ctx.restore(); }
 				}
 			});
 		}
@@ -5997,6 +6435,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			});
 		}
 		paintFlood(drawCamX, drawCamY);
+		q10Draws(draws, drawCamX, drawCamY);
 		draws.sort((a, b) => a.z - b.z);
 		for (const item of draws) item.draw();
 		if (work && work.swing > 0 && player && !inside) paintToolSwing(drawCamX, drawCamY);
@@ -6320,6 +6759,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				mctx.fillRect(hatch.tx * sx - 1.5, hatch.ty * sy - 1.5, 4, 4);
 			}
 		}
+		q10Mini(mctx, sx, sy);
 		const pt = tileOf(player.x, player.y);
 		mctx.fillStyle = "#f0e6d4";
 		mctx.fillRect(pt.tx * sx - 1, pt.ty * sy - 1, 3, 3);
@@ -7381,6 +7821,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setSnow: (n) => { snow = n; sync(true); },
 		startRaidNow: () => { startRaid(); return !!raid; },
 		saveNow: () => saveGame(),
+		q10State: () => JSON.parse(JSON.stringify(q10)),
+		q10Set: (patch) => { Object.assign(q10, patch); q10World(); sync(true); },
+		q10Spot: (key) => q10Spot(key),
+		q10Targets: () => q10Targets().map((t) => ({ key: t.key, mode: t.mode, x: Math.round(t.x), y: Math.round(t.y) })),
+		q10Dog: () => dogBody ? { x: Math.round(dogBody.x), y: Math.round(dogBody.y) } : null,
+		q10EndRaid: (won) => endRaid(!!won, "Test: the raid ends."),
+		dialogueNow: () => dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => ({ id: c.id, label: c.label })) } : null,
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (h / 24) * span;
