@@ -4,6 +4,7 @@ export const SPRITE_FIT: Record<string, number> = {
  "boss-holeb": 0.621,
  "boss-mask": 0.815,
  "boss-pelletier": 0.855,
+ "boss-grok": 0.82,
  "boss-saw": 0.815,
  "boss-warden": 0.79,
  "coyote": 0.476,

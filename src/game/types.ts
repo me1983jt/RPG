@@ -265,7 +265,7 @@ export interface Enemy {
   dead: boolean;
   hurt: number;
   name?: string;
-  variant?: "fur" | "mask" | "saw" | "scout" | "brute" | "torch" | "jumper" | "armor" | "shield" | "atv" | "holeb" | "pelletier" | "warden";
+  variant?: "fur" | "mask" | "saw" | "scout" | "brute" | "torch" | "jumper" | "armor" | "shield" | "atv" | "holeb" | "pelletier" | "warden" | "grok" | "bear";
   slow?: number;
   death?: number;
 }

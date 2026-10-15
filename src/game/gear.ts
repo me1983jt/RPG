@@ -123,6 +123,8 @@ export const GEAR: Record<string, GearDef> = {
   hide: { id: "hide", name: "Green hide", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Still wet. Cut it for cloth." },
   cloth: { id: "cloth", name: "Twist of cloth", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Rags. Bandages start here." },
   bomb: { id: "bomb", name: "Pipe bomb", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it from the pack. It bursts on raiders nearby." },
+  snare: { id: "snare", name: "Wire snare", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to set a snare where you stand. Check it the next day." },
+  grokclaw: { id: "grokclaw", name: "Grok claw", kind: "supply", family: "trade", quality: "good", atk: 0, def: 0, heal: 0, worth: 20, note: "A claw off The Grok, long as a hay knife. Proof, and worth a lot to the right trader." },
   fuel: { id: "fuel", name: "Fuel can", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it to ready the tractor for the next pass down the lane." },
   baitpack: { id: "baitpack", name: "Bait tin", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to drop a cache where you stand. Raiders come for it." },
 };
@@ -218,6 +220,8 @@ export interface CraftRecipe {
   need: { id: string; qty: number }[];
   name: string;
   blurb: string;
+  /** v11: needs the workbench at the farm. */
+  bench?: boolean;
 }
 
 export const CRAFT: CraftRecipe[] = [
@@ -228,6 +232,12 @@ export const CRAFT: CraftRecipe[] = [
   { id: "kit", item: "kit", qty: 1, iron: 1, wood: 0, need: [{ id: "bandage", qty: 2 }, { id: "cloth", qty: 1 }], name: "Healing kit", blurb: "Bandages, cloth, and a needle." },
   { id: "syrup", item: "syrup", qty: 1, iron: 0, wood: 2, need: [{ id: "sapbucket", qty: 1 }], name: "Boil syrup", blurb: "Boil a bucket of sap down to a jar." },
   { id: "cloth", item: "cloth", qty: 2, iron: 0, wood: 0, need: [{ id: "hide", qty: 1 }], name: "Cut cloth", blurb: "A hide becomes two twists of cloth." },
+  { id: "snare", item: "snare", qty: 2, iron: 1, wood: 0, need: [{ id: "wire", qty: 1 }], name: "Wire snares (bench)", blurb: "Two snares from a hank of wire.", bench: true },
+  { id: "snowshoes", item: "snowshoes", qty: 1, iron: 0, wood: 2, need: [{ id: "hide", qty: 1 }], name: "Snowshoes (bench)", blurb: "Bent ash and rawhide lacing.", bench: true },
+  { id: "lantern", item: "lantern", qty: 1, iron: 4, wood: 0, need: [{ id: "oil", qty: 1 }, { id: "wire", qty: 1 }], name: "Barn lantern (bench)", blurb: "Tin, a wick and lamp oil.", bench: true },
+  { id: "carbine-std", item: "carbine-std", qty: 1, iron: 6, wood: 0, need: [{ id: "carbine", qty: 1 }, { id: "wire", qty: 1 }], name: "Rebarrel the carbine (bench)", blurb: "Worn carbine to a service carbine.", bench: true },
+  { id: "carbine-good", item: "carbine-good", qty: 1, iron: 10, wood: 0, need: [{ id: "carbine-std", qty: 1 }, { id: "oil", qty: 1 }], name: "Tune the action (bench)", blurb: "Service carbine to a good carbine.", bench: true },
+  { id: "scoped", item: "scoped", qty: 1, iron: 12, wood: 0, need: [{ id: "carbine-good", qty: 1 }, { id: "binoculars", qty: 1 }], name: "Mount a scope (bench)", blurb: "Glass off a pair of binoculars.", bench: true },
 ];
 
 export function roleKit(id: RoleId): RoleKit {

@@ -1,13 +1,14 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2061;
+const ART_V = 2070;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
+import { CARAVAN_ROUTES, COMPASS8, FARM_UPGRADES, FISH_SITES, GIVER_NAME, MODE_TEXT, Q11, Q11_SITES, SEASONS, SEASON_CROP, SEASON_DAYS, SEASON_TINT, freshQ11, loadQ11, q11Ask, q11Hud, q11Journal, q11Talk, questById, seasonOf } from "@/game/quests11";
 import {
   PERKS,
   SKILLS,
@@ -28,7 +29,7 @@ import {
 } from "@/game/progress";
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, hasSave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
-import { useHud, useRaidMode } from "@/game/store";
+import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import {
@@ -77,6 +78,7 @@ export interface GameApi {
   continueGame: () => void;
   /** Title menu "Raid Mode": a standalone raid night at the farm that never touches the story save. */
   raidMode: () => void;
+  startMode: (kind: "winter" | "endless" | "watch") => void;
   setStick: (x: number, y: number) => void;
   tap: (action: "attack" | "interact" | "build" | "pause" | "resume" | "menu" | "respawn" | "save") => void;
   choose: (id: string) => void;
@@ -192,6 +194,9 @@ var IMAGES = [
 	"boss-warden",
 	"boss-warden-dead",
 	"boss-pelletier",
+	"boss-grok",
+	"boss-grok-atk",
+	"boss-grok-dead",
 	"boss-pelletier-atk",
 	"boss-pelletier-dead",
 	"raider-scout",
@@ -564,7 +569,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (snow === 1) return `First Snow: bring Justin ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
 			return "First Snow: go see Sarah at the farm.";
 		}
-		const side = snow >= 3 ? q10Hud(q10) : "";
+		const m11h = q11HudText();
+		if (m11h) return m11h;
+		const side = snow >= 3 ? q10Hud(q10) || q11Hud(q11) : "";
 		return side || questText(quest, questKills);
 	}
 	function sync(force = false) {
@@ -587,7 +594,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			quest,
 			questKills,
 			questText: hudQuestText(),
-			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3)]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
+			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
 			recipe,
@@ -1020,6 +1027,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		bunkerSeen = false;
 		kitchenDay = -1;
 		q10 = freshQ10();
+		q11 = freshQ11();
 		q10World();
 		openedDoors.clear();
 		lootedChests.clear();
@@ -1195,6 +1203,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		bunkerSeen = !!data.bunkerSeen;
 		kitchenDay = data.kitchenDay ?? -1;
 		q10 = loadQ10(data.q10);
+		q11 = loadQ11(data.q11);
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -1262,7 +1271,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return nearestRespawn(home.tx, home.ty, spec.w, spec.h);
 	}
 	function saveGame() {
-		if (!world || !player || raidMode) return;
+		if (!world || !player || raidMode || mode11) return;
 		const data = playerToSave(player, quest, questKills, collectRemoved(world), world.enemies.filter((e) => e.dead).map((e) => e.id), world.props.filter((p) => p.built).map((p) => ({
 			kind: p.kind,
 			tx: p.tx,
@@ -1293,6 +1302,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.bunkerSeen = bunkerSeen;
 		data.kitchenDay = kitchenDay;
 		data.q10 = q10;
+		data.q11 = q11;
 		data.regions = [...regions.values()];
 		data.piles = piles.map((pile) => ({
 			id: pile.id,
@@ -1544,6 +1554,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
+		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id === "raid-ask") {
 			const n = raidNight + 1;
 			dialogue = {
@@ -1905,6 +1916,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** After any home-map world build (new game, load, crossing back): find the sites and put live quest bodies back. */
 	function q10World() {
+		q11World();
 		q10Spots = new Map();
 		q10Latch.clear();
 		dogBody = null;
@@ -2169,13 +2181,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return false;
 	}
 	/** Ground rings under every objective and Biscuit's paw prints; drawn flat on the ground plane. */
+	function q10All() {
+		return [...(mapId === 0 ? q10Targets() : []), ...q11Targets()];
+	}
 	function q10DrawGround(dcx, dcy, dpr) {
-		if (!world || mapId !== 0) return;
+		if (!world) return;
 		const z = zoom;
 		ctx.save();
 		ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
 		const t = performance.now() / 1000;
-		for (const m of q10Targets()) {
+		for (const m of q10All()) {
 			if (m.quiet || m.mode === "npc") continue;
 			const pulse = .5 + .5 * Math.sin(t * 3);
 			ctx.strokeStyle = m.color;
@@ -2188,7 +2203,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.fillStyle = m.color;
 			ctx.fill();
 		}
-		if (q10.dog === 2) {
+		ctx.globalAlpha = .85;
+		ctx.fillStyle = "#3a2a18";
+		for (const tr of q11.traps) { ctx.beginPath(); ctx.arc(tr.x, tr.y, 10, 0, Math.PI * 2); ctx.fill(); }
+		if (q10.dog === 2 && mapId === 0) {
 			ctx.globalAlpha = .92;
 			ctx.fillStyle = "#24170d";
 			const steps = Math.min(q10.dogStep + 1, DOG_TRAIL.length);
@@ -2210,9 +2228,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Floating diamonds over objectives (and over the person to talk to) plus Biscuit, depth-sorted with the world. */
 	function q10Draws(draws, dcx, dcy) {
-		if (!world || mapId !== 0) return;
+		if (!world) return;
 		const t = performance.now() / 1000;
-		for (const m of q10Targets()) {
+		if (escortBodies) for (const b of escortBodies) draws.push({ z: bodyZ(b.x, b.y), draw: () => paintPerson(b, dcx, dcy) });
+		for (const m of q10All()) {
 			if (m.quiet) continue;
 			const tile = tileOf(m.x, m.y);
 			if (!explored[tile.ty * 156 + tile.tx] && m.mode !== "npc") continue;
@@ -2241,13 +2260,601 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	function q10Mini(mctx, sx, sy) {
-		if (!world || mapId !== 0) return;
-		for (const m of q10Targets()) {
+		if (!world) return;
+		for (const m of q10All()) {
 			if (m.quiet) continue;
 			const t = tileOf(m.x, m.y);
 			mctx.fillStyle = m.color;
 			mctx.fillRect(t.tx * sx - 1.5, t.ty * sy - 1.5, 4, 4);
 		}
+	}
+	// ---------------------------------------------------------------- beta v11: quests + play types (src/game/quests11.ts)
+	let q11 = freshQ11();
+	let q11Spots = new Map();
+	const q11Latch = new Set();
+	/** "winter" | "endless" | "watch" while one of the v11 start-menu modes runs. */
+	let mode11 = null;
+	let m11 = null;
+	let fishGame = null;
+	let fishForce = null;
+	let caravanForce = null;
+	let escortBodies = null;
+	let ripples = [];
+	const Q11C = () => ({ snowDone: snow >= 3, ferry: q10.ferry >= 3, jack: jackMet || jackTrust > 0, radio: q10.radio >= 3 });
+	function curDay() {
+		return Math.floor(clock / DAY_LENGTH_SEC);
+	}
+	function seasonNow() {
+		return seasonOf(curDay(), q11.seasonDay);
+	}
+	function q11Spot(key) {
+		if (key.startsWith("npc:")) {
+			const n = world?.npcs.find((m) => m.role === key.slice(4));
+			return n ? { x: n.x + 30, y: n.y + 40 } : farmCenter();
+		}
+		if (!q11Spots.has(key)) { const s = Q11_SITES[key]; q11Spots.set(key, q10Tile(s.tx, s.ty)); }
+		return q11Spots.get(key);
+	}
+	function siteMap(key) {
+		return key.startsWith("npc:") ? 0 : Q11_SITES[key]?.map ?? 0;
+	}
+	function q11St(id) {
+		if (!q11.q[id]) q11.q[id] = { s: 0, left: 0 };
+		return q11.q[id];
+	}
+	function q11Cur(q) {
+		const st = q11.q[q.id];
+		return st && st.s >= 1 && st.s <= q.steps.length ? q.steps[st.s - 1] : null;
+	}
+	function q11Spawn(spec, spot, tag, aggro) {
+		if (!world) return null;
+		const [kind, variant, name, hp, atk, xp] = spec;
+		let x = spot.x, y = spot.y;
+		const t = tileOf(x, y);
+		if (cellBlocked(world, t.tx, t.ty)) { const s = q10Tile(t.tx - WORLD_OX, t.ty - WORLD_OY); x = s.x; y = s.y; }
+		const e = { id: q11.nextId++, x, y, homeX: x, homeY: y, hp, maxHp: hp, atk, xp, elite: hp >= 40, quest: false, kind, pack: 70, temper: "hostile", crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0, path: null, pathT: 0, aggro, dead: false, hurt: 0, slow: 0, death: 0, q11: tag };
+		if (variant) e.variant = variant;
+		if (name) e.name = name;
+		world.enemies.push(e);
+		return e;
+	}
+	/** Foes for a fight/ambush step: around the site, or in a ring around you for an ambush. */
+	function q11SpawnFoes(q, step, count) {
+		const around = step.kind === "ambush" ? { x: player.x, y: player.y } : q11Spot(step.site);
+		const foes = step.foes.slice(step.foes.length - count);
+		foes.forEach((f, i) => {
+			const a = i / foes.length * Math.PI * 2 + .4;
+			const r = step.kind === "ambush" ? 6 * TILE : (i === 0 ? 0 : 2.2 * TILE);
+			q11Spawn(f, { x: around.x + Math.cos(a) * r, y: around.y + Math.sin(a) * r }, q.id, step.kind === "ambush");
+		});
+	}
+	function q11Begin(q) {
+		const step = q11Cur(q);
+		const st = q11St(q.id);
+		st.left = 0;
+		st.sp = false;
+		if (!step) return;
+		if (step.kind === "ambush" && siteMap(step.site) === mapId) {
+			st.left = step.foes.length; st.sp = true;
+			q11SpawnFoes(q, step, st.left);
+			pushLog(step.log);
+			sfx("hit");
+		}
+		if (step.kind === "escort") q11Escort(true);
+	}
+	function q11Advance(q, line) {
+		const st = q11St(q.id);
+		if (line) pushLog(line);
+		st.s += 1;
+		const n = q.steps.length;
+		if (st.s === n + 1) pushLog(`${q.title}: go back to ${GIVER_NAME[q.giver] ?? q.giver}.`);
+		q11Begin(q);
+		if (!q.steps.some((s, i) => s.kind === "escort" && i === st.s - 1)) escortBodies = q11EscortActive() ? escortBodies : null;
+		saveGame();
+		sync(true);
+	}
+	function q11EscortActive() {
+		return Q11.some((q) => q11Cur(q)?.kind === "escort");
+	}
+	function q11Escort(on) {
+		if (!on || !player) { escortBodies = null; return; }
+		if (escortBodies) return;
+		const mk = (role, ox, oy) => { const n = world?.npcs.find((m) => m.role === role); return { role, name: n?.name ?? role, x: player.x + ox, y: player.y + oy, dir: 0, frame: 0, anim: 0, still: true, ox, oy }; };
+		escortBodies = [mk("cyndal", -48, 36), mk("loki", 40, 52)];
+	}
+	/** World build: find sites, dress the farm, put live quest foes back. */
+	function q11World() {
+		q11Spots = new Map();
+		q11Latch.clear();
+		ripples = [];
+		if (!world) return;
+		if (mapId === 0) q11FarmProps();
+		for (const q of Q11) {
+			const step = q11Cur(q);
+			const st = q11.q[q.id];
+			if (!step || !st) continue;
+			if ((step.kind === "fight" || step.kind === "ambush") && st.sp && st.left > 0 && siteMap(step.site) === mapId && player) q11SpawnFoes(q, step, st.left);
+		}
+		escortBodies = null;
+		if (q11EscortActive()) q11Escort(true);
+		if (q11.hunt) q11.hunt = null;
+	}
+	function q11FarmProps() {
+		const fc = farmCenter();
+		const ft = tileOf(fc.x, fc.y);
+		FARM_UPGRADES.forEach((u, i) => {
+			for (let l = 0; l < q11.farm[u.id]; l++) {
+				const tx0 = ft.tx - 6 + l * 2, ty0 = ft.ty + 5 + i * 2;
+				for (let r = 0; r < 3; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
+					if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) !== r) continue;
+					if (addProp(world, u.prop, x, y, { q11: true })) { r = 9; y = 1e9; break; }
+				}
+			}
+		});
+	}
+	/** Markers for the v11 quests and play types on the current map (same shape as q10Targets). */
+	function q11Targets() {
+		const out = [];
+		if (!world || !player || mode11) return out;
+		for (const q of Q11) {
+			const st = q11.q[q.id];
+			if (!st || st.s < 1) continue;
+			const n = q.steps.length;
+			if (st.s === n + 1) {
+				if (mapId === 0) { const g = world.npcs.find((m) => m.role === q.giver); if (g) out.push({ key: `q11npc-${q.id}`, x: g.x, y: g.y, mode: "npc", color: "#e0b070" }); }
+				continue;
+			}
+			const step = q11Cur(q);
+			if (!step || siteMap(step.site) !== mapId) continue;
+			if ((step.kind === "fight" || step.kind === "ambush") && st.sp) {
+				for (const e of world.enemies) if (!e.dead && e.q11 === q.id) out.push({ key: `q11foe-${e.id}`, x: e.x, y: e.y, mode: "mark", color: "#d0644a" });
+				continue;
+			}
+			const s = q11Spot(step.site);
+			const mode = step.kind === "take" ? "talk" : step.kind === "fight" ? "arrive" : "arrive";
+			out.push({ key: `q11-${q.id}-${st.s}`, x: s.x, y: s.y, mode, color: "#e0b070", q: q.id, step });
+		}
+		if (mapId === 0 && snow >= 3) for (const k of FISH_SITES) { const s = q11Spot(k); out.push({ key: `fish-${k}`, x: s.x, y: s.y, mode: "talk", color: "#6fb7d8", fish: k }); }
+		if (q11.hunt) for (const e of world.enemies) if (!e.dead && e.q11 === "hunt") out.push({ key: `hunt-${e.id}`, x: e.x, y: e.y, mode: "mark", color: "#d89a5a" });
+		return out;
+	}
+	function q11Step(dt) {
+		if (!world || !player || inside || phase !== "play") return;
+		// Cyndal and Loki walk at your heels on an escort (they never carry guns)
+		if (escortBodies) for (const b of escortBodies) {
+			const tx = player.x + b.ox, ty = player.y + b.oy;
+			const d = Math.hypot(tx - b.x, ty - b.y);
+			b.still = d < 20;
+			if (d > 700) { b.x = tx; b.y = ty; }
+			else if (!b.still) {
+				const sp = Math.min(d, (d > 160 ? 300 : 190) * dt);
+				b.dir = facing8(tx - b.x, ty - b.y);
+				b.x += (tx - b.x) / d * sp; b.y += (ty - b.y) / d * sp;
+				b.anim += sp; b.frame = Math.floor(b.anim / 22) % 4;
+			}
+		}
+		q11Daily();
+		q11Season(dt);
+		q11HuntStep();
+		if (dialogue) return;
+		for (const t of q11Targets()) {
+			if (t.mode === "mark" || t.mode === "npc") continue;
+			const d = Math.hypot(t.x - player.x, t.y - player.y);
+			const r = t.fish ? 1.4 * TILE : t.step?.kind === "fight" ? 6 * TILE : t.mode === "arrive" ? 2.2 * TILE : 1.4 * TILE;
+			if (d > r + TILE * 2) q11Latch.delete(t.key);
+			if (d > r || q11Latch.has(t.key)) continue;
+			q11Latch.add(t.key);
+			if (t.fish) { q11OpenFish(t.fish); return; }
+			const q = questById(t.q), step = t.step, st = q11St(q.id);
+			if (step.kind === "go") q11Advance(q, step.log);
+			else if (step.kind === "escort") {
+				if (escortBodies && escortBodies.every((b) => Math.hypot(b.x - player.x, b.y - player.y) < 5 * TILE)) q11Advance(q, step.log);
+				else { q11Latch.delete(t.key); continue; }
+			} else if (step.kind === "fight" && !st.sp) {
+				st.sp = true; st.left = step.foes.length;
+				q11SpawnFoes(q, step, st.left);
+				for (const e of world.enemies) if (e.q11 === q.id && !e.dead) e.aggro = true;
+				pushLog(step.log); sfx("hit"); saveGame(); sync(true);
+			} else if (step.kind === "take") {
+				dialogue = { speaker: step.take.speaker, text: step.take.text, choices: [{ label: step.take.label, id: `q11-take-${q.id}` }, { label: "Not yet", id: "close" }] };
+				talkNpc = null; phase = "dialogue"; intent = null; sfx("talk"); sync(true);
+			}
+			return;
+		}
+	}
+	function q11Kill(enemy) {
+		if (!enemy.q11) return;
+		if (enemy.q11 === "hunt") { q11HuntDone(enemy); return; }
+		if (enemy.q11 === "caravan") { q11CaravanKill(); return; }
+		if (enemy.q11 === "watch") { if (m11) m11.caught += 1; return; }
+		const q = questById(enemy.q11);
+		const step = q && q11Cur(q);
+		if (!q || !step || (step.kind !== "fight" && step.kind !== "ambush")) return;
+		const st = q11St(q.id);
+		st.left = Math.max(0, st.left - 1);
+		if (st.left <= 0) { st.sp = false; q11Advance(q, enemy.variant === "grok" ? "The Grok goes down like a falling hemlock. You cut a claw off it, long as a hay knife." : "That's the last of them."); }
+		else sync(true);
+	}
+	// -------- daily ticks: farm yield, traps, season
+	function q11Daily() {
+		const day = curDay();
+		if (q11.farm.lastDay === day) return;
+		const first = q11.farm.lastDay < 0;
+		q11.farm.lastDay = day;
+		if (first || mode11 === "endless" || mode11 === "watch") return;
+		const f = q11.farm, mult = SEASON_CROP[seasonNow()];
+		const got = [];
+		if (f.plots && mult) { giveItem("apple", f.plots * mult); got.push(`${f.plots * mult} apples and potatoes`); }
+		if (f.coop && day % 2 === 0) { giveItem("pork", f.coop); got.push(`${f.coop} hen${f.coop > 1 ? "s" : ""} for the pot`); }
+		if (f.smoke) { const meat = player.bag.find((s) => s.id === "meat")?.qty ?? 0; const n = Math.min(meat, f.smoke); if (n) { takeItem("meat", n); giveItem("jerky", n * 2); got.push(`${n * 2} jerky from the smokehouse`); } }
+		if (got.length) { f.harvest += 1; pushLog(`Morning at the farm: ${got.join(", ")}.`); }
+		for (const trap of [...q11.traps]) if (day > trap.day) {
+			q11.traps.splice(q11.traps.indexOf(trap), 1);
+			if (Math.random() < .7) { giveItem("meat", 1); pushLog("A snowshoe hare in your snare. +1 meat."); } else pushLog("The snare's sprung and empty. Something smart got away.");
+		}
+	}
+	function takeItem(id, n) {
+		const s = player?.bag.find((b) => b.id === id);
+		if (!s) return false;
+		s.qty -= n;
+		if (s.qty <= 0) player.bag = player.bag.filter((b) => b !== s);
+		refreshGear(player);
+		return true;
+	}
+	let coldAcc = 0;
+	function q11Season(dt) {
+		// winter nights bite away from a fire
+		if (seasonNow() !== 3 || mode11 === "winter") return;
+		const here = tileOf(player.x, player.y);
+		if (nightDark(clock) < .3 || inFarm(here.tx, here.ty)) { coldAcc = 0; return; }
+		coldAcc += dt;
+		if (coldAcc > 8) { coldAcc = 0; player.hp = Math.max(1, player.hp - 1); pushLog("The cold's getting into you. Get to a fire."); }
+	}
+	// -------- hunting trips
+	function q11HuntStart(kind) {
+		const wind = Math.floor(Math.random() * 8);
+		q11.hunt = { kind, wind, on: true };
+		const spec = kind === "moose" ? ["moose", null, "Bull moose", 52, 10, 22] : kind === "bear" ? ["wolf", "bear", "Black bear", 58, 9, 26] : ["deer", null, "Whitetail buck", 20, 2, 10];
+		let spot = null;
+		for (let k = 0; k < 8 && !spot; k++) {
+			const a = Math.random() * Math.PI * 2;
+			const s = { x: player.x + Math.cos(a) * 16 * TILE, y: player.y + Math.sin(a) * 16 * TILE };
+			const t = tileOf(s.x, s.y);
+			if (t.tx > 4 && t.ty > 4 && t.tx < 150 && t.ty < 150) spot = s;
+		}
+		const e = q11Spawn(spec, spot ?? { x: player.x + 10 * TILE, y: player.y }, "hunt", false);
+		if (e) e.temper = kind === "bear" ? "hostile" : "wary";
+		pushLog(`Hunting trip: a ${kind === "bear" ? "black bear" : kind === "moose" ? "bull moose" : "whitetail"} is out there. Wind's out of the ${COMPASS8[wind]}. Come at it with the wind in your face.`);
+		return e;
+	}
+	/** Unit vector the wind blows toward, in world space (wind "out of the N" blows toward screen-south). */
+	function windVec(w) {
+		const a = (w * 45 - 90) * Math.PI / 180;
+		const sx = -Math.cos(a), sy = -Math.sin(a);
+		const vx = sy + sx / 2, vy = sy - sx / 2, L = Math.hypot(vx, vy) || 1;
+		return { x: vx / L, y: vy / L };
+	}
+	function q11HuntStep() {
+		if (!q11.hunt) return;
+		const prey = world.enemies.find((e) => !e.dead && e.q11 === "hunt");
+		if (!prey) { q11.hunt = null; return; }
+		const dx = prey.x - player.x, dy = prey.y - player.y, d = Math.hypot(dx, dy);
+		const w = windVec(q11.hunt.wind);
+		const downwind = (dx * w.x + dy * w.y) / (d || 1) > .55;
+		if (q11.hunt.kind !== "bear" && downwind && d < 11 * TILE && d > 2 * TILE) {
+			prey.dead = true; prey.death = 0;
+			q11.hunt = null;
+			pushLog("It threw its head up, got your scent on the wind, and it's gone. Try again, and mind the wind.");
+			sfx("click");
+			sync(true);
+		}
+	}
+	function q11HuntDone(e) {
+		const kind = q11.hunt?.kind ?? "deer";
+		q11.hunt = null;
+		if (kind === "moose") { giveItem("meat", 4); giveItem("hide", 1); }
+		else if (kind === "bear") { giveItem("meat", 3); giveItem("pelt", 1); }
+		else { giveItem("meat", 2); giveItem("hide", 1); }
+		pushLog(`Hunting trip: done. You dress out the ${e.name?.toLowerCase() ?? "animal"} and pack the meat home.`);
+		saveGame();
+		sync(true);
+	}
+	// -------- fishing
+	function q11OpenFish(site) {
+		const ice = seasonNow() === 3;
+		dialogue = { speaker: Q11_SITES[site].name, text: ice ? "Ice thick enough to stand on. Chop a hole, drop a line." : "Dark water, slow at the edge. Good spot for a line.", choices: [{ label: ice ? "Chop a hole and fish" : "Wet a line", id: `q11-fish-cast-${site}` }, { label: "Leave it", id: "close" }] };
+		talkNpc = null; phase = "dialogue"; intent = null; sfx("talk"); sync(true);
+	}
+	function fishPos() {
+		if (!fishGame) return 0;
+		return .5 + .5 * Math.sin((performance.now() - fishGame.t0) / 1000 * fishGame.speed * Math.PI);
+	}
+	function q11FishHook() {
+		const p = fishPos();
+		const hit = fishForce ?? (p >= fishGame.zone && p <= fishGame.zone + .2);
+		fishGame = null;
+		if (!hit) { pushLog("You yank too soon. It spits the hook."); return; }
+		q11.fish.caught += 1;
+		if (Math.random() < .12) { q11.fish.rare += 1; giveItem("smokedfish", 3); pushLog("A brook trout as long as your arm, red-bellied. That's a fish they'll talk about at the store."); }
+		else { giveItem("smokedfish", 1); pushLog(seasonNow() === 3 ? "A yellow perch through the ice. Supper." : "A fat pickerel on the line. Supper."); }
+		sfx("level");
+	}
+	function paintFish() {
+		if (!fishGame) return;
+		const w = Math.min(420, viewW - 40), x = (viewW - w) / 2, y = viewH * .22;
+		ctx.save();
+		ctx.fillStyle = "rgba(20,24,28,.82)"; ctx.fillRect(x - 8, y - 30, w + 16, 58);
+		ctx.fillStyle = "#3b4a52"; ctx.fillRect(x, y, w, 18);
+		ctx.fillStyle = "#5fae5a"; ctx.fillRect(x + fishGame.zone * w, y, .2 * w, 18);
+		ctx.fillStyle = "#f2e6c8"; ctx.fillRect(x + fishPos() * w - 3, y - 6, 6, 30);
+		ctx.font = "600 14px sans-serif"; ctx.fillText("Set the hook when the bobber's in the green", x, y - 12);
+		ctx.restore();
+	}
+	// -------- trade caravan to Bangor
+	function q11CaravanAmbush(home) {
+		const r = CARAVAN_ROUTES[q11.route];
+		const hit = caravanForce ?? Math.random() < r.risk;
+		if (!hit) return false;
+		q11.caravan = home ? 4 : 2;
+		const spec = r.foe === "coyote" ? ["coyote", null, "Coyote", 13, 4, 6] : ["bandit", "scout", "Road agent", 18, 4, 9];
+		for (let i = 0; i < 3; i++) { const a = i * 2.1; q11Spawn(spec, { x: player.x + Math.cos(a) * 6 * TILE, y: player.y + Math.sin(a) * 6 * TILE }, "caravan", true); }
+		pushLog(home ? "Coming home, a tree's dropped across the road. That's no accident. Here they come." : "Halfway down, somebody steps out of the alders and grabs the horse's bridle. Ambush!");
+		sfx("hit");
+		return true;
+	}
+	function q11CaravanKill() {
+		if (world.enemies.some((e) => !e.dead && e.q11 === "caravan")) return;
+		if (q11.caravan === 2) { q11.caravan = 3; pushLog("The road's clear. On to Bangor."); q11Market(); }
+		else if (q11.caravan === 4) q11CaravanHome();
+	}
+	function q11Market() {
+		dialogue = {
+			speaker: "Bangor market",
+			text: `Stalls along Main Street under the old Paul Bunyan statue. Folks trading out of their sleds. You've got ${player.scrap} iron.`,
+			choices: [
+				{ label: "Sell a pelt (5 iron)", id: "q11-sell-pelt" },
+				{ label: "Sell a hide (3 iron)", id: "q11-sell-hide" },
+				{ label: "Sell a jar of syrup (6 iron)", id: "q11-sell-syrup" },
+				{ label: "Buy 8 shells (8 iron)", id: "q11-buy-shells" },
+				{ label: "Buy a fuel can (10 iron)", id: "q11-buy-fuel" },
+				{ label: "Head home", id: "q11-car-home" },
+			],
+		};
+		phase = "dialogue"; sync(true);
+	}
+	function q11CaravanHome() {
+		q11.caravan = 0; q11.trips += 1;
+		clock += DAY_LENGTH_SEC * .25 * CARAVAN_ROUTES[q11.route].days;
+		pushLog(`The cart rolls back into the yard at Cambridge Road. Trade caravan trips: ${q11.trips}.`);
+		grantXp(16);
+		saveGame();
+		sync(true);
+	}
+	// -------- start-menu modes
+	function q11StartMode(kind) {
+		unlockAudio();
+		sfx("click");
+		useModeResult.setState({ result: null });
+		if (kind === "endless") {
+			api.raidMode();
+			mode11 = "endless";
+			m11 = { kind, best: Number(localStorage.getItem("maine-rpg-endless-best") || 0) };
+			setLog(MODE_TEXT.endless);
+			sync(true);
+			return;
+		}
+		mode11 = kind;
+		bootNew("Justin", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
+		mode11 = kind;
+		snow = Math.max(snow, 3);
+		jackMet = true;
+		if (GEAR.carbine) { giveItem("carbine", 1); player.weaponId = "carbine"; }
+		giveItem("shells", 10);
+		refreshGear(player);
+		const fh = world.props.find((q) => q.kind === "farmhouse");
+		if (fh) { const d = doorPoint(fh); player.x = d.x; player.y = d.y + 48; }
+		const span = DAY_LENGTH_SEC;
+		if (kind === "winter") {
+			clock = Math.floor(clock / span) * span + (8 / 24) * span;
+			q11.seasonDay = curDay() - SEASON_DAYS;
+			player.bag = player.bag.filter((s) => !["apple", "stew", "jerky", "meat", "pork", "cider", "donut", "smokedfish"].includes(s.id));
+			giveItem("jerky", 2);
+			m11 = { kind, day0: curDay(), days: 3, warmth: 100, food: 70, ate: 0, t: 0 };
+		} else {
+			clock = Math.floor(clock / span) * span + (21.5 / 24) * span;
+			giveItem("lantern", 1);
+			m11 = { kind, t: 0, dur: 150, caught: 0, lost: 0, hens: 6, spawnT: 2, spawned: 0 };
+		}
+		setLog(MODE_TEXT[kind]);
+		camX = player.x - player.y - viewW / 2;
+		camY = (player.x + player.y) / 2 - viewH / 2;
+		phase = "play";
+		sync(true);
+	}
+	function q11EndMode(won, why) {
+		const kind = mode11;
+		if (!kind) return;
+		let result;
+		if (kind === "winter") result = { mode: kind, title: won ? "Spring came" : "Winter won", lines: [why, `Days survived: ${Math.max(0, curDay() - m11.day0)} of ${m11.days}`, `Meals eaten: ${m11.ate}`] };
+		else if (kind === "watch") result = { mode: kind, title: m11.hens > 0 ? "Dawn at Cambridge Road" : "The hens are gone", lines: [why, `Prowlers caught: ${m11.caught}`, `Hens lost: ${m11.lost} of 6`] };
+		else {
+			const score = m11.score ?? 0;
+			const best = Math.max(score, m11.best || 0);
+			localStorage.setItem("maine-rpg-endless-best", String(best));
+			result = { mode: kind, title: "The farm fell", lines: [why, `Waves held: ${m11.waves ?? 0} · Raiders down: ${m11.kills ?? 0}`, `Score: ${score}`, `Best: ${best}${score >= best && score > 0 ? " (new best!)" : ""}`], score, best };
+		}
+		mode11 = null; m11 = null; fishGame = null; ripples = [];
+		useModeResult.setState({ result });
+		phase = "menu"; dialogue = null; buildOpen = false;
+		sfx(won ? "level" : "die");
+		sync(true);
+	}
+	/** Runs every frame before anything else. */
+	function q11ModeTick(dt) {
+		if (!mode11 || !player || !world) return;
+		if (phase === "menu") { mode11 = null; m11 = null; return; }
+		if (mode11 === "endless") {
+			const span = DAY_LENGTH_SEC;
+			const into = ((clock % span) + span) % span;
+			if (into < span * 21 / 24 && into > span * 6 / 24) clock = Math.floor(clock / span) * span + span * 22 / 24;
+			if (into < span * 6 / 24) clock = Math.floor(clock / span) * span - span * 2 / 24;
+			return;
+		}
+		if (phase === "dead") { m11.deadT = (m11.deadT || 0) + dt; if (m11.deadT > 1.6) q11EndMode(false, mode11 === "winter" ? "The cold took you before the thaw." : "They got the drop on you in the dark."); return; }
+		if (phase !== "play") return;
+		m11.t += dt;
+		const here = tileOf(player.x, player.y);
+		if (mode11 === "winter") {
+			clock += dt * 3;
+			const fh = world.props.find((p) => p.kind === "farmhouse");
+			const warm = inside || world.props.some((p) => FIRES[p.kind] && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 200) || (fh && Math.hypot(propCenter(fh).x - player.x, propCenter(fh).y - player.y) < 220);
+			const night = nightDark(clock) > .3;
+			m11.warmth = Math.max(0, Math.min(100, m11.warmth + (warm ? 10 : night ? -1.6 : -.7) * dt));
+			m11.food = Math.max(0, m11.food - .45 * dt);
+			if (m11.food < 35) {
+				const meal = ["stew", "meat", "jerky", "pork", "smokedfish", "apple", "donut", "cider"].find((id) => carrying(id));
+				if (meal) { takeItem(meal, 1); m11.food = Math.min(100, m11.food + 40); m11.ate += 1; pushLog(`You eat ${GEAR[meal]?.name?.toLowerCase() ?? "something"}. Food ${Math.round(m11.food)}.`); }
+			}
+			if (m11.warmth <= 0 || m11.food <= 0) { player.hp -= 1.5 * dt; if (player.hp <= 0) { player.hp = 0; phase = "dead"; sync(true); } }
+			if (curDay() >= m11.day0 + m11.days) q11EndMode(true, "The eaves are dripping and the brook's running under the ice. You made it to spring.");
+			return;
+		}
+		if (mode11 === "watch") {
+			const fc = farmCenter();
+			const hens = { x: fc.x + 3 * TILE, y: fc.y + 3 * TILE };
+			const lamp = carrying("lantern") ? 290 : 170;
+			m11.spawnT -= dt;
+			if (m11.spawnT <= 0 && m11.spawned < 9) {
+				m11.spawnT = 12 + Math.random() * 6;
+				m11.spawned += 1;
+				const a = Math.random() * Math.PI * 2;
+				q11Spawn(["bandit", "scout", "Prowler", 16, 4, 8], { x: hens.x + Math.cos(a) * 15 * TILE, y: hens.y + Math.sin(a) * 15 * TILE }, "watch", false);
+			}
+			for (const e of world.enemies) {
+				if (e.dead || e.q11 !== "watch") continue;
+				const dp = Math.hypot(e.x - player.x, e.y - player.y);
+				if (!e.aggro && dp < lamp) { e.aggro = true; pushLog("There! In the lantern light, a man by the woodpile."); }
+				if (e.aggro) continue;
+				const dx = hens.x - e.x, dy = hens.y - e.y, d = Math.hypot(dx, dy);
+				if (d < 70) { e.dead = true; e.death = 0; m11.lost += 1; m11.hens -= 1; pushLog(`A hen squawks and goes quiet. ${m11.hens} left.`); continue; }
+				const sp = 62 * dt;
+				e.x += dx / d * sp; e.y += dy / d * sp; e.homeX = e.x; e.homeY = e.y; e.dir = facing8(dx, dy); e.anim += sp;
+				e.rip = (e.rip || 0) - dt;
+				if (e.rip <= 0) { e.rip = 1.1; ripples.push({ x: e.x, y: e.y, t: 0 }); }
+			}
+			ripples = ripples.filter((r) => (r.t += dt) < 1.6);
+			if (m11.hens <= 0) q11EndMode(false, "The last hen's gone over the fence in a sack.");
+			else if (m11.t >= m11.dur) q11EndMode(true, "Grey light over the orchard. The prowlers have gone to ground.");
+		}
+	}
+	function paintRipples(dcx, dcy) {
+		if (!ripples.length) return;
+		ctx.save();
+		for (const r of ripples) {
+			const raw = worldToScreen(r.x, r.y, dcx, dcy);
+			const p = zoomPoint(raw.sx, raw.sy);
+			const k = r.t / 1.6;
+			ctx.globalAlpha = .7 * (1 - k);
+			ctx.strokeStyle = "#cfe4ff";
+			ctx.lineWidth = 2;
+			ctx.beginPath(); ctx.ellipse(p.sx, p.sy, (14 + 70 * k) * zoom, (7 + 35 * k) * zoom, 0, 0, Math.PI * 2); ctx.stroke();
+		}
+		ctx.restore();
+	}
+	function paintSeason() {
+		const tint = mode11 === "winter" ? SEASON_TINT[3] : SEASON_TINT[seasonNow()];
+		if (!tint || !world || mapId > 1) return;
+		ctx.save(); ctx.fillStyle = tint; ctx.fillRect(0, 0, viewW, viewH); ctx.restore();
+	}
+	function q11HudText() {
+		if (mode11 === "winter" && m11) return `Winter Survival · Day ${Math.min(m11.days, curDay() - m11.day0 + 1)} of ${m11.days} · Warmth ${Math.round(m11.warmth)} · Food ${Math.round(m11.food)}`;
+		if (mode11 === "watch" && m11) return `Night Watch · Dawn in ${Math.max(0, Math.ceil(m11.dur - m11.t))}s · Hens ${m11.hens} · Caught ${m11.caught}`;
+		if (mode11 === "endless" && m11 && raid) return `Endless Raid · Wave ${raid.wave} · Down ${raid.kills} · Best ${m11.best || 0}`;
+		if (q11.caravan === 2 || q11.caravan === 4) return "Trade caravan: ambush! Drive them off the cart.";
+		if (q11.hunt) return `Hunting trip: ${q11.hunt.kind}. Wind out of the ${COMPASS8[q11.hunt.wind]}.`;
+		return "";
+	}
+	function q11JournalExtra() {
+		const out = [];
+		if (snow < 3 || mode11) return out;
+		const f = q11.farm;
+		out.push({ id: "q11-season", title: `${SEASONS[seasonNow()]} at Cambridge Road`, done: false, text: `Day ${curDay() + 1}. Farm: potato plots ${f.plots}, coop ${f.coop}, stone wall ${f.wall}, smokehouse ${f.smoke}. Fish caught ${q11.fish.caught}${q11.fish.rare ? ` (${q11.fish.rare} rare)` : ""}. Caravan trips ${q11.trips}.${q11.traps.length ? ` Snares set: ${q11.traps.length}.` : ""}` });
+		return out;
+	}
+	/** Farm talk options for the play types. */
+	function q11FarmChoices(role) {
+		if (snow < 3 || raid || mode11) return [];
+		if (role === "sarah") return [{ label: "Work on the farm", id: "q11-farm" }];
+		if (role === "justin") return [{ label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
+		return [];
+	}
+	function q11Choice(id) {
+		const openD = (d) => { dialogue = d; phase = "dialogue"; sfx("click"); sync(true); return true; };
+		const close = () => { dialogue = null; phase = "play"; sync(true); return true; };
+		let m;
+		if ((m = id.match(/^q11-ask-(.+)$/))) { const q = questById(m[1]); return q ? openD(q11Ask(q)) : false; }
+		if ((m = id.match(/^q11-accept-(.+)$/))) {
+			const q = questById(m[1]); const st = q && q11St(q.id);
+			if (q && st.s === 0) { st.s = 1; pushLog(`${q.title}: ${q.steps[0].hud}`); q11Begin(q); saveGame(); }
+			return false;
+		}
+		if ((m = id.match(/^q11-take-(.+)$/))) {
+			const q = questById(m[1]); const step = q && q11Cur(q);
+			if (step?.kind === "take") { dialogue = null; phase = "play"; q11Advance(q, step.log); return true; }
+			return false;
+		}
+		if ((m = id.match(/^q11-done-(.+)$/))) {
+			const q = questById(m[1]); const st = q && q11St(q.id);
+			if (q && st.s === q.steps.length + 1) {
+				st.s += 1;
+				for (const [it, n] of q.reward) giveItem(it, n);
+				if (q.iron) player.scrap += q.iron;
+				grantXp(q.xp); shiftRep("ponds", 2, 6);
+				pushLog(`${q.title}: done. ${q.after}`);
+				sfx("level"); saveGame();
+			}
+			return false;
+		}
+		if (id === "q11-farm") return openD({
+			speaker: "Sarah", text: `What do you want to put up? You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron. It's ${SEASONS[seasonNow()].toLowerCase()}.`,
+			choices: [...FARM_UPGRADES.map((u) => ({ label: `${u.name} ${q11.farm[u.id]}/${u.max}: ${[u.wood && `${u.wood} wood`, u.stone && `${u.stone} stone`, u.iron && `${u.iron} iron`].filter(Boolean).join(", ")}`, id: `q11-build-${u.id}` })), { label: "Never mind", id: "close" }],
+		});
+		if ((m = id.match(/^q11-build-(.+)$/))) {
+			const u = FARM_UPGRADES.find((x) => x.id === m[1]);
+			if (!u) return false;
+			if (q11.farm[u.id] >= u.max) pushLog(`The ${u.name.toLowerCase()} is as big as it's getting.`);
+			else if (player.wood < u.wood || player.stone < u.stone || player.scrap < u.iron) pushLog(`Not enough for the ${u.name.toLowerCase()}.`);
+			else {
+				player.wood -= u.wood; player.stone -= u.stone; player.scrap -= u.iron;
+				q11.farm[u.id] += 1;
+				q11FarmProps();
+				pushLog(`You put up the ${u.name.toLowerCase()}. ${u.blurb}`);
+				sfx("build"); saveGame();
+			}
+			return q11Choice("q11-farm");
+		}
+		if (id === "q11-hunt") return openD({ speaker: "Justin", text: "Short trip or long? Mind the wind. If it's at your back they'll smell you a quarter mile off.", choices: [{ label: "Deer in the cutover", id: "q11-hunt-deer" }, { label: "Moose in the alders", id: "q11-hunt-moose" }, { label: "Bear up on the ridge", id: "q11-hunt-bear" }, { label: "Not today", id: "close" }] });
+		if ((m = id.match(/^q11-hunt-(deer|moose|bear)$/))) { close(); q11HuntStart(m[1]); return true; }
+		if (id === "q11-caravan") return openD({ speaker: "Justin", text: "Bangor's a long day with the cart. Which way? Route 2's quick but there's road agents. The river road's slower and quieter. The back roads are coyote country.", choices: [...CARAVAN_ROUTES.map((r, i) => ({ label: r.label, id: `q11-car-route-${i}` })), { label: "Not today", id: "close" }] });
+		if ((m = id.match(/^q11-car-route-(\d)$/))) {
+			q11.route = Number(m[1]); q11.caravan = 1;
+			pushLog(`You hitch the cart and take ${CARAVAN_ROUTES[q11.route].label.split(" (")[0].toLowerCase()} for Bangor.`);
+			close();
+			if (!q11CaravanAmbush(false)) { q11.caravan = 3; q11Market(); }
+			return true;
+		}
+		const sell = { "q11-sell-pelt": ["pelt", 5], "q11-sell-hide": ["hide", 3], "q11-sell-syrup": ["syrup", 6] }[id];
+		if (sell && q11.caravan === 3) { if (takeItem(sell[0], 1)) { player.scrap += sell[1]; pushLog(`Sold. +${sell[1]} iron.`); sfx("click"); } else pushLog("You haven't got one to sell."); q11Market(); return true; }
+		const buy = { "q11-buy-shells": ["shells", 8, 8], "q11-buy-fuel": ["fuel", 1, 10] }[id];
+		if (buy && q11.caravan === 3) { if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
+		if (id === "q11-car-home" && q11.caravan === 3) { close(); if (!q11CaravanAmbush(true)) q11CaravanHome(); return true; }
+		if ((m = id.match(/^q11-fish-cast-(.+)$/))) {
+			fishGame = { t0: performance.now(), speed: .7 + Math.random() * .5, zone: .15 + Math.random() * .6, site: m[1] };
+			return openD({ speaker: "Fishing", text: "The bobber rides the ripples. Wait for it to dip into the green, then set the hook.", choices: [{ label: "Set the hook!", id: "q11-fish-hook" }, { label: "Reel in", id: "q11-fish-stop" }] });
+		}
+		if (id === "q11-fish-hook" && fishGame) { q11FishHook(); close(); saveGame(); return true; }
+		if (id === "q11-fish-stop") { fishGame = null; return close(); }
+		return false;
 	}
 	function openTalk(npc) {
 		if (!player) return;
@@ -2272,6 +2879,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const q10x = q10Talk(npc.role, q10, snow >= 3, !!raid);
 			if (q10x?.replace) Object.assign(line, q10x.replace);
 			else if (q10x?.add) line.choices = [...line.choices.slice(0, -1), ...q10x.add, ...line.choices.slice(-1)];
+			const q11x = q10x?.replace ? null : q11Talk(npc.role, q11, Q11C(), !!raid);
+			if (q11x?.replace) Object.assign(line, q11x.replace);
+			else {
+				const extra = [...(q11x?.add ?? []), ...q11FarmChoices(npc.role)];
+				if (extra.length) line.choices = [...line.choices.slice(0, -1), ...extra, ...line.choices.slice(-1)];
+			}
 			if (rep <= -10) line.text = `You are not welcome here, and they do not pretend otherwise. ${line.text}`;
 			line.choices = line.choices.map((choice) => {
 				if (!choice.check) return choice;
@@ -3140,6 +3753,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
+		snare: "wire", grokclaw: "antlers",
 		"carbine-std": "carbine", "carbine-good": "carbine", scoped: "scoped",
 		"knife-std": "knife", "knife-good": "knife", skin: "knife",
 		"hatchet-std": "hatchet", "hatchet-good": "hatchet",
@@ -3702,6 +4316,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.id === HOLEB_ID) pushLog("The old bull of Holeb lies in the snow. They will talk about this in Lowelltown.");
 		if (enemy.id === PELLETIER_ID) pushLog("Her lantern rolls into the water and goes out. The mill is quiet.");
 		q10Kill(enemy);
+		q11Kill(enemy);
 		if (enemy.quest && quest === 1) {
 			questKills += 1;
 			const left = questTotal - questKills;
@@ -4339,6 +4954,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function step(dt) {
 		tickLog(dt);
+		q11ModeTick(dt);
 		if (edges.pause && phase === "play") {
 			phase = "pause";
 			sync(true);
@@ -4662,6 +5278,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!turnBased) stepRaid(dt);
 		stepEncounters();
 		q10Step(dt);
+		q11Step(dt);
 		snowAcc += dt;
 		if (snowAcc > .14 && particles.length < 48) {
 			snowAcc = 0;
@@ -4737,7 +5354,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				enemy.aggro = true;
 				alertPack(enemy);
 			}
-			let speed = enemy.variant === "scout" ? 236 : enemy.variant === "jumper" ? 214 : enemy.variant === "atv" ? 250 : enemy.variant === "armor" ? 78 : enemy.variant === "shield" ? 100 : enemy.variant === "brute" ? 92 : enemy.variant === "torch" ? 148 : enemy.kind === "wolf" ? 176 : enemy.kind === "coyote" ? 196 : enemy.kind === "deer" ? 168 : enemy.kind === "moose" ? 118 : enemy.elite ? 128 : ENEMY_SPEED;
+			let speed = enemy.variant === "grok" ? 72 : enemy.variant === "scout" ? 236 : enemy.variant === "jumper" ? 214 : enemy.variant === "atv" ? 250 : enemy.variant === "armor" ? 78 : enemy.variant === "shield" ? 100 : enemy.variant === "brute" ? 92 : enemy.variant === "torch" ? 148 : enemy.kind === "wolf" ? 176 : enemy.kind === "coyote" ? 196 : enemy.kind === "deer" ? 168 : enemy.kind === "moose" ? 118 : enemy.elite ? 128 : ENEMY_SPEED;
 			if (enemy.crippleLeg > 0) speed *= .55;
 			if (enemy.slow > 0) speed *= .48;
 			const bite = enemy.kind === "moose" ? 70 : enemy.kind === "deer" ? 58 : 50;
@@ -5083,6 +5700,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.variant === "holeb") return "boss-holeb";
 		if (enemy.variant === "warden") return "boss-warden";
 		if (enemy.variant === "pelletier") return "boss-pelletier";
+		if (enemy.variant === "grok") return "boss-grok";
 		if (enemy.variant === "fur") return "boss-fur";
 		if (enemy.variant === "mask") return "boss-mask";
 		if (enemy.variant === "saw") return "boss-saw";
@@ -5110,7 +5728,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Full visible height (top of head/antlers to hooves) in inches. */
 	const BEAST_IN = {
-		holeb: 120, warden: 74, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
+		holeb: 120, grok: 98, warden: 74, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
 		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
 		bear: 40, moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
@@ -5179,6 +5797,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// clear any stragglers so the waves start clean
 		for (const e of world.enemies) if (!e.dead && isRaider(e) && !e.quest) { e.dead = true; e.death = 0; }
 		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 90 + 15 * n, houseMax: 90 + 15 * n, warned: false, kills: 0 };
+		if (q11.farm.wall) { raid.house += 15 * q11.farm.wall; raid.houseMax += 15 * q11.farm.wall; }
 		raidHudPct = 20;
 		pushLog(`Raid night ${n}. Justin and Sarah take the posts. Hold the farm.`);
 		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
@@ -5293,6 +5912,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function endRaid(won, why) {
 		if (!raid || !player || !world) return;
+		if (mode11 === "endless") {
+			if (won) {
+				raid.waves += 1; raid.phase = "lull"; raid.t = 8; raid.warned = false; raid.ang = Math.random() * Math.PI * 2;
+				giveItem("shells", 4);
+				pushLog(`Wave ${raid.wave} is down. More lanterns on the road. +4 shells.`);
+				sync(true);
+				return;
+			}
+			m11.waves = Math.max(0, raid.wave - 1); m11.kills = raid.kills; m11.score = raid.kills * 10 + m11.waves * 50;
+			for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
+			guardPost.clear(); raid = null; raidMode = false;
+			q11EndMode(false, why);
+			return;
+		}
 		const n = raid.night;
 		const summary = { won, night: n, kills: raid.kills, waves: raid.waves, wavesDone: won ? raid.waves : Math.max(0, raid.wave - 1), text: why };
 		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
@@ -6292,7 +6925,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const npc of world.npcs) {
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
-			if (raid && (npc.role === "cyndal" || npc.role === "loki")) continue;
+			if ((raid || escortBodies) && (npc.role === "cyndal" || npc.role === "loki")) continue;
 			draws.push({
 				z: bodyZ(npc.x, npc.y),
 				draw: () => {
@@ -6490,6 +7123,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
+		paintSeason();
+		paintRipples(drawCamX, drawCamY);
+		paintFish();
 		if (world && player && shade > .12) {
 			const here = tileOf(player.x, player.y);
 			const onFarm = inFarm(here.tx, here.ty) || world.props.some((p) => DEFENSE[p.kind] && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
@@ -7058,6 +7694,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player || phase !== "play") return;
 		const recipe = CRAFT.find((r) => r.id === id);
 		if (!recipe || !GEAR[recipe.item]) return;
+		if (recipe.bench && !inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty)) {
+			pushLog("That wants the workbench in the barn at Cambridge Road.");
+			sfx("click");
+			sync(true);
+			return;
+		}
 		if (player.scrap < recipe.iron || player.wood < recipe.wood) {
 			pushLog("Short on timber or iron.");
 			sfx("click");
@@ -7178,6 +7820,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			unlockAudio();
 			sfx("click");
 			bootNew(name, role, bonus, trait, look);
+		},
+		startMode(kind) {
+			q11StartMode(kind);
 		},
 		raidMode() {
 			unlockAudio();
@@ -7571,6 +8216,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const def = GEAR[id];
 			const stack = player.bag.find((s) => s.id === id);
 			if (!def || !stack || stack.qty <= 0) return;
+			if (id === "snare" && world) {
+				takeItem("snare", 1);
+				q11.traps.push({ x: player.x, y: player.y, day: curDay() });
+				pushLog("You set a wire snare in a hare run. Check it tomorrow.");
+				saveGame(); sync(true);
+				return;
+			}
 			if (def.kind === "weapon") {
 				if (player.weaponId === id) {
 					player.weaponId = "";
@@ -7875,6 +8527,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setSnow: (n) => { snow = n; sync(true); },
 		startRaidNow: () => { startRaid(); return !!raid; },
 		saveNow: () => saveGame(),
+		q11State: () => JSON.parse(JSON.stringify({ ...q11, mode11, m11, season: seasonNow(), day: curDay(), escort: !!escortBodies, fishing: !!fishGame })),
+		q11Set: (patch) => { Object.assign(q11, patch); q11World(); sync(true); },
+		q11Spot: (key) => q11Spot(key),
+		q11Cur: (id) => { const q = questById(id); const st = q11.q[id]; const step = q && q11Cur(q); return { s: st?.s ?? 0, n: q?.steps.length ?? 0, kind: step?.kind ?? "", site: step?.site ?? "", left: st?.left ?? 0 }; },
+		q11Targets: () => q11Targets().map((t) => ({ key: t.key, mode: t.mode, x: Math.round(t.x), y: Math.round(t.y) })),
+		q11Force: (o) => { if ("fish" in o) fishForce = o.fish; if ("caravan" in o) caravanForce = o.caravan; },
+		q11Mode: (k) => api.startMode(k),
+		q11ModeEnd: (won) => q11EndMode(!!won, "Test: the mode ends."),
+		q11ModeTime: (sec) => { if (m11) { if (mode11 === "watch") m11.t += sec; if (mode11 === "winter") clock += sec; } },
+		modeResult: () => useModeResult.getState().result,
+		addStone: (n) => { if (player) player.stone += n; },
+		addIron: (n) => { if (player) player.scrap += n; },
 		q10State: () => JSON.parse(JSON.stringify(q10)),
 		q10Set: (patch) => { Object.assign(q10, patch); q10World(); sync(true); },
 		q10Spot: (key) => q10Spot(key),

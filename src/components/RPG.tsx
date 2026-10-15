@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
-import { useHud, useRaidMode } from "@/game/store";
+import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { RECIPES } from "@/game/types";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import type { PerkId, SkillId } from "@/game/progress";
@@ -33,6 +33,7 @@ export function RPG() {
   const pinching = useRef(false);
   const hud = useHud();
   const raidResult = useRaidMode((s) => s.result);
+  const modeResult = useModeResult((s) => s.result);
   const [name, setName] = useState("Packer");
   const [role, setRole] = useState<RoleId>("fighter");
   const [look, setLook] = useState<LookId>("wool");
@@ -753,6 +754,19 @@ export function RPG() {
                       Raid Mode
                     </button>
                   ) : null}
+                  {step === "trade" ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("winter")}>
+                        Winter Survival
+                      </button>
+                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("endless")}>
+                        Endless Raid
+                      </button>
+                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("watch")}>
+                        Night Watch
+                      </button>
+                    </div>
+                  ) : null}
                   {hud.hasSave && step === "trade" ? (
                     <button
                       type="button"
@@ -782,6 +796,22 @@ export function RPG() {
             Raid again
           </button>
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => useRaidMode.setState({ result: null })}>
+            Back to menu
+          </button>
+        </Overlay>
+      ) : null}
+
+      {hud.phase === "menu" && modeResult && !raidResult ? (
+        <Overlay title={modeResult.title}>
+          {modeResult.lines.map((line, i) => (
+            <p key={i} className={i === 0 ? "text-sm leading-relaxed text-muted" : "text-sm"}>
+              {line}
+            </p>
+          ))}
+          <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.startMode(modeResult.mode)}>
+            Play again
+          </button>
+          <button type="button" className="plank border border-border px-4 py-3" onClick={() => useModeResult.setState({ result: null })}>
             Back to menu
           </button>
         </Overlay>

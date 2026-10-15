@@ -76,3 +76,7 @@ export const useHud = create<HudSnapshot>(() => ({
 /** Raid Mode (title menu): the result card shown back on the menu after a standalone raid night. */
 export interface RaidResult { won: boolean; night: number; kills: number; waves: number; wavesDone: number; text: string }
 export const useRaidMode = create<{ result: RaidResult | null }>(() => ({ result: null }));
+
+/** v11 start-menu modes (Winter Survival, Endless Raid, Night Watch): the result card back on the menu. */
+export interface ModeResult { mode: "winter" | "endless" | "watch"; title: string; lines: string[]; score?: number; best?: number }
+export const useModeResult = create<{ result: ModeResult | null }>(() => ({ result: null }));
