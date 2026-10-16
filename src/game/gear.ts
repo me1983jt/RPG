@@ -125,6 +125,13 @@ export const GEAR: Record<string, GearDef> = {
   bomb: { id: "bomb", name: "Pipe bomb", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it from the pack. It bursts on raiders nearby." },
   snare: { id: "snare", name: "Wire snare", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to set a snare where you stand. Check it the next day." },
   grokclaw: { id: "grokclaw", name: "Grok claw", kind: "supply", family: "trade", quality: "good", atk: 0, def: 0, heal: 0, worth: 20, note: "A claw off The Grok, long as a hay knife. Proof, and worth a lot to the right trader." },
+  gas: { id: "gas", name: "Gas, quart can", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Motor bicycle gas. A can runs you a good way down the road." },
+  carburetor: { id: "carburetor", name: "Carburetor", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "A little float carb. Bike part." },
+  chain: { id: "chain", name: "Bike chain", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "#41 roller chain. Bike part." },
+  engine: { id: "engine", name: "Two-stroke engine", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Heavy. Bike part." },
+  gastank: { id: "gastank", name: "Gas tank", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Dented, doesn't leak. Bike part." },
+  sparkplug: { id: "sparkplug", name: "Spark plug", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Still in the box. Bike part." },
+  tire: { id: "tire", name: "Bicycle tire", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Balloon tire. Bike part." },
   fuel: { id: "fuel", name: "Fuel can", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it to ready the tractor for the next pass down the lane." },
   baitpack: { id: "baitpack", name: "Bait tin", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to drop a cache where you stand. Raiders come for it." },
 };
@@ -276,7 +283,7 @@ export function traitOf(id: string | undefined): { id: TraitId; title: string; b
   return TRAITS.find((t) => t.id === id) ?? null;
 }
 
-const DROP_POOL = ["hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate", "boots", "boots-std", "packframe", "scraphelm", "toque", "huntcap", "hockey", "canvas", "waxed", "shinguard", "snowshoes", "steeltoes", "backpack", "sling", "shotgun", "hudson", "smokedfish", "dandelion", "sapbucket", "lantern"];
+const DROP_POOL = ["gas", "hatchet", "knife", "carbine", "bandage", "wool", "lockpick", "pick", "shells", "revolver", "scatter", "pry", "vest", "pork", "maple", "matches", "pelt", "oil", "hatchet-std", "knife-std", "carbine-std", "bandage-std", "coat-std", "lockpick-std", "pick-std", "quilt", "hatchet-good", "knife-good", "carbine-good", "bandage-good", "coat-good", "lockpick-good", "pick-good", "plate", "boots", "boots-std", "packframe", "scraphelm", "toque", "huntcap", "hockey", "canvas", "waxed", "shinguard", "snowshoes", "steeltoes", "backpack", "sling", "shotgun", "hudson", "smokedfish", "dandelion", "sapbucket", "lantern"];
 
 export function rollDrop(elite: boolean, luck = 1): string | null {
   const lift = Math.max(0, luck - 1) * 0.04;

@@ -206,6 +206,18 @@ export function RPG() {
                 Dismount
               </button>
             ) : null}
+            {!hud.riding && hud.canMount ? (
+              <button
+                type="button"
+                data-testid="ride-btn"
+                className="pointer-events-auto self-center plank bg-primary px-4 py-2 text-sm font-semibold text-bg"
+                style={{ touchAction: "manipulation" }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => apiRef.current?.mount?.()}
+              >
+                Ride
+              </button>
+            ) : null}
             {hud.log.length > 0 ? (
               // On short (phone landscape) screens the hero stands mid-screen right above this list, so show
               // only the two newest lines, smaller, at the left edge instead of centred over the hero.

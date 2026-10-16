@@ -18,6 +18,10 @@ export interface Q11Step {
   /** Log line when the step completes (or, for fight/ambush, when the foes show up). */
   log: string;
   take?: { speaker: string; text: string; label: string };
+  /** take steps: items handed over, iron it costs, items it uses up. */
+  give?: [string, number][];
+  cost?: number;
+  need?: string[];
   /** [kind, variant, name, hp, atk, xp] */
   foes?: [string, string | null, string, number, number, number][];
 }
@@ -108,13 +112,36 @@ export const Q11_SITES: Record<string, { tx: number; ty: number; name: string; m
   fishKennebec: { tx: 62, ty: 6, name: "Kennebec eddy" },
   fishPond: { tx: 28, ty: 44, name: "Attean pond shore" },
   fishHoleb: { tx: 12, ty: 102, name: "Holeb pond" },
+  farmBike: { tx: 40, ty: 19, name: "Old motor bicycle" },
+  junkyard: { tx: 94, ty: 25, name: "The Chopping junkyard" },
+  garage: { tx: 72, ty: 25, name: "Route 2 garage" },
+  raiderSled: { tx: 60, ty: 72, name: "Raider sled camp" },
 };
+/** Parts for the motor bicycle (v11.1). */
+export const BIKE_PARTS = ["carburetor", "chain", "engine", "gastank", "sparkplug", "tire"];
 export const FISH_SITES = ["fishKennebec", "fishPond", "fishHoleb"];
 
 const R = (n: number, name: string): [string, string | null, string, number, number, number][] =>
   Array.from({ length: n }, (_, i) => ["bandit", i % 2 ? "jumper" : "scout", name, 18, 4, 9] as [string, string | null, string, number, number, number]);
 
 export const Q11: Q11Quest[] = [
+  {
+    id: "bike", title: "Bike Parts", giver: "justin", offer: "That old motor bike by the barn",
+    ask: "That's Dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
+    accept: "I'll find the parts",
+    steps: [
+      { kind: "take", site: "farmBike", hud: "look over the old motor bicycle by the barn.", log: "Rust, mouse nests and a good frame. A list of parts in your head.", take: { speaker: "Old motor bicycle", text: "A balloon-tire bicycle with a little engine bolted in the frame. Seized, gutted and flat, but straight.", label: "Make a list of what she needs" } },
+      { kind: "take", site: "junkyard", hud: "pull a carburetor and a gas tank at the junkyard by The Chopping.", log: "A little float carburetor off a lawn tractor, and a dented teardrop tank that doesn't leak.", give: [["carburetor", 1], ["gastank", 1]], take: { speaker: "The Chopping junkyard", text: "Wrecks stacked three high, a lawn tractor on its side and an old moped frame in the weeds.", label: "Pull the carb and the tank" } },
+      { kind: "take", site: "garage", hud: "get a chain and a tire at the Route 2 garage.", log: "A coil of #41 chain off the pegboard and a bicycle tire still in its paper.", give: [["chain", 1], ["tire", 1]], take: { speaker: "Route 2 garage", text: "Bay doors stove in, but the parts room in back is half full. Pegboard, boxes, a rack of bicycle tires.", label: "Take a chain and a tire" } },
+      { kind: "fight", site: "raiderSled", hud: "raiders at the sled camp have a little engine. Take it off them.", log: "A raider camp, and lashed on their sled is a two-stroke engine the size of a bread box.", foes: [["bandit", "scout", "Sled raider", 18, 4, 9], ["bandit", "jumper", "Sled raider", 18, 4, 9]] },
+      { kind: "take", site: "raiderSled", hud: "take the engine off the raiders' sled.", log: "The engine's heavy but it turns over by hand. Good compression.", give: [["engine", 1]], take: { speaker: "Raider sled", text: "A Briggs two-stroke, lashed down with baling twine.", label: "Cut it loose" } },
+      { kind: "take", site: "npc:cal", hud: "buy a spark plug from Jack Ready (6 iron).", log: "Jack sells you a plug in its box. \"Ready prosper,\" he says.", give: [["sparkplug", 1]], cost: 6, take: { speaker: "Jack Ready", text: "\"A spark plug? Got a whole coffee can of 'em. Six iron.\"", label: "Buy a spark plug (6 iron)" } },
+      { kind: "take", site: "farmBike", hud: "build the bike at the farm workbench.", log: "Two evenings on the bench, skinned knuckles, and she fires on the third kick.", need: ["carburetor", "chain", "engine", "gastank", "sparkplug", "tire"], take: { speaker: "Farm workbench", text: "Everything laid out on the bench: carb, chain, engine, tank, plug and tire.", label: "Build the motor bicycle" } },
+    ],
+    done: "Listen to her go! Just like Dad's. She'll drink gas, mind, so keep a can on you. And no kids on it. Not ever.",
+    doneLabel: "Take her out", reward: [["gas", 3]], xp: 40,
+    after: "The motor bicycle runs. Ride it with the Ride button when you're beside it; it burns gas.",
+  },
   {
     id: "ice", title: "Ice Out", giver: "sarah", offer: "The root cellar's getting warm",
     ask: "The cellar won't hold through a thaw without ice. Attean pond's froze a foot thick now. Cut me blocks, pack them in sawdust and drag them home. Watch your back on the way. A sled leaves a trail anybody can follow.",

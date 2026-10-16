@@ -426,6 +426,7 @@ export interface HudSnapshot {
   wornWeapon: string;
   gun: boolean;
   riding: boolean;
+  canMount?: boolean;
   aim: AimPart;
   turnBased: boolean;
   ap: number;

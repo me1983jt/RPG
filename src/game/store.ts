@@ -45,6 +45,7 @@ export const useHud = create<HudSnapshot>(() => ({
   wornWeapon: "",
   gun: false,
   riding: false,
+  canMount: false,
   aim: "chest",
   turnBased: false,
   ap: 8,

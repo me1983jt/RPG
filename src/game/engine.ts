@@ -1,14 +1,14 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2070;
+const ART_V = 2071;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
-import { CARAVAN_ROUTES, COMPASS8, FARM_UPGRADES, FISH_SITES, GIVER_NAME, MODE_TEXT, Q11, Q11_SITES, SEASONS, SEASON_CROP, SEASON_DAYS, SEASON_TINT, freshQ11, loadQ11, q11Ask, q11Hud, q11Journal, q11Talk, questById, seasonOf } from "@/game/quests11";
+import { BIKE_PARTS, CARAVAN_ROUTES, COMPASS8, FARM_UPGRADES, FISH_SITES, GIVER_NAME, MODE_TEXT, Q11, Q11_SITES, SEASONS, SEASON_CROP, SEASON_DAYS, SEASON_TINT, freshQ11, loadQ11, q11Ask, q11Hud, q11Journal, q11Talk, questById, seasonOf } from "@/game/quests11";
 import {
   PERKS,
   SKILLS,
@@ -90,6 +90,7 @@ export interface GameApi {
   togglePack: () => void;
   toggleStats: () => void;
   dismount: () => void;
+  mount: () => void;
   spend: (stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck") => void;
   spendSkill: (id: SkillId) => void;
   retag: (id: SkillId) => void;
@@ -620,6 +621,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			wornWeapon: p?.weaponId ?? "",
 			gun: p ? isGun(GEAR[p.weaponId]?.family) : false,
 			riding: mounted,
+			canMount: !!nearBike() && phase === "play",
 			aim,
 			turnBased,
 			ap,
@@ -790,7 +792,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Icon file for an item: public/game/items/<id>.png, else the generic one for its shape. */
 	function itemIcon(g) {
-		return `/game/items/${ITEM_ICON[g.id] ?? g.id}.png?v=${ART_V}`;
+		return `/game/items/${(OPTIONAL_ART.has(`items/${g.id}`) ? null : ITEM_ICON[g.id]) ?? g.id}.png?v=${ART_V}`;
 	}
 	function invItem(p, id, x = -1, y = -1) {
 		const g = GEAR[id];
@@ -1457,7 +1459,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return 5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0);
 	}
 	function noticeRange(base) {
-		return base * (1 - Math.min(.4, skillOf("sneak") / 220));
+		// v11.1: the motor bicycle is loud; raiders hear it coming from much farther off
+		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1);
 	}
 	function reveal(tx, ty, r, remember) {
 		const r2 = r * r;
@@ -2162,6 +2165,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ label: "Snowshoes — 16 iron", id: "q10-buy-snowshoes" },
 				{ label: "Barn lantern — 12 iron", id: "q10-buy-lantern" },
 				{ label: "Smoked jerky — 5 iron", id: "q10-buy-jerky" },
+				{ label: "Gas, quart can — 4 iron", id: "q10-buy-gas" },
 				{ label: "Over and out", id: "close" },
 			],
 		});
@@ -2169,6 +2173,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (id === "q10-buy-wrap") buyFromTrader("sarah", 6, "bandage-std", 1, "A field bandage off Marcel's sled.", "Not enough iron. Marcel wants it up front.");
 		else if (id === "q10-buy-snowshoes") buyFromTrader("sarah", 16, "snowshoes", 1, "Ash-frame snowshoes, rawhide laced. Marcel says his uncle made them.", "Not enough iron. Marcel wants it up front.");
 		else if (id === "q10-buy-lantern") buyFromTrader("sarah", 12, "lantern", 1, "A barn lantern with a good wick.", "Not enough iron. Marcel wants it up front.");
+		else if (id === "q10-buy-gas") buyFromTrader("sarah", 4, "gas", 1, "A quart of gas in a square can, off Marcel's sled.", "Not enough iron. Marcel wants it up front.");
 		else if (id === "q10-buy-jerky") buyFromTrader("sarah", 5, "jerky", 1, "A twist of smoked jerky.", "Not enough iron. Marcel wants it up front.");
 		else if (id === "q10-moose-accept" && q10.moose === 0) { q10.moose = 1; pushLog("Moose Season: the Heald Stream bog is south of the farm, toward Attean."); }
 		else if (id === "q10-moose-done" && q10.moose === 4) {
@@ -2292,6 +2297,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const n = world?.npcs.find((m) => m.role === key.slice(4));
 			return n ? { x: n.x + 30, y: n.y + 40 } : farmCenter();
 		}
+		if (key === "farmBike") { const b = world?.props.find((p) => p.farmBike); if (b) { const c = propCenter(b); return { x: c.x + 40, y: c.y + 30 }; } }
 		if (!q11Spots.has(key)) { const s = Q11_SITES[key]; q11Spots.set(key, q10Tile(s.tx, s.ty)); }
 		return q11Spots.get(key);
 	}
@@ -2380,6 +2386,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q11.hunt) q11.hunt = null;
 	}
 	function q11FarmProps() {
+		if (!world.props.some((p) => p.farmBike)) {
+			const s = Q11_SITES.farmBike;
+			const tx0 = s.tx + WORLD_OX, ty0 = s.ty + WORLD_OY;
+			outer: for (let r = 0; r < 5; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
+				if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) !== r) continue;
+				if (addProp(world, "bike", x, y, { q11: true, farmBike: true })) break outer;
+			}
+		}
 		const fc = farmCenter();
 		const ft = tileOf(fc.x, fc.y);
 		FARM_UPGRADES.forEach((u, i) => {
@@ -2617,6 +2631,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ label: "Sell a jar of syrup (6 iron)", id: "q11-sell-syrup" },
 				{ label: "Buy 8 shells (8 iron)", id: "q11-buy-shells" },
 				{ label: "Buy a fuel can (10 iron)", id: "q11-buy-fuel" },
+				{ label: "Buy 2 cans of gas (6 iron)", id: "q11-buy-gas" },
 				{ label: "Head home", id: "q11-car-home" },
 			],
 		};
@@ -2800,7 +2815,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if ((m = id.match(/^q11-take-(.+)$/))) {
 			const q = questById(m[1]); const step = q && q11Cur(q);
-			if (step?.kind === "take") { dialogue = null; phase = "play"; q11Advance(q, step.log); return true; }
+			if (step?.kind === "take") {
+				const missing = (step.need ?? []).filter((id) => !carrying(id));
+				if (missing.length) { pushLog(`Still missing: ${missing.map((id) => GEAR[id]?.name ?? id).join(", ")}.`); dialogue = null; phase = "play"; sync(true); return true; }
+				if (step.cost && player.scrap < step.cost) { pushLog(`Not enough iron. That's ${step.cost}.`); dialogue = null; phase = "play"; sync(true); return true; }
+				if (step.cost) player.scrap -= step.cost;
+				for (const id of step.need ?? []) takeItem(id, 1);
+				for (const [it, n] of step.give ?? []) giveItem(it, n);
+				dialogue = null; phase = "play"; q11Advance(q, step.log); return true;
+			}
 			return false;
 		}
 		if ((m = id.match(/^q11-done-(.+)$/))) {
@@ -2845,7 +2868,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const sell = { "q11-sell-pelt": ["pelt", 5], "q11-sell-hide": ["hide", 3], "q11-sell-syrup": ["syrup", 6] }[id];
 		if (sell && q11.caravan === 3) { if (takeItem(sell[0], 1)) { player.scrap += sell[1]; pushLog(`Sold. +${sell[1]} iron.`); sfx("click"); } else pushLog("You haven't got one to sell."); q11Market(); return true; }
-		const buy = { "q11-buy-shells": ["shells", 8, 8], "q11-buy-fuel": ["fuel", 1, 10] }[id];
+		const buy = { "q11-buy-shells": ["shells", 8, 8], "q11-buy-fuel": ["fuel", 1, 10], "q11-buy-gas": ["gas", 2, 6] }[id];
 		if (buy && q11.caravan === 3) { if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
 		if (id === "q11-car-home" && q11.caravan === 3) { close(); if (!q11CaravanAmbush(true)) q11CaravanHome(); return true; }
 		if ((m = id.match(/^q11-fish-cast-(.+)$/))) {
@@ -3685,8 +3708,41 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (announce) pushLog("You step off the motor bicycle.");
 		sync(true);
 	}
+	function bikeBuilt() {
+		return (q11.q.bike?.s ?? 0) >= 8;
+	}
+	/** Why this bike can't be ridden right now, or "". Adults only: the kids never ride. */
+	function rideBlock(prop) {
+		if (inside) return "You can't ride indoors.";
+		if (prop.farmBike && !bikeBuilt()) return "The old motor bicycle is missing half its parts. Justin knows what she needs.";
+		if (escortBodies) return "Not with the kids along. You walk them.";
+		if (!carrying("gas")) return "Dry tank. You need a can of gas.";
+		return "";
+	}
+	let gasDist = 0;
+	function burnGas(d) {
+		if (!mounted || d <= 0) return;
+		gasDist += d;
+		if (gasDist < 40 * TILE) return;
+		gasDist = 0;
+		takeItem("gas", 1);
+		if (!carrying("gas")) { pushLog("The engine coughs and dies. Out of gas."); parkBike(false); }
+		else sync(true);
+	}
+	function nearBike() {
+		if (!world || !player || mounted || inside) return null;
+		let best = null, bd = 130;
+		for (const p of world.props) {
+			if (p.kind !== "bike") continue;
+			const c = propCenter(p), d = Math.hypot(c.x - player.x, c.y - player.y);
+			if (d < bd) { bd = d; best = p; }
+		}
+		return best;
+	}
 	function mountBike(prop) {
 		if (!player || prop.kind !== "bike") return;
+		const why = rideBlock(prop);
+		if (why) { pushLog(why); intent = null; sfx("click"); sync(true); return; }
 		mounted = true;
 		mountId = prop.id;
 		intent = null;
@@ -3709,7 +3765,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mountBike(prop);
 	}
 	function paintRide(x, y, dir, dcx, dcy) {
-		const img = images.get("bike");
+		const img = images.get("v2/bike-ride") ?? images.get("bike");
 		if (!img || !ctx) return;
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const p = zoomPoint(raw.sx, raw.sy);
@@ -3754,6 +3810,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
 		snare: "wire", grokclaw: "antlers",
+		gas: "fuel", carburetor: "oil", chain: "wire", engine: "packframe", gastank: "fuel", sparkplug: "matches", tire: "pelt",
 		"carbine-std": "carbine", "carbine-good": "carbine", scoped: "scoped",
 		"knife-std": "knife", "knife-good": "knife", skin: "knife",
 		"hatchet-std": "hatchet", "hatchet-good": "hatchet",
@@ -3843,6 +3900,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function finishEnter(prop) {
 		if (!player) return;
+		if (mounted) { parkBike(false); pushLog("You leave the bike by the door. No riding indoors."); }
 		const door = doorPoint(prop);
 		inside = {
 			id: prop.id,
@@ -5102,7 +5160,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// snowshoes: faster over snow
 		const shoeT = tileOf(player.x, player.y);
 		const shoes = player.feetId === "snowshoes" && world.tiles[shoeT.ty * MAP_W + shoeT.tx] === 4 ? 1.22 : 1;
-		const pace = (mounted ? SCREEN_SPEED * 2.4 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * (mounted ? 1 : shoes);
+		const pace = (mounted ? SCREEN_SPEED * 2 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * (mounted ? 1 : shoes);
 		const fromX = player.x;
 		const fromY = player.y;
 		tickWork(dt);
@@ -5240,7 +5298,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					holdWalk = false;
 				}
 			}
-			lastSpeed = mounted ? SCREEN_SPEED * 2.4 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45;
+			lastSpeed = mounted ? SCREEN_SPEED * 2 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45;
+			burnGas(Math.hypot(player.x - fromX, player.y - fromY));
 			if (deal > 0) deal = 0;
 			player.frame = walkFrame(true);
 		} else if (swinging) {
@@ -7058,6 +7117,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		draws.push({
 			z: bodyZ(player.x, player.y),
 			draw: () => {
+				// v11.1 art hook: a dedicated hero-ride sheet (bike included) replaces the stand-in when present
+				if (mounted && images.get("v2/hero-ride") && phase !== "dead") { blit("v2/hero-ride", player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
 				if (phase === "dead") {
 					if (images.get("v2/hero-death")) {
@@ -8091,6 +8152,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dismount() {
 			parkBike(true);
 		},
+		mount() {
+			const b = nearBike();
+			if (b) { mountBike(b); sync(true); }
+		},
 		spend(stat) {
 			if (!player || player.points < 1 || phase === "menu") return;
 			player.points -= 1;
@@ -8530,6 +8595,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11State: () => JSON.parse(JSON.stringify({ ...q11, mode11, m11, season: seasonNow(), day: curDay(), escort: !!escortBodies, fishing: !!fishGame })),
 		q11Set: (patch) => { Object.assign(q11, patch); q11World(); sync(true); },
 		q11Spot: (key) => q11Spot(key),
+		bikeInfo: () => { const b = world?.props.find((p) => p.farmBike); const n = nearBike(); return { mounted, built: bikeBuilt(), farmBike: b ? propCenter(b) : null, near: !!n, nearFarm: !!n?.farmBike, gas: player?.bag.find((s) => s.id === "gas")?.qty ?? 0, gasDist, notice: noticeRange(100), optional: [...OPTIONAL_ART] }; },
+		mountNow: () => api.mount(),
+		dismountNow: () => api.dismount(),
 		q11Cur: (id) => { const q = questById(id); const st = q11.q[id]; const step = q && q11Cur(q); return { s: st?.s ?? 0, n: q?.steps.length ?? 0, kind: step?.kind ?? "", site: step?.site ?? "", left: st?.left ?? 0 }; },
 		q11Targets: () => q11Targets().map((t) => ({ key: t.key, mode: t.mode, x: Math.round(t.x), y: Math.round(t.y) })),
 		q11Force: (o) => { if ("fish" in o) fishForce = o.fish; if ("caravan" in o) caravanForce = o.caravan; },
@@ -8702,8 +8770,17 @@ function softenSprite(img, radius, protectRows = 0) {
 	g.putImageData(image, 0, 0);
 	return canvas;
 }
-function loadImages(images) {
-	return Promise.all(IMAGES.map((name) => new Promise((resolve) => {
+/** v11.1 optional art (public/game/v2/optional.json, written by scripts/gen-optional-art.mjs). Only listed files are requested. */
+const OPTIONAL_ART = new Set();
+async function loadImages(images) {
+	try {
+		const r = await fetch(`/game/v2/optional.json?v=${ART_V}`);
+		if (r.ok) for (const n of await r.json()) if (typeof n === "string") OPTIONAL_ART.add(n);
+	} catch {
+		/* no manifest: stand-ins only */
+	}
+	const extra = [...OPTIONAL_ART].filter((n) => n.startsWith("v2/"));
+	return Promise.all([...IMAGES, ...extra].map((name) => new Promise((resolve) => {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
