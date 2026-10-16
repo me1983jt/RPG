@@ -7399,11 +7399,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function realH(sheet, inches) {
 		return Math.round(inches * PX_PER_IN / (SPRITE_FIT[sheet] ?? .79));
 	}
-	/** Full visible height (top of head/antlers to hooves) in inches. */
+	/** Full visible height (top of head/antlers to hooves) in inches. v13.2: moose 92 puts the shoulder at ~66 px (the sheet's shoulder sits at 76% of its height). */
 	const BEAST_IN = {
 		holeb: 120, grok: 98, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
 		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
-		bear: 40, moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
+		bear: 40, moose: 92, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
 	function beastH(enemy) {
 		const key = enemy.variant && BEAST_IN[enemy.variant] ? enemy.variant : enemy.kind;
