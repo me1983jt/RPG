@@ -1,3 +1,4 @@
+import { SKOW_BUILDINGS, SKOW_BRIDGE_DX, SKOW_GORGE_DY } from "@/game/v113";
 import { findPath } from "@/game/path";
 import {
   DIRT,
@@ -152,6 +153,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   const homeSides = exits && exits.length >= 2 ? exits : pickSides(seed);
   const mouths = (mapId === 0 ? homeSides : homeSides.map((side) => (side + 3) % 6)).filter((side, i, all) => all.indexOf(side) === i);
   if (mapId === 1) return createReach(seed, homeSides, mouths);
+  if (mapId === 2) return createSkowhegan(seed, homeSides);
   shapingHome = true;
   const tiles = new Uint8Array(MAP_W * MAP_H);
   const blocked = new Uint8Array(MAP_W * MAP_H);
@@ -369,6 +371,72 @@ function createReach(seed: number, homeSides: number[], mouths: number[]): World
   }
   addEnemy(world, HEX_CX + 14, HEX_CY + 8, false, false);
   addEnemy(world, HEX_CX - 12, HEX_CY + 16, false, true);
+  shapingHome = true;
+  return world;
+}
+
+/** v11.3: abandoned Skowhegan (map 2). Town north of the Kennebec gorge, one bridge, one road out south. */
+function createSkowhegan(seed: number, homeSides: number[]): World {
+  shapingHome = false;
+  const tiles = new Uint8Array(MAP_W * MAP_H);
+  const blocked = new Uint8Array(MAP_W * MAP_H);
+  fillLand(tiles, blocked, 2);
+  const world: World = {
+    tiles, blocked, props: [], npcs: [], enemies: [],
+    startX: HEX_CX * TILE + TILE / 2, startY: HEX_CY * TILE + TILE / 2,
+    nextPropId: 1, nextEnemyId: 1, id: 2, name: "Skowhegan", seed, exits: homeSides, gates: [], questBandits: 0,
+  };
+  let south = 0;
+  for (let s = 1; s < 6; s++) if (edgePoint(s, 3).ty > edgePoint(south, 3).ty) south = s;
+  world.gates = layExits(world, [south], { tx: HEX_CX, ty: HEX_CY + SKOW_GORGE_DY + 3 });
+  scatter(world);
+  const cx = HEX_CX, cy = HEX_CY;
+  // main street and cross streets
+  layPath(tiles, blocked, cx, cy + SKOW_GORGE_DY + 4, cx, cy - 26, false, 0);
+  layPath(tiles, blocked, cx - 20, cy - 14, cx + 22, cy - 14, false, 0);
+  layPath(tiles, blocked, cx - 16, cy - 22, cx + 18, cy - 22, false, 0);
+  clearPad(world, cx, cy - 14, 6);
+  // the gorge: a band of broken rock across the whole map, open only at the bridge
+  const gy = cy + SKOW_GORGE_DY;
+  for (let ty = gy; ty <= gy + 1; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+    if (!inMap(tx, ty) || !inHex(tx, ty)) continue;
+    const onBridge = Math.abs(tx - (cx + SKOW_BRIDGE_DX)) <= 1;
+    tiles[idx(tx, ty)] = onBridge ? ROAD : RUBBLE;
+    blocked[idx(tx, ty)] = onBridge ? 0 : 1;
+  }
+  world.props = world.props.filter((p) => {
+    const hit = p.ty + PROP_SPEC[p.kind].h > gy - 1 && p.ty < gy + 3 && Math.abs(p.tx - cx) < 4;
+    if (hit) vacate(world, p);
+    return !hit;
+  });
+  // stand-in gorge edge: boulders along the lip, rails on the bridge (art hook: v2/skowhegan-bridge via the prop skin)
+  for (let tx = 2; tx < MAP_W - 2; tx += 2) {
+    if (Math.abs(tx - cx) <= 3 || !inHex(tx, gy - 1)) continue;
+    if ((tx * 7) % 10 < 7) addProp(world, "rock", tx, gy - 1);
+  }
+  addProp(world, "fence", cx - 2, gy, { skin: "skowhegan-bridge", label: "KENNEBEC BRIDGE" });
+  addProp(world, "fence", cx + 2, gy);
+  for (const b of SKOW_BUILDINGS) {
+    clearPad(world, cx + b.dx, cy + b.dy, 3);
+    addProp(world, b.kind, cx + b.dx, cy + b.dy, { skin: b.skin, label: b.label });
+  }
+  // Marcel Thibodeau keeps the general store open (the radio trader, met in person)
+  addNpc(world, "marcel", "Marcel Thibodeau", cx - 4, cy - 15, 1);
+  addProp(world, "car-truck", cx + 3, cy - 10);
+  addProp(world, "car-sedan", cx - 6, cy - 15);
+  addProp(world, "scrap", cx + 8, cy - 16, { resource: "scrap", amount: 5 });
+  addProp(world, "scrap", cx - 9, cy - 20, { resource: "scrap", amount: 5 });
+  addProp(world, "crates", cx + 6, cy - 23);
+  // raiders hold the town: higher tier than the home woods
+  addEnemy(world, cx + 2, cy - 12, false, true);
+  addEnemy(world, cx - 12, cy - 8, false, true);
+  addEnemy(world, cx + 12, cy - 18, false, false);
+  addEnemy(world, cx - 6, cy - 26, false, true);
+  addEnemy(world, cx + 16, cy - 26, false, false);
+  for (const e of world.enemies) { e.hp = e.maxHp = e.elite ? 44 : 28; e.atk = e.elite ? 9 : 6; e.xp = e.elite ? 26 : 14; }
+  addPack(world, "deer", ...pullIn(cx - 30, cy + 18), 3, 1);
+  addPack(world, "rabbit", ...pullIn(cx + 26, cy + 20), 3, 2);
+  addPack(world, "coyote", ...pullIn(cx + 30, cy - 30), 3, 3);
   shapingHome = true;
   return world;
 }

@@ -51,9 +51,11 @@ export interface Q11State {
   q: Record<string, { s: number; left: number }>;
   nextId: number;
   farm: { plots: number; coop: number; wall: number; smoke: number; lastDay: number; harvest: number };
-  traps: { x: number; y: number; day: number }[];
+  /** v11.3: kind = snare | trap; caught = what is in it, waiting to be checked. */
+  traps: { x: number; y: number; day: number; kind?: string; caught?: string; map?: number }[];
   hunt: { kind: string; wind: number; on: boolean } | null;
-  fish: { caught: number; rare: number };
+  fish: { caught: number; rare: number; day?: number; today?: number };
+  huntDay?: number;
   /** Trade caravan: 0 at home, 1 choosing a route, 2 ambushed on the way down, 3 at the Bangor market, 4 ambushed coming home. */
   caravan: number;
   route: number;
@@ -92,6 +94,11 @@ export const Q11_SITES: Record<string, { tx: number; ty: number; name: string; m
   herseys: { tx: 92, ty: 80, name: "The Hersey place" },
   sugarbush: { tx: 18, ty: 52, name: "Sugar bush" },
   sugarshack: { tx: 24, ty: 58, name: "Sugar shack" },
+  // v11.3 Skowhegan (map 2) and the road to it on the home map
+  skowRoad: { tx: 96, ty: 98, name: "Road to Skowhegan" },
+  skowBridge: { tx: 58, ty: 65, name: "Kennebec bridge", map: 2 },
+  skowHospital: { tx: 68, ty: 48, name: "Redington hospital", map: 2 },
+  skowMill: { tx: 44, ty: 50, name: "Woolen mill", map: 2 },
   grokTracks: { tx: 40, ty: 40, name: "Big tracks", map: 1 },
   grokScrape: { tx: 58, ty: 56, name: "Claw-scraped spruce", map: 1 },
   grokDen: { tx: 76, ty: 50, name: "Blowdown den", map: 1 },
@@ -125,6 +132,31 @@ const R = (n: number, name: string): [string, string | null, string, number, num
   Array.from({ length: n }, (_, i) => ["bandit", i % 2 ? "jumper" : "scout", name, 18, 4, 9] as [string, string | null, string, number, number, number]);
 
 export const Q11: Q11Quest[] = [
+  {
+    id: "meds", title: "Medicine Run", giver: "mira", offer: "The hospital down to Skowhegan",
+    ask: "Half of Lowelltown's got the croup and I'm out of everything. Redington hospital in Skowhegan had a whole pharmacy. Raiders sit on the Kennebec bridge, though. The road's south, past the ponds.",
+    accept: "I'll go to Skowhegan",
+    steps: [
+      { kind: "go", site: "skowRoad", hud: "take the south road to Skowhegan.", log: "The old road to Skowhegan. Somebody's spray-painted TURN BACK on the sign." },
+      { kind: "fight", site: "skowBridge", hud: "raiders hold the Kennebec bridge. Clear them.", log: "Lanterns on the bridge. They've strung wire across it and they're waiting.", foes: [["bandit", "shield", "Bridge raider", 36, 7, 16], ["bandit", "scout", "Bridge raider", 24, 6, 12], ["bandit", "brute", "Bridge boss", 52, 9, 30]] },
+      { kind: "take", site: "skowHospital", hud: "search Redington hospital's pharmacy.", log: "Behind the pharmacy counter: a carton of amoxicillin and two bottles of cough syrup nobody found.", give: [["medicine", 3]], take: { speaker: "Redington hospital", text: "The pharmacy cage is pried open, but the bottom shelf is still full under a fallen ceiling tile.", label: "Take the medicine" } },
+    ],
+    done: "Oh, bless you. That'll see the little ones through. You keep one of those for yourself, hear?",
+    doneLabel: "Hand over the medicine", reward: [["medicine", 1], ["bandage-good", 1]], iron: 10, xp: 60,
+    after: "Lowelltown's coughing less. Mira's pharmacy shelf has bottles on it again.",
+  },
+  {
+    id: "mill", title: "The Woolen Mill", giver: "justin", offer: "Belting off the Skowhegan mill",
+    ask: "The old woolen mill in Skowhegan's got leather drive belts and bearings. I need them for a saw rig. Mind, there's a crew holed up in there.",
+    accept: "I'll strip the mill",
+    steps: [
+      { kind: "fight", site: "skowMill", hud: "clear the raiders out of the woolen mill.", log: "Smoke from a barrel fire in the mill yard. They've seen you.", foes: [["bandit", "armor", "Mill raider", 44, 8, 20], ["bandit", "torch", "Mill raider", 26, 6, 12]] },
+      { kind: "take", site: "skowMill", hud: "pull belting and bearings off the mill shafts.", log: "Forty feet of leather belting and a crate of bearings packed in grease.", give: [["wire", 2], ["oil", 2]], take: { speaker: "Woolen mill", text: "Line shafts run the length of the floor, belts still on the pulleys.", label: "Strip the belts and bearings" } },
+    ],
+    done: "That's real leather. The saw rig will run off the tractor now. Good work.",
+    doneLabel: "Hand over the belting", reward: [["shells", 8]], iron: 14, xp: 50,
+    after: "Justin's saw rig howls on the tractor's power take-off.",
+  },
   {
     id: "bike", title: "Bike Parts", giver: "justin", offer: "That old motor bike by the barn",
     ask: "That's Dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
@@ -371,7 +403,7 @@ export const FARM_UPGRADES = [
   { id: "plots", name: "Potato plot", max: 3, wood: 4, stone: 0, iron: 0, prop: "crates", blurb: "Apples and potatoes every day the ground isn't froze." },
   { id: "coop", name: "Chicken coop", max: 3, wood: 6, stone: 0, iron: 2, prop: "stall", blurb: "Eggs every morning. Wolves love it too." },
   { id: "wall", name: "Stone wall", max: 3, wood: 0, stone: 4, iron: 0, prop: "wall", blurb: "Slows raiders at the yard edge." },
-  { id: "smoke", name: "Smokehouse", max: 2, wood: 8, stone: 2, iron: 4, prop: "logs", blurb: "Turns meat into jerky overnight." },
+  { id: "smoke", name: "Smokehouse", max: 3, wood: 8, stone: 2, iron: 4, prop: "logs", blurb: "Turns meat into jerky overnight." },
 ] as const;
 
 // ---------------------------------------------------------------- hunting / wind / caravan text

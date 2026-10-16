@@ -8,6 +8,7 @@ import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
+import { ACHIEVEMENTS, FARM_UPGRADES as FARM_UPGRADES2, SKILL_MAX, TRADE_SKILLS, TRAP_KINDS, skillNeed } from "@/game/v113";
 import { BIKE_PARTS, CARAVAN_ROUTES, COMPASS8, FARM_UPGRADES, FISH_SITES, GIVER_NAME, MODE_TEXT, Q11, Q11_SITES, SEASONS, SEASON_CROP, SEASON_DAYS, SEASON_TINT, freshQ11, loadQ11, q11Ask, q11Hud, q11Journal, q11Talk, questById, seasonOf } from "@/game/quests11";
 import {
   PERKS,
@@ -92,6 +93,8 @@ export interface GameApi {
   dismount: () => void;
   mount: () => void;
   setSlot: (n: number) => void;
+  dogCommand: (mode: "stay" | "follow" | "track") => void;
+  dogHeal: () => void;
   drawMap: (c: HTMLCanvasElement) => void;
   spend: (stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck") => void;
   spendSkill: (id: SkillId) => void;
@@ -603,6 +606,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			quest,
 			questKills,
 			questText: hudQuestText(),
+			v113: v3Hud(),
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
@@ -1038,6 +1042,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		kitchenDay = -1;
 		q10 = freshQ10();
 		q11 = freshQ11();
+		v3 = freshV3();
 		q10World();
 		openedDoors.clear();
 		lootedChests.clear();
@@ -1214,6 +1219,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		kitchenDay = data.kitchenDay ?? -1;
 		q10 = loadQ10(data.q10);
 		q11 = loadQ11(data.q11);
+		v3 = loadV3(data.v113);
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -1313,6 +1319,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.kitchenDay = kitchenDay;
 		data.q10 = q10;
 		data.q11 = q11;
+		data.v113 = v3;
 		data.regions = [...regions.values()];
 		data.piles = piles.map((pile) => ({
 			id: pile.id,
@@ -1464,11 +1471,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function sightRadius() {
 		const trail = skillOf("trail");
-		return 5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0);
+		const home = mapId === 0 && player && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty);
+		const up = home ? 2 * (v3.up.lookout || 0) + (v3.up.solar && nightDark(clock) > .3 ? 3 : 0) : 0;
+		return 5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up;
 	}
 	function noticeRange(base) {
 		// v11.1: the motor bicycle is loud; raiders hear it coming from much farther off
-		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1);
+		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1) * (1 - .03 * lv("stealth"));
 	}
 	function reveal(tx, ty, r, remember) {
 		const r2 = r * r;
@@ -1566,6 +1575,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
 		if (id.startsWith("q11-") && q11Choice(id)) return;
+		if (id.startsWith("q113-") && v3Choice(id)) return;
 		if (id === "raid-ask") {
 			const n = raidNight + 1;
 			dialogue = {
@@ -1741,7 +1751,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("They will not sell to you.");
 			return;
 		}
-		const price = priceOf(cost, skillOf("barter"), rep);
+		const price = Math.max(1, Math.round(v3Price(priceOf(cost, skillOf("barter"), rep)) * (role === "sarah" && v3.up.solar >= 2 ? .8 : 1)));
+		train("barter", 3);
 		const def = GEAR[item];
 		if (def.kind !== "supply" && player.bag.some((s) => s.id === item)) {
 			pushLog(`You already carry the ${def.name.toLowerCase()}.`);
@@ -1933,6 +1944,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dogBody = null;
 		if (!world || mapId !== 0) return;
 		q10Props();
+		v3FarmProps();
 		if (q10.seed === 2 && q10.seedLeft > 0) q10SeedCamp();
 		if (q10.moose === 2) q10Bull();
 		if (q10.dog >= 2) q10PlaceDog();
@@ -2218,7 +2230,30 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ctx.globalAlpha = .85;
 		ctx.fillStyle = "#3a2a18";
-		for (const tr of q11.traps) { ctx.beginPath(); ctx.arc(tr.x, tr.y, 10, 0, Math.PI * 2); ctx.fill(); }
+		for (const tr of q11.traps) {
+			if ((tr.map ?? 0) !== mapId) continue;
+			ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.kind === "trap" ? 13 : 10, 0, Math.PI * 2); ctx.fill();
+			if (tr.caught) { ctx.strokeStyle = "#e0b070"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(tr.x, tr.y, 22, 0, Math.PI * 2); ctx.stroke(); }
+		}
+		// v11.3 game tracks: hoof or paw prints along each animal's recent path, within sight
+		if (player) {
+			const reach = (sightRadius() + 1 + Math.floor(lv("hunting") / 3)) * TILE;
+			for (const e of world.enemies) {
+				if (!e.trail || e.dead || e.kind === "bandit") continue;
+				const hoof = e.kind === "deer" || e.kind === "moose";
+				for (let i = 0; i < e.trail.length; i++) {
+					const p = e.trail[i];
+					if (Math.hypot(p.x - player.x, p.y - player.y) > reach) continue;
+					const age = Math.max(0, Math.min(1, (clock - p.t) / 90));
+					ctx.globalAlpha = .75 * (1 - age) + .1;
+					ctx.fillStyle = "#2a1c10";
+					const side = i % 2 ? 7 : -7;
+					if (hoof) { ctx.beginPath(); ctx.ellipse(p.x + side, p.y - 3, 4, 6, .6, 0, Math.PI * 2); ctx.ellipse(p.x + side + 5, p.y + 1, 4, 6, .6, 0, Math.PI * 2); ctx.fill(); }
+					else { ctx.beginPath(); ctx.ellipse(p.x + side, p.y, 6, 5, 0, 0, Math.PI * 2); ctx.fill(); for (let c = -1; c <= 1; c++) { ctx.beginPath(); ctx.arc(p.x + side + c * 4, p.y - 7, 2.2, 0, Math.PI * 2); ctx.fill(); } }
+				}
+			}
+			ctx.globalAlpha = .85;
+		}
 		if (q10.dog === 2 && mapId === 0) {
 			ctx.globalAlpha = .92;
 			ctx.fillStyle = "#24170d";
@@ -2268,7 +2303,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const tile = tileOf(dogBody.x, dogBody.y);
 			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
 				const frame = dogBody.moving ? Math.floor(dogBody.anim) % 4 : 0;
-				blit("coyote", dogBody.x, dogBody.y, realH("coyote", 27), true, frame, dogBody.dir, dcx, dcy);
+				// art hook: public/game/v2/biscuit-walk.png (and biscuit-idle.png) when present, else the coyote sheet
+				const own = dogBody.moving ? "v2/biscuit-walk" : images.get("v2/biscuit-idle") ? "v2/biscuit-idle" : "v2/biscuit-walk";
+				if (images.get(own)) blit(own, dogBody.x, dogBody.y, 27, true, frame, dogBody.dir, dcx, dcy);
+				else blit("coyote", dogBody.x, dogBody.y, realH("coyote", 27), true, frame, dogBody.dir, dcx, dcy);
+				if (q10.dog >= 4 && v3.dog.hp < 30) { const r = worldToScreen(dogBody.x, dogBody.y, dcx, dcy); const p = zoomPoint(r.sx, r.sy); ctx.fillStyle = "#1a1410"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32, 4); ctx.fillStyle = "#c8503c"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32 * v3.dog.hp / 30, 4); }
 			} });
 		}
 	}
@@ -2506,14 +2545,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (first || mode11 === "endless" || mode11 === "watch") return;
 		const f = q11.farm, mult = SEASON_CROP[seasonNow()];
 		const got = [];
-		if (f.plots && mult) { giveItem("apple", f.plots * mult); got.push(`${f.plots * mult} apples and potatoes`); }
+		if (f.plots && mult) { const n = f.plots * mult + Math.floor(lv("farming") / 2); giveItem("apple", n); got.push(`${n} apples and potatoes`); train("farming", 4 + f.plots); }
 		if (f.coop && day % 2 === 0) { giveItem("pork", f.coop); got.push(`${f.coop} hen${f.coop > 1 ? "s" : ""} for the pot`); }
 		if (f.smoke) { const meat = player.bag.find((s) => s.id === "meat")?.qty ?? 0; const n = Math.min(meat, f.smoke); if (n) { takeItem("meat", n); giveItem("jerky", n * 2); got.push(`${n * 2} jerky from the smokehouse`); } }
 		if (got.length) { f.harvest += 1; pushLog(`Morning at the farm: ${got.join(", ")}.`); }
-		for (const trap of [...q11.traps]) if (day > trap.day) {
-			q11.traps.splice(q11.traps.indexOf(trap), 1);
-			if (Math.random() < .7) { giveItem("meat", 1); pushLog("A snowshoe hare in your snare. +1 meat."); } else pushLog("The snare's sprung and empty. Something smart got away.");
-		}
+		for (const trap of q11.traps) if (day > trap.day && !trap.caught) { trap.caught = trapRoll(trap); if (!trap.caught) { trap.day = day; } }
+		if (q11.traps.some((t) => t.caught)) pushLog("Something's in one of your traps. Go check it.");
+		v3Daily(day);
+
 	}
 	function takeItem(id, n) {
 		const s = player?.bag.find((b) => b.id === id);
@@ -2640,6 +2679,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ label: "Sell a pelt (5 iron)", id: "q11-sell-pelt" },
 				{ label: "Sell a hide (3 iron)", id: "q11-sell-hide" },
 				{ label: "Sell a jar of syrup (6 iron)", id: "q11-sell-syrup" },
+				{ label: "Sell a bone (1 iron)", id: "q11-sell-bone" },
 				{ label: "Buy 8 shells (10 iron)", id: "q11-buy-shells" },
 				{ label: "Buy a fuel can (10 iron)", id: "q11-buy-fuel" },
 				{ label: "Buy 2 cans of gas (8 iron)", id: "q11-buy-gas" },
@@ -2845,13 +2885,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				if (q.iron) player.scrap += q.iron;
 				grantXp(q.xp); shiftRep("ponds", 2, 6);
 				pushLog(`${q.title}: done. ${q.after}`);
+				if (q.id === "bike") { achieve("bike"); train("mechanics", 20); }
+				if (q.id === "meds") achieve("meds");
+				for (const area of [0, 1, 2]) {
+					const list = Q11.filter((x) => x.steps.every((st) => siteMap(st.site) === area || st.site.startsWith("npc:")) && x.steps.some((st) => siteMap(st.site) === area && !st.site.startsWith("npc:")));
+					if (list.length && list.every((x) => (q11.q[x.id]?.s ?? 0) >= x.steps.length + 2)) achieve("area");
+				}
 				sfx("level"); saveGame();
 			}
 			return false;
 		}
 		if (id === "q11-farm") return openD({
 			speaker: "Sarah", text: `What do you want to put up? You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron. It's ${SEASONS[seasonNow()].toLowerCase()}.`,
-			choices: [...FARM_UPGRADES.map((u) => ({ label: `${u.name} ${q11.farm[u.id]}/${u.max}: ${[u.wood && `${u.wood} wood`, u.stone && `${u.stone} stone`, u.iron && `${u.iron} iron`].filter(Boolean).join(", ")}`, id: `q11-build-${u.id}` })), { label: "Never mind", id: "close" }],
+			choices: [{ label: "Bigger works: greenhouse, barrel, solar, lookout, palisade, cellar, workbench", id: "q113-works" }, ...FARM_UPGRADES.map((u) => ({ label: `${u.name} ${q11.farm[u.id]}/${u.max}: ${[u.wood && `${u.wood} wood`, u.stone && `${u.stone} stone`, u.iron && `${u.iron} iron`].filter(Boolean).join(", ")}`, id: `q11-build-${u.id}` })), { label: "Never mind", id: "close" }],
 		});
 		if ((m = id.match(/^q11-build-(.+)$/))) {
 			const u = FARM_UPGRADES.find((x) => x.id === m[1]);
@@ -2878,10 +2924,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!q11CaravanAmbush(false)) { q11.caravan = 3; q11Market(); }
 			return true;
 		}
-		const sell = { "q11-sell-pelt": ["pelt", 5], "q11-sell-hide": ["hide", 3], "q11-sell-syrup": ["syrup", 6] }[id];
+		const sell = { "q11-sell-pelt": ["pelt", 5], "q11-sell-hide": ["hide", 3], "q11-sell-syrup": ["syrup", 6], "q11-sell-bone": ["bone", 1] }[id];
 		if (sell && q11.caravan === 3) { if (takeItem(sell[0], 1)) { player.scrap += sell[1]; pushLog(`Sold. +${sell[1]} iron.`); sfx("click"); } else pushLog("You haven't got one to sell."); q11Market(); return true; }
 		const buy = { "q11-buy-shells": ["shells", 8, 10], "q11-buy-fuel": ["fuel", 1, 10], "q11-buy-gas": ["gas", 2, 8] }[id];
-		if (buy && q11.caravan === 3) { if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
+		if (buy && q11.caravan === 3) { buy[2] = v3Price(buy[2]); train("barter", 3); if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
 		if (id === "q11-car-home" && q11.caravan === 3) { close(); if (!q11CaravanAmbush(true)) q11CaravanHome(); return true; }
 		if ((m = id.match(/^q11-fish-cast-(.+)$/)) && q11.fish.day === curDay() && (q11.fish.today ?? 0) >= FISH_PER_DAY) {
 			return openD({ speaker: "Fishing", text: "They've gone off the bite. Nothing's touching it. Try again tomorrow.", choices: [{ label: "Reel in", id: "q11-fish-stop" }] });
@@ -2894,6 +2940,371 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (id === "q11-fish-stop") { fishGame = null; return close(); }
 		return false;
 	}
+	// ================================================================ v11.3: achievements, trade skills, farm upgrades,
+	// Skowhegan travel, tracks/wind/noise, traps + field dressing, Biscuit the dog.
+	function freshV3() {
+		const skills = {};
+		for (const s of TRADE_SKILLS) skills[s.id] = { lv: 0, xp: 0 };
+		const up = {};
+		for (const u of FARM_UPGRADES2) up[u.id] = 0;
+		return { ach: {}, skills, up, dog: { mode: "follow", hp: 30, down: -1, joined: false }, wind: 0, windDay: -1, stats: { tracks: 0, catches: 0, dressed: 0, gas: 0 }, toastN: 0 };
+	}
+	function loadV3(raw) {
+		const b = freshV3();
+		if (!raw || typeof raw !== "object") return b;
+		return { ...b, ...raw, ach: { ...(raw.ach ?? {}) }, skills: { ...b.skills, ...(raw.skills ?? {}) }, up: { ...b.up, ...(raw.up ?? {}) }, dog: { ...b.dog, ...(raw.dog ?? {}) }, stats: { ...b.stats, ...(raw.stats ?? {}) } };
+	}
+	let v3 = freshV3();
+	let v3Toast = null;
+	function achieve(id) {
+		const a = ACHIEVEMENTS.find((x) => x.id === id);
+		if (!a || v3.ach[id] || mode11) return false;
+		v3.ach[id] = Date.now();
+		v3.toastN += 1;
+		v3Toast = { id, name: a.name, text: a.text, n: v3.toastN };
+		pushLog(`Achievement: ${a.name}. ${a.text}`);
+		sfx("level");
+		sync(true);
+		return true;
+	}
+	function lv(id) {
+		let n = v3.skills[id]?.lv ?? 0;
+		if (id === "hunting" && dogBody && q10.dog >= 4 && v3.dog.mode === "track") n += 2;
+		return n;
+	}
+	function train(id, n) {
+		const s = v3.skills[id];
+		if (!s || mode11 || s.lv >= SKILL_MAX) return;
+		s.xp += n;
+		while (s.lv < SKILL_MAX && s.xp >= skillNeed(s.lv)) {
+			s.xp -= skillNeed(s.lv); s.lv += 1;
+			const d = TRADE_SKILLS.find((x) => x.id === id);
+			pushLog(`${d.name} is now ${s.lv}. ${d.perk}`);
+			if (s.lv >= 5) achieve("skill5");
+			sync(true);
+		}
+	}
+	function v3Price(cost) {
+		return Math.max(1, Math.round(cost * (1 - Math.min(.3, .03 * lv("barter")))));
+	}
+	// -------- farm upgrades
+	function upCost(u, tier) {
+		const t = u.tiers[tier];
+		const cut = 1 - .04 * lv("carpentry");
+		return { wood: Math.ceil(t.wood * cut), stone: Math.ceil(t.stone * cut), iron: t.iron, need: (t.need ?? []).filter(([, n]) => n > 0) };
+	}
+	function upLabel(u) {
+		const tier = v3.up[u.id];
+		if (tier >= u.tiers.length) return `${u.name}: done (${tier}/${u.tiers.length})`;
+		const c = upCost(u, tier);
+		const bits = [c.wood && `${c.wood} wood`, c.stone && `${c.stone} stone`, c.iron && `${c.iron} iron`, ...c.need.map(([id, n]) => `${n} ${GEAR[id]?.name.toLowerCase() ?? id}`)].filter(Boolean).join(", ");
+		return `${u.name} ${tier}/${u.tiers.length}: ${bits} (${u.tiers[tier].effect})`;
+	}
+	function buildUpgrade(id) {
+		const u = FARM_UPGRADES2.find((x) => x.id === id);
+		if (!u || !player) return;
+		const tier = v3.up[id];
+		if (tier >= u.tiers.length) { pushLog(`The ${u.name.toLowerCase()} is as good as it gets.`); return; }
+		const c = upCost(u, tier);
+		if (player.wood < c.wood || player.stone < c.stone || player.scrap < c.iron || c.need.some(([it, n]) => (player.bag.find((s) => s.id === it)?.qty ?? 0) < n)) { pushLog(`Not enough for the ${u.name.toLowerCase()}. ${upLabel(u)}`); return; }
+		player.wood -= c.wood; player.stone -= c.stone; player.scrap -= c.iron;
+		for (const [it, n] of c.need) takeItem(it, n);
+		v3.up[id] = tier + 1;
+		train("carpentry", 12 + 6 * tier);
+		pushLog(`You put up the ${u.name.toLowerCase()} (tier ${tier + 1}). ${u.tiers[tier].effect}`);
+		achieve("upgrade");
+		if (id === "palisade") achieve("palisade");
+		if (id === "bench" && tier + 1 >= 2) achieve("forge");
+		v3FarmProps();
+		sfx("build"); saveGame(); sync(true);
+	}
+	/** Stand-in props for farm upgrades (art hook: public/game/v2/<art>.png via optional.json). */
+	const UP_PROP = { greenhouse: ["shelter", 16, 6], barrel: ["crates", 10, -6], solar: ["stall", 14, -8], lookout: ["stand", -14, -10], palisade: ["fence", -16, 4], cellar: ["hatch", 12, 10], bench: ["workshop", -10, 12] };
+	function v3FarmProps() {
+		if (!world || mapId !== 0) return;
+		const fc = farmCenter();
+		const ft = tileOf(fc.x, fc.y);
+		for (const u of FARM_UPGRADES2) {
+			if (!v3.up[u.id] || !UP_PROP[u.id] || world.props.some((p) => p.v3up === u.id)) continue;
+			const [kind, dx, dy] = UP_PROP[u.id];
+			outer: for (let r = 0; r < 6; r++) for (let y = ft.ty + dy - r; y <= ft.ty + dy + r; y++) for (let x = ft.tx + dx - r; x <= ft.tx + dx + r; x++) {
+				if (Math.max(Math.abs(x - ft.tx - dx), Math.abs(y - ft.ty - dy)) !== r) continue;
+				if (addProp(world, kind, x, y, { v3up: u.id, skin: u.art, built: true })) break outer;
+			}
+		}
+	}
+	function v3Daily(day) {
+		if (!player || mode11) return;
+		const got = [];
+		const winter = seasonNow() === 3;
+		if (v3.up.greenhouse) { const n = v3.up.greenhouse * 2; giveItem("greens", n); got.push(`${n} greens from the greenhouse${winter ? " (snow on the glass)" : ""}`); }
+		if (v3.up.barrel) { giveItem("water", v3.up.barrel); got.push(`${v3.up.barrel} jug${v3.up.barrel > 1 ? "s" : ""} of rain water`); }
+		if (v3.up.cellar) { giveItem("apple", v3.up.cellar); got.push(`${v3.up.cellar} potato${v3.up.cellar > 1 ? "es" : ""} from the cellar`); }
+		if (got.length) pushLog(`Farm works: ${got.join(", ")}.`);
+		if (v3.windDay !== day) { v3.windDay = day; v3.wind = Math.floor(Math.random() * 8); }
+		if (curDay() - (q11.seasonDay || 0) >= SEASON_DAYS * 4) achieve("winter");
+		if (v3.dog.down >= 0 && day >= v3.dog.down) { v3.dog.down = -1; v3.dog.hp = 30; v3.dog.mode = "stay"; pushLog("Biscuit's up and wagging at the farm again. Tell him to follow when you're ready."); if (mapId === 0) q10PlaceDog(); }
+	}
+	// -------- Skowhegan travel (map 2)
+	function travelTo(target, arriveAt) {
+		if (!world || !player) return;
+		parkBike(false);
+		const leaving = world.name;
+		regions.set(mapId, captureRegion());
+		mapId = target;
+		world = createWorld(worldSeed, mapId, exitSides);
+		applyRegion(regions.get(mapId));
+		regions.delete(mapId);
+		const spot = arriveAt ? arriveAt() : null;
+		const arrive = world.gates[0];
+		if (spot) { player.x = spot.x; player.y = spot.y; }
+		else if (arrive) { player.x = arrive.arriveTx * 64 + 32; player.y = arrive.arriveTy * 64 + 32; }
+		intent = null; work = null; holdWalk = false; inside = null; opening = null; travelLock = 1.6;
+		q10World();
+		spawnCrows();
+		const land = tileOf(player.x, player.y);
+		reveal(land.tx, land.ty, sightRadius(), true);
+		pushLog(target === 2 ? `Two hours down the old road from ${leaving}. Skowhegan: dead streetlights, the Kennebec loud in the gorge, and one bridge.` : `The road climbs out of the river valley. You come back into ${world.name}.`);
+		if (target === 2) achieve("skow");
+		camX = player.x - player.y - viewW / 2;
+		camY = (player.x + player.y) / 2 - viewH / 2;
+		snapParty();
+		landReturn();
+		saveGame();
+		sync(true);
+	}
+	function skowSign() {
+		return q11Spot("skowRoad");
+	}
+	// -------- tracks, wind and noise
+	function isGame(e) {
+		return !e.dead && e.kind !== "bandit" && e.kind !== "squirrel";
+	}
+	function v3TrackTick(dt) {
+		if (!world || !player) return;
+		for (const e of world.enemies) {
+			if (!isGame(e)) continue;
+			const last = e.trail?.[e.trail.length - 1];
+			if (!last || Math.hypot(e.x - last.x, e.y - last.y) > 46) {
+				(e.trail ??= []).push({ x: e.x, y: e.y, dir: e.dir || 0, t: clock });
+				if (e.trail.length > 14) e.trail.shift();
+			}
+		}
+		// standing on fresh sign: remember whose
+		for (const e of world.enemies) {
+			if (!isGame(e) || !e.trail) continue;
+			if (e.trail.some((p) => Math.hypot(p.x - player.x, p.y - player.y) < 34)) e.onTrail = clock;
+			if (e.onTrail && !e.tracked && clock - e.onTrail < 40 && Math.hypot(e.x - player.x, e.y - player.y) < 190) {
+				e.tracked = true; v3.stats.tracks += 1; train("hunting", 6);
+				pushLog(`You followed the tracks right up to the ${e.name?.toLowerCase() || e.kind}.`);
+				achieve("tracks");
+			}
+		}
+	}
+	function windVec3(w) {
+		const a = (w * 45 - 90) * Math.PI / 180;
+		return { x: Math.cos(a), y: Math.sin(a) };
+	}
+	/** Timid game smells you when you're upwind, and bolts at loud noise. */
+	function v3Spook(enemy, dist) {
+		if (!player || q11.hunt) return false;
+		if (enemy.kind === "bandit" || enemy.temper !== "timid") return false;
+		const w = windVec3(v3.wind);
+		const dx = enemy.x - player.x, dy = enemy.y - player.y;
+		const downwind = (dx * w.x + dy * w.y) / (dist || 1) > .6;
+		const reach = (8 - Math.min(4, lv("hunting") * .4)) * TILE;
+		if (downwind && dist < reach) { if (!enemy.aggro) { enemy.aggro = true; alertPack(enemy); } return true; }
+		return false;
+	}
+	function v3Noise(x, y, r) {
+		if (!world) return;
+		for (const e of world.enemies) if (!e.dead && e.temper === "timid" && Math.hypot(e.x - x, e.y - y) < r) { e.aggro = true; alertPack(e); }
+	}
+	// -------- traps
+	function setTrap(kind) {
+		if (!player || !world) return;
+		const def = TRAP_KINDS[kind];
+		takeItem(def.item, 1);
+		q11.traps.push({ x: player.x, y: player.y, day: curDay(), kind, map: mapId });
+		train("trapping", 3);
+		pushLog(kind === "trap" ? "You bed a steel trap in a fox run and sift leaves over it. Check it in a day or two." : "You set a wire snare in a hare run. Check it tomorrow.");
+		saveGame(); sync(true);
+	}
+	function trapRoll(trap) {
+		const def = TRAP_KINDS[trap.kind ?? "snare"] ?? TRAP_KINDS.snare;
+		if (Math.random() >= def.base + .05 * lv("trapping")) return "";
+		return def.catches[(Math.random() * def.catches.length) | 0];
+	}
+	function trapLoot(what) {
+		const out = what === "fox" ? [["pelt", 1], ["meat", 1], ["bone", 1]] : what === "coyote" ? [["pelt", 1], ["bone", 2]] : [["meat", 1], ["bone", 1]];
+		if (lv("hunting") >= 4) out[0] = [out[0][0], out[0][1] + 1];
+		return out;
+	}
+	function checkTrap(trap, fetched) {
+		const what = trap.caught;
+		for (const [it, n] of trapLoot(what)) giveItem(it, n);
+		q11.traps.splice(q11.traps.indexOf(trap), 1);
+		if (Math.random() < .8) giveItem(TRAP_KINDS[trap.kind ?? "snare"].item, 1);
+		v3.stats.catches += 1; v3.stats.dressed += 1;
+		train("trapping", 8); train("hunting", 3);
+		const name = what === "rabbit" ? "snowshoe hare" : what;
+		pushLog(fetched ? `Biscuit trots back with the ${name} from your ${trap.kind === "trap" ? "trap" : "snare"}, proud as anything. Dressed out: meat, ${what === "rabbit" ? "" : "pelt, "}bone.` : `A ${name} in the ${trap.kind === "trap" ? "trap" : "snare"}. You dress it out on the spot: ${what === "rabbit" ? "meat and bone" : "pelt, meat and bone"}.`);
+		achieve(what === "rabbit" ? "snare" : "trap");
+		if (what === "rabbit" && trap.kind === "trap") achieve("snare");
+		achieve("dress");
+		sfx("gather"); saveGame(); sync(true);
+	}
+	function v3TrapTick() {
+		if (!player || !world || inside) return;
+		for (const trap of [...q11.traps]) {
+			if (!trap.caught || (trap.map ?? 0) !== mapId) continue;
+			if (Math.hypot(trap.x - player.x, trap.y - player.y) < 60) { checkTrap(trap, false); continue; }
+			if (dogBody && q10.dog >= 4 && v3.dog.mode === "follow" && Math.hypot(trap.x - player.x, trap.y - player.y) < 15 * TILE) checkTrap(trap, true);
+		}
+	}
+	// -------- Biscuit
+	let barkT = 0, dogHitT = 0, pointAt = null;
+	function dogWith() {
+		return q10.dog >= 4 && v3.dog.down < 0 && v3.dog.mode !== "stay";
+	}
+	function v3DogTick(dt) {
+		if (!player || !world || q10.dog < 4 || mode11) return;
+		if (!v3.dog.joined) { v3.dog.joined = true; achieve("biscuit"); }
+		if (v3.dog.down >= 0) { if (dogBody && mapId !== 0) dogBody = null; return; }
+		if (v3.dog.mode === "stay") { if (!dogBody && mapId === 0) q10PlaceDog(); }
+		else if (!dogBody || Math.hypot(dogBody.x - player.x, dogBody.y - player.y) > 900) dogBody = { x: player.x + 46, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
+		if (!dogBody) return;
+		dogBody.dog = true;
+		if (inside) return;
+		let tx = player.x + 46, ty = player.y + 30;
+		pointAt = null;
+		if (v3.dog.mode === "track") {
+			let best = null, bd = 30 * TILE;
+			for (const e of world.enemies) { if (!isGame(e) || e.q11) continue; const d = Math.hypot(e.x - player.x, e.y - player.y); if (d < bd) { bd = d; best = e; } }
+			if (best) {
+				const d = Math.hypot(best.x - player.x, best.y - player.y) || 1;
+				const lead = Math.min(d - 140, 260);
+				tx = player.x + (best.x - player.x) / d * Math.max(40, lead); ty = player.y + (best.y - player.y) / d * Math.max(40, lead);
+				pointAt = best;
+				if (best !== v3DogTick.last) { v3DogTick.last = best; pushLog(`Biscuit's nose goes down. He's on a ${best.kind}, off to the ${compassTo(best.x - player.x, best.y - player.y)}.`); }
+			}
+		}
+		if (v3.dog.mode !== "stay") {
+			const d = Math.hypot(tx - dogBody.x, ty - dogBody.y);
+			dogBody.moving = d > 24;
+			if (dogBody.moving) {
+				const sp = Math.min(d, (mounted ? 560 : d > 180 ? 360 : 220) * dt);
+				dogBody.dir = facing8(tx - dogBody.x, ty - dogBody.y);
+				dogBody.x += (tx - dogBody.x) / d * sp; dogBody.y += (ty - dogBody.y) / d * sp;
+			}
+			dogBody.anim += dt * (dogBody.moving ? 9 : 0);
+		}
+		// bark at raiders
+		barkT -= dt;
+		const raider = world.enemies.find((e) => !e.dead && e.kind === "bandit" && !e.aggro && Math.hypot(e.x - dogBody.x, e.y - dogBody.y) < 13 * TILE);
+		if (raider && barkT <= 0 && v3.dog.mode !== "stay") { barkT = 25; v3.barks = (v3.barks || 0) + 1; pushLog(`Biscuit stiffens and growls toward the ${compassTo(raider.x - player.x, raider.y - player.y)}. Raiders, close.`); sfx("hurt"); }
+		// he can get hurt
+		dogHitT -= dt;
+		if (dogHitT <= 0) {
+			const biter = world.enemies.find((e) => !e.dead && e.aggro && e.temper !== "timid" && Math.hypot(e.x - dogBody.x, e.y - dogBody.y) < 70);
+			if (biter) { dogHitT = 1.5; dogHurt(Math.max(2, Math.round((biter.atk || 4) * .6))); }
+		}
+	}
+	function dogHurt(n) {
+		if (q10.dog < 4 || v3.dog.down >= 0) return;
+		v3.dog.hp = Math.max(0, v3.dog.hp - n);
+		if (v3.dog.hp <= 0) {
+			v3.dog.down = curDay() + 1;
+			v3.dog.mode = "stay";
+			dogBody = null;
+			pushLog("Biscuit yelps and goes down, then drags himself off toward home. He'll be at the farm, licking it better. Give him a day.");
+		} else pushLog(`Biscuit's hurt (${v3.dog.hp}/30). A bandage would fix him up.`);
+		sync(true);
+	}
+	function dogHeal() {
+		if (!player || q10.dog < 4 || v3.dog.down >= 0 || v3.dog.hp >= 30) return false;
+		const id = ["bandage", "bandage-std", "bandage-good", "medicine", "trauma"].find((k) => carrying(k));
+		if (!id) { pushLog("Nothing to wrap him with. Bandage or medicine."); return false; }
+		takeItem(id, 1);
+		v3.dog.hp = Math.min(30, v3.dog.hp + Math.round(15 * (1 + .08 * lv("medicine"))));
+		train("medicine", 6);
+		pushLog(`You wrap Biscuit's leg. He licks your hand (${v3.dog.hp}/30).`);
+		sync(true); return true;
+	}
+	function dogCommand(mode) {
+		if (q10.dog < 4) return;
+		if (v3.dog.down >= 0) { pushLog("Biscuit's laid up at the farm until tomorrow."); return; }
+		v3.dog.mode = mode;
+		if (mode !== "stay" && !dogBody && player) dogBody = { x: player.x + 46, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
+		pushLog(mode === "stay" ? "\"Stay, Biscuit.\" He lies down with a sigh." : mode === "track" ? "\"Find 'em, Biscuit.\" His nose goes to the ground." : "\"Come on, Biscuit.\" He falls in at your heel.");
+		sfx("click"); sync(true);
+	}
+	// -------- main tick + hud
+	function v3Tick(dt) {
+		if (!player || !world || phase !== "play" || mode11) return;
+		v3TrackTick(dt);
+		v3TrapTick();
+		v3DogTick(dt);
+		if (player.scrap >= 100) achieve("rich");
+		if (player.level >= 5) achieve("level5");
+		if ((q11.fish.caught ?? 0) >= 10) achieve("fish10");
+		// the road sign to Skowhegan
+		if (mapId === 0 && snow >= 3 && travelLock <= 0 && !dialogue && !inside) {
+			const s = skowSign();
+			const near = Math.hypot(s.x - player.x, s.y - player.y) < 70;
+			v3Tick.nearT = near ? (v3Tick.nearT || 0) + dt : 0;
+			if (near && v3Tick.nearT > .6 && !v3Tick.latched) { v3Tick.latched = true; dialogue = { speaker: "Road to Skowhegan", text: "A green highway sign, shot full of holes: SKOWHEGAN 38. Under it somebody's painted TURN BACK. It's a long day's walk south, or a short ride.", choices: [{ label: "Take the road to Skowhegan", id: "q113-skow-go" }, { label: "Not today", id: "close" }] }; phase = "dialogue"; sfx("talk"); sync(true); }
+			if (!near) v3Tick.latched = false;
+		}
+		// stealth by doing: close to unaware raiders or game
+		v3Tick.sneak = (v3Tick.sneak || 0) + dt;
+		if (v3Tick.sneak > 2) {
+			v3Tick.sneak = 0;
+			if (world.enemies.some((e) => !e.dead && !e.aggro && Math.hypot(e.x - player.x, e.y - player.y) < 200)) train("stealth", 1);
+		}
+	}
+	function v3Hud() {
+		return {
+			skills: TRADE_SKILLS.map((d) => ({ id: d.id, name: d.name, lv: v3.skills[d.id].lv, xp: v3.skills[d.id].xp, need: skillNeed(v3.skills[d.id].lv), perk: d.perk, how: d.how })),
+			ach: ACHIEVEMENTS.map((a) => ({ id: a.id, name: a.name, text: a.text, got: !!v3.ach[a.id] })),
+			ups: FARM_UPGRADES2.map((u) => ({ id: u.id, name: u.name, tier: v3.up[u.id], max: u.tiers.length, next: v3.up[u.id] < u.tiers.length ? u.tiers[v3.up[u.id]].effect : "" })),
+			dog: q10.dog >= 4 ? { mode: v3.dog.mode, hp: v3.dog.hp, down: v3.dog.down >= 0 } : null,
+			wind: COMPASS8[v3.wind],
+			toast: v3Toast,
+		};
+	}
+	function v3Choice(id) {
+		const openD = (d) => { dialogue = d; phase = "dialogue"; sfx("click"); sync(true); return true; };
+		const close = () => { dialogue = null; phase = "play"; sync(true); return true; };
+		let m;
+		if (id === "q113-skow-go") { close(); travelTo(2, null); return true; }
+		if (id === "q113-works") return openD({ speaker: "Sarah", text: `Bigger works for the farm. You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron.`, choices: [...FARM_UPGRADES2.map((u) => ({ label: upLabel(u), id: `q113-up-${u.id}` })), { label: "Never mind", id: "close" }] });
+		if ((m = id.match(/^q113-up-(.+)$/))) { buildUpgrade(m[1]); return v3Choice("q113-works"); }
+		return false;
+	}
+	function v3Kill(enemy) {
+		if (enemy.kind === "moose") achieve("moose");
+		if (enemy.kind === "deer") achieve("deer");
+		if (enemy.variant === "grok") achieve("grok");
+		if (enemy.kind !== "bandit") train("hunting", enemy.kind === "moose" ? 16 : enemy.kind === "rabbit" || enemy.kind === "squirrel" ? 3 : 8);
+		if (enemy.q11 === "meds" && !world.enemies.some((e) => !e.dead && e.q11 === "meds")) achieve("bridge");
+	}
+	/** Stand-in shop sign for a building with no Grok Build art yet. */
+	function paintSign(text, x, y, h, dcx, dcy) {
+		const r = worldToScreen(x, y, dcx, dcy);
+		const p = zoomPoint(r.sx, r.sy);
+		ctx.save();
+		ctx.font = `bold ${Math.max(9, Math.round(13 * zoom))}px serif`;
+		const w = ctx.measureText(text).width + 12 * zoom;
+		const yy = p.sy - h * zoom * .55;
+		ctx.fillStyle = "rgba(38,30,20,.92)"; ctx.fillRect(p.sx - w / 2, yy - 11 * zoom, w, 20 * zoom);
+		ctx.strokeStyle = "#c9a35a"; ctx.lineWidth = 1.5; ctx.strokeRect(p.sx - w / 2, yy - 11 * zoom, w, 20 * zoom);
+		ctx.fillStyle = "#efe2c4"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, p.sx, yy);
+		ctx.restore();
+	}
+	function compassTo(dx, dy) {
+		return COMPASS[((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8];
+	}
 	function openTalk(npc) {
 		if (!player) return;
 		ensureProgress(player);
@@ -2902,6 +3313,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		statsOpen = false;
 		packOpen = false;
 		buildOpen = false;
+		if (npc.role === "marcel") {
+			dialogue = {
+				speaker: npc.name,
+				text: "\"You found the store. Ayuh, that's me on the radio.\" He wipes the counter. \"Cash is iron. Same as the sled.\"",
+				choices: [
+					{ label: "Eight shells — 10 iron", id: "q10-buy-shells" },
+					{ label: "Field bandage — 6 iron", id: "q10-buy-wrap" },
+					{ label: "Snowshoes — 16 iron", id: "q10-buy-snowshoes" },
+					{ label: "Barn lantern — 12 iron", id: "q10-buy-lantern" },
+					{ label: "Smoked jerky — 5 iron", id: "q10-buy-jerky" },
+					{ label: "Gas, quart can — 4 iron", id: "q10-buy-gas" },
+					{ label: "Take care, Marcel", id: "close" },
+				],
+			};
+			return;
+		}
 		const town = townOf(npc.role);
 		const rep = town ? player.rep[town] ?? 0 : 0;
 		if (town && townHostile(rep) && (npc.role === "cal" || npc.role === "rejean" || npc.role === "mira")) {
@@ -3738,7 +4165,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function burnGas(d) {
 		if (!mounted || d <= 0) return;
 		gasDist += d;
-		if (gasDist < 40 * TILE) return;
+		if (gasDist < 40 * TILE * (1 + .06 * lv("mechanics")) * (v3.up.bench >= 2 ? 1.33 : 1)) return;
+		train("mechanics", 4);
 		gasDist = 0;
 		takeItem("gas", 1);
 		if (!carrying("gas")) { pushLog("The engine coughs and dies. Out of gas."); parkBike(false); }
@@ -3759,6 +4187,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const why = rideBlock(prop);
 		if (why) { pushLog(why); intent = null; sfx("click"); sync(true); return; }
 		mounted = true;
+		achieve("ride");
 		mountId = prop.id;
 		intent = null;
 		holdWalk = false;
@@ -3780,7 +4209,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mountBike(prop);
 	}
 	function paintRide(x, y, dir, dcx, dcy) {
-		const img = images.get("v2/bike-ride") ?? images.get("bike");
+		if (images.get("v2/bike-ride")) { blit("v2/bike-ride", x, y, 92, true, Math.floor(performance.now() / 80) % 6, dir % 8, dcx, dcy); return; }
+		const img = images.get("bike");
 		if (!img || !ctx) return;
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const p = zoomPoint(raw.sx, raw.sy);
@@ -3826,6 +4256,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const ITEM_ICON = {
 		snare: "wire", grokclaw: "antlers",
 		gas: "fuel", carburetor: "oil", chain: "wire", engine: "packframe", gastank: "fuel", sparkplug: "matches", tire: "pelt",
+		medicine: "kit", bone: "antlers", steeltrap: "wire", greens: "dandelion", water: "cider",
 		"carbine-std": "carbine", "carbine-good": "carbine", scoped: "scoped",
 		"knife-std": "knife", "knife-good": "knife", skin: "knife",
 		"hatchet-std": "hatchet", "hatchet-good": "hatchet",
@@ -4223,6 +4654,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dmg += Math.floor(armed / 30);
 		if (!isGun(familyHit) && hasPerk("logger")) dmg += 2;
 		if (isGun(familyHit) && hasPerk("steady")) dmg += 1;
+		if (isGun(familyHit)) { dmg = Math.round(dmg * (1 + .04 * lv("marksmanship"))); train("marksmanship", 2); }
 		return Math.max(1, dmg);
 	}
 	function shellCount(p) {
@@ -4356,11 +4788,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			scrap = 8;
 		} else if (enemy.kind === "bandit") {
 			scrap = enemy.elite ? 4 : 2;
-			const found = rollDrop(enemy.elite, player.luck);
+			const found = rollDrop(enemy.elite, player.luck + (mapId === 2 ? 3 : 0));
 			if (found) addStack(items, found, 1);
+			if (mapId === 2 && Math.random() < .35) addStack(items, Math.random() < .5 ? "medicine" : "gas", 1);
 			if (Math.random() < .4) addStack(items, "cloth", 1);
 		} else {
 			addStack(items, "meat", enemy.kind === "moose" ? 3 : enemy.kind === "deer" ? 2 : 1);
+			addStack(items, "bone", enemy.kind === "moose" ? 3 : enemy.kind === "deer" ? 2 : 1);
 			if (enemy.kind === "wolf" || enemy.kind === "deer" || enemy.kind === "moose") addStack(items, "hide", 1);
 			if (enemy.kind === "moose") scrap += 2;
 		}
@@ -4381,6 +4815,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.raid && raid) raid.kills += 1;
 		corpseOf(enemy);
 		grantXp(xp);
+		v3Kill(enemy);
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
 		if (enemy.id === WARDEN_ENEMY_ID) {
 			wardenState = 3;
@@ -4552,6 +4987,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				took = true;
 				if (key === "scrap") pushLog(n === 1 ? "Took 1 iron." : `Took ${n} iron.`);
 			} else if (key === "scrap" && pile.scrap > 0) pushLog("You can't carry more iron.");
+		}
+		if (pile.body && pile.body !== "bandit" && !pile.dressed && (key === "all" || key === "meat" || key === "hide" || key === "bone")) {
+			pile.dressed = true; v3.stats.dressed += 1; train("hunting", 4); achieve("dress");
 		}
 		if (key === "all") {
 			for (const stack of pile.items) if (moveStack(stack) > 0) {
@@ -4992,6 +5430,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const here = tileOf(player.x, player.y);
 		const gate = world.gates.find((g) => Math.abs(g.tx - here.tx) <= 1 && Math.abs(g.ty - here.ty) <= 1);
 		if (!gate) return false;
+		if (mapId === 2) { travelTo(0, () => { const s = skowSign(); return { x: s.x + 90, y: s.y + 60 }; }); return true; }
 		parkBike(false);
 		const leaving = world.name;
 		regions.set(mapId, captureRegion());
@@ -5028,6 +5467,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function step(dt) {
 		tickLog(dt);
 		q11ModeTick(dt);
+		v3Tick(dt);
 		if (edges.pause && phase === "play") {
 			phase = "pause";
 			sync(true);
@@ -5381,7 +5821,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
 			if (enemy.temper === "timid") {
 				if (dist > 340) enemy.aggro = false;
-				const spook = enemy.aggro || dist < noticeRange(78);
+				const spook = enemy.aggro || dist < noticeRange(78) * (1 - .06 * lv("hunting")) || v3Spook(enemy, dist);
 				let enemyMoving = false;
 				if (spook) {
 					if (dist < 78 && !enemy.aggro) {
@@ -5740,12 +6180,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mini.width = 132;
 		mini.height = 132;
 	}
+	/** v12: gw14 people sheets by role (Cal's art is the "jack" set). */
+	const V2_WHO = { holt: "holt", cal: "jack", mira: "mira", nora: "nora", sarah: "sarah", cyndal: "cyndal", loki: "loki", marcel: "marcel" };
+	function v2Who(npc) {
+		const k = V2_WHO[npc.role];
+		return k && images.get(`v2/${k}-walk`) ? k : "";
+	}
 	function folkSheet(npc) {
+		const k = v2Who(npc);
+		if (k) return `v2/${k}-walk`;
 		return npc.role === "villager" ? "villager" : npc.role === "warden" ? "boss-warden" : `npc-${npc.role}`;
 	}
 	function paintPerson(body, camX, camY) {
 		const id = body.id ?? body.homeId;
-		const guarding = id != null && guardPost.has(id);
+		// kids never stand a gun post: no guard pose for Cyndal or Loki, ever
+		const kid = body.role === "cyndal" || body.role === "loki";
+		const guarding = !kid && id != null && guardPost.has(id);
+		if (paintV2Folk(body, guarding, camX, camY)) return;
 		const firing = guarding && (body.cooldown || 0) > .2;
 		const guardName = firing ? `guard-${body.role}` : `guard-watch-${body.role}`;
 		const posed = guarding && images.get(guardName) ? guardName : guarding && images.get(`guard-${body.role}`) ? `guard-${body.role}` : "";
@@ -5770,7 +6221,69 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		blit(sheet, body.x, body.y, folkHeight(body), true, frame, row, camX, camY);
 	}
+	function dangerNear(body) {
+		if (!world) return false;
+		for (const e of world.enemies) if (!e.dead && e.aggro && e.kind === "bandit" && Math.hypot(e.x - body.x, e.y - body.y) < 10 * TILE) return true;
+		return false;
+	}
+	/** v12: draw a person from the gw14 action sheets. Returns false when that role has no gw14 art. */
+	function paintV2Folk(body, guarding, camX, camY) {
+		const k = v2Who(body);
+		if (!k) return false;
+		const kid = k === "cyndal" || k === "loki";
+		const now = performance.now();
+		if (body.hp != null) {
+			if (body._hp != null && body.hp < body._hp) body._hitT = now;
+			body._hp = body.hp;
+		}
+		const has = (a) => !!images.get(`v2/${k}-${a}`);
+		const dir = (body.dir || 0) % 8;
+		const seed = (body.id ?? body.homeId ?? 0) * 137;
+		let act = "walk";
+		let frame = 0;
+		if (body.hp != null && body.hp <= 0 && has("down")) { act = "down"; frame = 3; }
+		else if (body._hitT && now - body._hitT < 360 && has("hit")) { act = "hit"; frame = Math.min(2, Math.floor((now - body._hitT) / 120)); }
+		else if (guarding && !kid && has("gun")) {
+			const firing = (body.cooldown || 0) > .2;
+			if (firing && has("gun-atk")) { act = "gun-atk"; frame = Math.min(3, Math.floor((1 - Math.min(1, body.cooldown)) * 4)); }
+			else { act = "gun"; frame = Math.floor((now + seed) / 420) % 4; }
+		}
+		else if (kid && dangerNear(body) && has("crouch")) { act = "crouch"; frame = Math.floor((now + seed) / 420) % 4; }
+		else if (body.still === false) {
+			const far = player && body.ox != null && Math.hypot(player.x + body.ox - body.x, player.y + body.oy - body.y) > 160;
+			act = far && has("run") ? "run" : kid && body.ox != null && has("carry") ? "carry" : "walk";
+			frame = ((body.frame || 0) % 4) * 2 + (Math.floor((now + seed) / 110) & 1);
+		}
+		else if (k === "marcel" && talkNpc === body && dialogue && has("talk")) { act = "talk"; frame = Math.floor(now / 260) % 4; }
+		else if (has("idle")) { act = "idle"; frame = Math.floor((now + seed) / 340) % 4; }
+		blit(`v2/${k}-${act}`, body.x, body.y, folkHeight(body), true, frame, dir, camX, camY);
+		return true;
+	}
+	/** v12: gw14 tree variants (pine2/3, spruce2/3 …) mixed in by a fixed per-tile hash; a third keep the old art. */
+	const TREE_V2 = { "tree-pine": "pine", "tree-spruce": "spruce", "tree-fir": "spruce", "tree-birch": "birch", "tree-dead": "snag", "tree-bare": "snag", "tree-scrub": "bush", logs: "log" };
+	function v2TreeArt(prop, n) {
+		const k = TREE_V2[prop.kind];
+		if (!k) return "";
+		const pick = (n >>> 4) % 3;
+		const name = pick ? `v2/trees/${k}${pick + 1}` : "";
+		return name && images.get(name) ? name : "";
+	}
 	function beastSheet(enemy) {
+		const v2b = v2Bandit(enemy);
+		if (v2b) return v2b;
+		return beastSheetOld(enemy);
+	}
+	/** v12: gw14 bandit sheets stand in for the legacy raider-* art when present. */
+	function v2Bandit(enemy) {
+		if (enemy.kind !== "bandit" && !(enemy.kind == null && enemy.variant)) return "";
+		const v = enemy.variant;
+		let k = "";
+		if (v === "scout" || v === "armor" || v === "brute" || v === "torch") k = v;
+		else if (!v) k = ["scout", "gray", "blue"][Math.abs(enemy.id ?? 0) % 3];
+		const n = k ? `v2/bandit-${k}-walk` : "";
+		return n && images.get(n) ? n : "";
+	}
+	function beastSheetOld(enemy) {
 		if (enemy.variant === "holeb") return "boss-holeb";
 		if (enemy.variant === "warden") return "boss-warden";
 		if (enemy.variant === "pelletier") return "boss-pelletier";
@@ -5814,7 +6327,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const FOLK_IN = {
 		justin: 74, sarah: 67, cyndal: 61.5, loki: 61, villager: 69,
 		rejean: 72, cal: 71, pete: 73, warden: 74, bram: 72, emile: 70, gus: 69, holt: 73, ivo: 70, paul: 71, walter: 69,
-		adele: 66, sera: 66, mira: 65, nora: 66, ruth: 65, mae: 64, etta: 66
+		marcel: 70, adele: 66, sera: 66, mira: 65, nora: 66, ruth: 65, mae: 64, etta: 66
 	};
 	function folkHeight(npc) {
 		return realH(folkSheet(npc), FOLK_IN[npc.role] ?? 69);
@@ -5872,6 +6385,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const e of world.enemies) if (!e.dead && isRaider(e) && !e.quest) { e.dead = true; e.death = 0; }
 		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 90 + 15 * n, houseMax: 90 + 15 * n, warned: false, kills: 0 };
 		if (q11.farm.wall) { raid.house += 15 * q11.farm.wall; raid.houseMax += 15 * q11.farm.wall; }
+		if (v3.up.palisade) { raid.house += 40 * v3.up.palisade; raid.houseMax += 40 * v3.up.palisade; }
+		if (v3.up.lookout) { raid.t += 6 * v3.up.lookout; pushLog("From the lookout tower you see their lanterns early, way down the road."); }
 		raidHudPct = 20;
 		pushLog(`Raid night ${n}. Justin and Sarah take the posts. Hold the farm.`);
 		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
@@ -6020,6 +6535,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog(why);
 		if (won) {
 			raidsHeld += 1;
+			achieve("raid1");
+			if (raidsHeld >= 5) achieve("raid5");
 			const scrap = 6 + 4 * n;
 			player.scrap += scrap;
 			grantXp(20 + 10 * n);
@@ -6243,6 +6760,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						foe.hurt = .08;
 						burst(foe.x, foe.y - 10, "#f4e2a0", 3);
 						sfx("shoot");
+						v3Noise(player.x, player.y, 14 * TILE);
 						if (foe.hp <= 0) markDead(foe, Math.max(1, Math.round(foe.xp * .5)));
 					}
 				}
@@ -6968,7 +7486,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					if (prop.fade < .01) prop.fade = 0;
 					seeThrough = prop.fade > 0;
 					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * .62;
-					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
+					const treeArt = v2TreeArt(prop, n);
+					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("v2/tractor-drive")) {
+						// v12: the gw14 8-way tractor (4 frames x 8 facings), rolling along its charge line
+						const shift = tractorShift(prop.charge || 0);
+						blit("v2/tractor-drive", c.x + shift.x, c.y + shift.y, h * 1.25, true, Math.floor((prop.charge || 0) * 28) % 4, TRACTOR_ROW, drawCamX, drawCamY);
+					} else if (prop.kind === "bike" && images.get("v2/bike-parked")) {
+						blit("v2/bike-parked", c.x, c.y, 76, true, 0, prop.id % 2 ? 2 : 6, drawCamX, drawCamY);
+					} else if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
 						const img = images.get("tractor-run");
 						const frames = img.width / img.height > 8 ? 8 : 4;
 						const sw = img.width / frames;
@@ -6980,7 +7505,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const dh = h * zoom;
 						const dw = dh * (sw / sh);
 						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
-					} else blit(spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					} else blit(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 1) && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 36, 70, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.burn || 0) > 0 && images.get("fx-smoke")) blit("fx-smoke", c.x + 8, c.y - 70, 64, false, 0, 0, drawCamX, drawCamY);
@@ -7056,7 +7582,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						if (dimg) {
 							if (TALL_COMBAT.has(deadName)) {
 								const u = 1 - Math.max(0, enemy.death) / 1.15;
-								blit(deadName, enemy.x, enemy.y, h, true, Math.max(0, Math.min(3, Math.floor(u * 4))), enemy.dir ?? 0, drawCamX, drawCamY);
+								const dn = sheetCols(dimg);
+								blit(deadName, enemy.x, enemy.y, h, true, Math.max(0, Math.min(dn - 1, Math.floor(u * dn))), enemy.dir ?? 0, drawCamX, drawCamY);
 							} else if (stripFrames(deadName, dimg) > 1) {
 								const u = 1 - Math.max(0, enemy.death) / 1.15;
 								const f = Math.max(0, Math.min(3, Math.floor(u * 4)));
@@ -7102,7 +7629,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const dimg = deadName ? images.get(deadName) : null;
 					if (dimg && TALL_COMBAT.has(deadName)) {
 						const dummy = { kind: pile.body, id: pile.id, variant: (pile.sheet || "").startsWith("boss-") || (pile.sheet || "").startsWith("raider-") && !["raider-gray", "raider-blue"].includes(pile.sheet) ? (pile.sheet || "").split("-")[1] : undefined };
-						blit(deadName, pile.x, pile.y, beastH(dummy), true, 3, pile.dir ?? 0, drawCamX, drawCamY);
+						const v2p = (pile.sheet || "").startsWith("v2/");
+						blit(deadName, pile.x, pile.y, v2p ? realH(pile.sheet, 70) : beastH(dummy), true, v2p ? sheetCols(dimg) - 1 : 3, pile.dir ?? 0, drawCamX, drawCamY);
 					} else if (dimg && stripFrames(deadName, dimg) > 1) {
 						// last frame of the death strip: the body as it came to rest
 						const east = pile.dir >= 5 && pile.dir <= 7;
@@ -7184,6 +7712,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				z: scar.x + scar.y - 4,
 				draw: () => {
 					if (scar.kind === "stump") {
+						const sv = ((Math.abs(Math.round(scar.x * 7 + scar.y * 3)) >> 3) % 3) + 1;
+						if (images.get(`v2/trees/stump${sv}`)) {
+							blit(images.get(`v2/trees/log${sv === 3 ? 3 : 2}`) ? `v2/trees/log${sv === 3 ? 3 : 2}` : "logs", scar.x + scar.side * 42, scar.y + 18, 84, false, 0, 0, drawCamX, drawCamY, false, 0, 1.22 * scar.side, .68);
+							blit(`v2/trees/stump${sv}`, scar.x, scar.y, 46, false, 0, 0, drawCamX, drawCamY);
+							return;
+						}
 						blit("logs", scar.x + scar.side * 42, scar.y + 18, 84, false, 0, 0, drawCamX, drawCamY, false, 0, 1.22 * scar.side, .68);
 						paintStump(scar.x, scar.y, drawCamX, drawCamY);
 					} else paintPit(scar.x, scar.y, drawCamX, drawCamY);
@@ -7294,6 +7828,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		const img = images.get(name);
+		if (sheet && img && /^v2\/bandit-[a-z]+-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
 		if (heroLog && /^(v2\/)?hero/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
@@ -7802,6 +8337,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player || phase !== "play") return;
 		const recipe = CRAFT.find((r) => r.id === id);
 		if (!recipe || !GEAR[recipe.item]) return;
+		if (recipe.tier && (v3.up.bench || 0) < recipe.tier) {
+			pushLog(recipe.tier >= 2 ? "That wants a machine shop. Upgrade the workbench (Sarah: bigger works)." : "That wants a forge. Upgrade the workbench (Sarah: bigger works).");
+			return;
+		}
 		if (recipe.bench && !inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty)) {
 			pushLog("That wants the workbench in the barn at Cambridge Road.");
 			sfx("click");
@@ -8199,6 +8738,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dismount() {
 			parkBike(true);
 		},
+		dogCommand(mode) {
+			dogCommand(mode);
+		},
+		dogHeal() {
+			dogHeal();
+		},
 		setSlot(n) {
 			if (phase !== "menu") return;
 			setSlot(n);
@@ -8336,11 +8881,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const def = GEAR[id];
 			const stack = player.bag.find((s) => s.id === id);
 			if (!def || !stack || stack.qty <= 0) return;
-			if (id === "snare" && world) {
-				takeItem("snare", 1);
-				q11.traps.push({ x: player.x, y: player.y, day: curDay() });
-				pushLog("You set a wire snare in a hare run. Check it tomorrow.");
-				saveGame(); sync(true);
+			if ((id === "snare" || id === "steeltrap") && world) {
+				if (inside) { pushLog("Not in here. Set it outside on a game trail."); return; }
+				setTrap(id === "snare" ? "snare" : "trap");
 				return;
 			}
 			if (def.kind === "weapon") {
@@ -8385,7 +8928,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			} else if (def.heal > 0) {
 				stack.qty -= 1;
 				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
-				player.hp = Math.min(player.maxHp, player.hp + Math.round(def.heal * (1 + skillOf("doctor") / 200) * (hasPerk("stitch") ? 1.25 : 1)));
+				player.hp = Math.min(player.maxHp, player.hp + Math.round(def.heal * (1 + skillOf("doctor") / 200) * (hasPerk("stitch") ? 1.25 : 1) * (1 + .08 * lv("medicine"))));
+				if (def.family === "bandage") train("medicine", 5);
 				sfx("click");
 				pushLog(`${def.name} used.`);
 			} else if ((def.worth ?? 0) > 0) {
@@ -8510,7 +9054,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			gates: world?.gates ?? []
 		}),
 		questState: () => ({ quest, snow, jackTrust, jackMet, bunkerSeen, wood: player?.wood ?? 0, respawn: player ? [player.respawnX, player.respawnY] : null }),
-		enemies: () => world ? world.enemies.map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), name: e.name ?? "", kind: e.kind ?? "", variant: e.variant ?? "", quest: !!e.quest, dead: !!e.dead, hp: e.hp })) : [],
+		enemies: () => world ? world.enemies.map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), name: e.name ?? "", kind: e.kind ?? "", variant: e.variant ?? "", quest: !!e.quest, dead: !!e.dead, hp: e.hp, maxHp: e.maxHp, elite: !!e.elite })) : [],
 		strike: (id, dmg) => {
 			const e = world?.enemies.find((q) => q.id === id);
 			if (!e || e.dead) return;
@@ -8652,6 +9196,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11Spot: (key) => q11Spot(key),
 		bikeInfo: () => { const b = world?.props.find((p) => p.farmBike); const n = nearBike(); return { mounted, built: bikeBuilt(), farmBike: b ? propCenter(b) : null, near: !!n, nearFarm: !!n?.farmBike, gas: player?.bag.find((s) => s.id === "gas")?.qty ?? 0, gasDist, notice: noticeRange(100), optional: [...OPTIONAL_ART] }; },
 		mountNow: () => api.mount(),
+		artLoaded: (names) => names.map((n) => !!(images.get(n) && images.get(n).width)),
+		artCols: (n) => images.get(n) ? sheetCols(images.get(n)) : 0,
+		folkSheetOf: (role) => { const n = world?.npcs.find((m) => m.role === role); return n ? folkSheet(n) : null; },
+		beastSheets: () => (world?.enemies ?? []).filter((e) => !e.dead).map((e) => ({ id: e.id, kind: e.kind, variant: e.variant, sheet: beastSheet(e), x: e.x, y: e.y })),
+		guardPose: (role) => { const n = world?.npcs.find((m) => m.role === role); if (!n) return null; guardPost.set(n.id, -1); return n.id; },
+		lazyDone: () => LAZY_STATE.pending === 0,
+		v3State: () => ({ ...JSON.parse(JSON.stringify(v3)), dogBody: dogBody ? { x: Math.round(dogBody.x), y: Math.round(dogBody.y) } : null, traps: q11.traps, toast: v3Toast }),
+		v3Set: (patch) => { Object.assign(v3, patch); sync(true); },
+		v3Train: (id, n) => train(id, n),
+		v3Lv: (id) => lv(id),
+		v3Price: (n) => v3Price(n),
+		v3Ach: (id) => achieve(id),
+		v3Build: (id) => buildUpgrade(id),
+		v3Daily: () => { clock += DAY_LENGTH_SEC; q11.farm.lastDay = curDay() - 1; q11Daily(); },
+		v3Travel: (n) => travelTo(n, n === 0 ? () => { const s = skowSign(); return { x: s.x + 90, y: s.y + 60 }; } : null),
+		v3Tracks: () => world ? world.enemies.filter((e) => isGame(e) && e.trail?.length).map((e) => ({ id: e.id, kind: e.kind, temper: e.temper, n: e.trail.length, last: e.trail[e.trail.length - 1], x: e.x, y: e.y, aggro: e.aggro, tracked: !!e.tracked })) : [],
+		v3Sight: () => sightRadius(),
+		v3Dog: () => ({ mode: v3.dog.mode, hp: v3.dog.hp, down: v3.dog.down, body: dogBody ? { x: dogBody.x, y: dogBody.y } : null }),
+		dogHurt: (n) => dogHurt(n),
+		skins: () => world ? world.props.filter((p) => p.skin).map((p) => ({ kind: p.kind, skin: p.skin, label: p.label || "", tx: p.tx, ty: p.ty })) : [],
+		v3Spot: (k) => q11Spot(k),
 		audio: () => audioState(),
 		lazyPending: () => LAZY_STATE.pending,
 		dismountNow: () => api.dismount(),
@@ -8706,8 +9271,20 @@ function stripFrames(name, img) {
 }
 /** 8-direction combat sheets (4 frames x 8 facing rows, taller than wide): drop-in for any *-atk / *-dead. */
 const TALL_COMBAT = new Set();
+/** v12: gw14 sheets on their own grids (bike 78x76, tractor 143x100, hero-ride 87x92). */
+const TRACTOR_ROW = 6;
+const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2/tractor-drive": 4 };
+/** v12: gw14 people (88x124 cells, 8 facing rows). */
+const V2_FOLK = /^v2\/(holt|jack|mira|nora|sarah|cyndal|loki|marcel|bandit-[a-z]+)-/;
+/** v12: raider attack / death come from the gw14 action sheets under the legacy -atk / -dead names. */
+const ART_ALIAS = {};
+for (const k of ["scout", "armor", "brute", "torch", "gray", "blue"]) {
+	ART_ALIAS[`v2/bandit-${k}-walk-atk`] = k === "brute" || k === "torch" ? `v2/bandit-${k}-axe` : `v2/bandit-${k}-gun-atk`;
+	ART_ALIAS[`v2/bandit-${k}-walk-dead`] = `v2/bandit-${k}-death`;
+}
 function sheetRowsOf(name) {
 	if (TALL_COMBAT.has(name)) return 8;
+	if (V2_COLS[name] || V2_FOLK.test(name)) return 8;
 	if (name.startsWith("overlay-")) return 8;
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
 	if (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
@@ -8720,6 +9297,7 @@ function heroScale(name) {
 }
 /** 4 frames across (352px), 6 (528px) or 8 (704px). Anything else stays 4. */
 function sheetCols(img) {
+	if (img && img.cols) return img.cols;
 	if (img && img.width % 88 === 0) {
 		const c = img.width / 88;
 		if (c === 4 || c === 6 || c === 8) return c;
@@ -8837,6 +9415,7 @@ async function loadImages(images) {
 		/* no manifest: stand-ins only */
 	}
 	const extra = [...OPTIONAL_ART].filter((n) => n.startsWith("v2/"));
+	for (const n of [...extra]) if (/^v2\/bandit-[a-z]+-walk$/.test(n)) extra.push(`${n}-atk`, `${n}-dead`);
 	// v11.2 lazy loading: bosses and attack/death sheets aren't needed for the first screen.
 	// The menu opens once the core set is in; the rest streams in right after.
 	const all = [...IMAGES, ...extra];
@@ -8846,22 +9425,24 @@ async function loadImages(images) {
 	LAZY_STATE.pending = lazy.length;
 	LAZY_STATE.done = loadSet(images, lazy).then(() => { LAZY_STATE.pending = 0; });
 }
-const LAZY_SHEET = /^boss-|-(atk|dead)$/;
+const LAZY_SHEET = /^boss-|-(atk|dead|death|gun-atk|axe|down|hit|crouch|carry|talk)$/;
 const LAZY_STATE = { pending: -1, done: Promise.resolve() };
 function loadSet(images, list) {
 	return Promise.all(list.map((name) => new Promise((resolve) => {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
+			if (V2_COLS[name]) img.cols = V2_COLS[name];
 			if ((name.endsWith("-atk") || name.endsWith("-dead")) && img.height > img.width * 1.2) TALL_COMBAT.add(name);
 			const rows = sheetRowsOf(name);
 			const strips = stripFrames(name, img) > 1;
-			const posed = !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
+			const posed = (V2_COLS[name] || V2_FOLK.test(name)) && !TALL_COMBAT.has(name) || !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
 			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" ? 0 : posed ? 1 : 1;
 			const tall = TALL_COMBAT.has(name);
 			const soft = softenSprite(img, radius, posed || tall ? rows : 0);
 			if ((posed || strips || tall) && /^(v2\/)?hero/.test(name)) soft.sharp = img;
 			const pose = measurePose(img, posed || strips || tall, strips ? 1 : rows);
+			if (img.cols) soft.cols = img.cols;
 			soft.foot = pose.foot;
 			soft.feet = pose.feet;
 			soft.footX = pose.footX;
@@ -8869,6 +9450,6 @@ function loadSet(images, list) {
 			resolve();
 		};
 		img.onerror = () => resolve();
-		img.src = `/game/${name}.png?v=${ART_V}`;
+		img.src = `/game/${ART_ALIAS[name] ?? name}.png?v=${ART_V}`;
 	}))).then(() => void 0);
 }

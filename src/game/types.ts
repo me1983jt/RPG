@@ -193,6 +193,10 @@ export interface Prop {
   hp?: number;
   charge?: number;
   flash?: number;
+  /** v11.3 art hook: draws public/game/v2/<skin>.png when it exists, else the kind's own art. */
+  skin?: string;
+  /** v11.3 stand-in sign painted over a building (Skowhegan). */
+  label?: string;
 }
 
 export type BeastKind = "bandit" | "wolf" | "coyote" | "deer" | "moose" | "rabbit" | "squirrel";
@@ -223,7 +227,8 @@ export interface Npc {
     | "paul"
     | "mae"
     | "walter"
-    | "warden";
+    | "warden"
+    | "marcel";
   name: string;
   x: number;
   y: number;
@@ -383,7 +388,16 @@ export interface LootLine {
   label: string;
 }
 
+export interface V113Hud {
+  skills: { id: string; name: string; lv: number; xp: number; need: number; perk: string; how: string }[];
+  ach: { id: string; name: string; text: string; got: boolean }[];
+  ups: { id: string; name: string; tier: number; max: number; next: string }[];
+  dog: { mode: string; hp: number; down: boolean } | null;
+  wind: string;
+  toast: { id: string; name: string; text: string; n: number } | null;
+}
 export interface HudSnapshot {
+  v113?: V113Hud;
   phase: Phase;
   ready: boolean;
   hasSave: boolean;

@@ -45,6 +45,15 @@ export function RPG() {
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [jTab, setJTab] = useState<"quests" | "skills" | "ach" | "farm">("quests");
+  const [toastN, setToastN] = useState(0);
+  const toast = hud.v113?.toast;
+  useEffect(() => {
+    if (!toast) return;
+    setToastN(toast.n);
+    const t = window.setTimeout(() => setToastN(-toast.n), 3800);
+    return () => window.clearTimeout(t);
+  }, [toast?.n]);
   const [trackerOpen, setTrackerOpen] = useState(() => typeof window === "undefined" || window.innerHeight >= 500);
   const mapRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -204,6 +213,13 @@ export function RPG() {
               <p className="mt-1 text-xs text-muted short:hidden">Only ground you've seen is drawn. White dot: you. Gold: quest marks.</p>
             </section>
           ) : null}
+          {toast && toastN === toast.n ? (
+            <div role="status" data-testid="ach-toast" className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 plank border-2 border-primary bg-surface px-4 py-2 text-center shadow-lg">
+              <p className="text-xs uppercase tracking-widest text-primary">Achievement</p>
+              <p className="font-display text-lg leading-tight">{toast.name}</p>
+              <p className="text-xs text-muted">{toast.text}</p>
+            </div>
+          ) : null}
           <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
@@ -218,7 +234,7 @@ export function RPG() {
               return (
                 <div className="mt-1 border-t border-border pt-1" data-testid="quest-tracker">
                   <button type="button" className="flex min-h-10 w-full items-center justify-between text-xs uppercase tracking-widest text-primary" onClick={() => setTrackerOpen((o) => !o)}>
-                    Tracking {act.length} <span>{trackerOpen ? "–" : "+"}</span>
+                    Tracking {act.length}{hud.v113?.wind ? ` · wind ${hud.v113.wind}` : ""} <span>{trackerOpen ? "–" : "+"}</span>
                   </button>
                   {trackerOpen ? (
                     <ul className="space-y-0.5">
@@ -251,6 +267,21 @@ export function RPG() {
               >
                 Dismount
               </button>
+            ) : null}
+            {hud.v113?.dog && hud.phase === "play" ? (
+              <div className="pointer-events-auto flex items-center gap-1 self-center" data-testid="dog-cmds">
+                <span className="px-1 text-xs font-semibold text-fg">Biscuit {hud.v113.dog.down ? "(laid up)" : `${hud.v113.dog.hp}/30`}</span>
+                {(["stay", "follow", "track"] as const).map((m) => (
+                  <button key={m} type="button" data-testid={`dog-${m}`} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-14 plank border px-2 text-xs font-semibold capitalize ${hud.v113?.dog?.mode === m ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.dogCommand(m)}>
+                    {m}
+                  </button>
+                ))}
+                {hud.v113.dog.hp < 30 && !hud.v113.dog.down ? (
+                  <button type="button" data-testid="dog-heal" className="min-h-10 plank border border-accent bg-surface px-2 text-xs font-semibold" onClick={() => apiRef.current?.dogHeal()}>
+                    Patch up
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             {!hud.riding && hud.canMount ? (
               <button
@@ -375,6 +406,49 @@ export function RPG() {
                     Close
                   </button>
                 </div>
+                <div className="mt-1 grid grid-cols-4 gap-1" role="tablist">
+                  {([["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["farm", "Farm"]] as const).map(([k, l]) => (
+                    <button key={k} type="button" role="tab" aria-selected={jTab === k} data-testid={`tab-${k}`} className={`min-h-10 plank border px-1 text-xs font-semibold ${jTab === k ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`} onClick={() => setJTab(k)}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                {jTab === "skills" ? (
+                  <ul className="mt-2 space-y-1" data-testid="skills-screen">
+                    {(hud.v113?.skills ?? []).map((sk) => (
+                      <li key={sk.id} className="plank border border-border bg-bg px-3 py-2">
+                        <div className="flex items-baseline justify-between"><p className="font-semibold">{sk.name}</p><p className="text-sm text-primary">Lv {sk.lv}</p></div>
+                        <div className="mt-1 h-1.5 bg-surface"><div className="h-full bg-primary" style={{ width: `${Math.min(100, (sk.xp / sk.need) * 100)}%` }} /></div>
+                        <p className="mt-1 text-xs text-muted">{sk.how} Per level: {sk.perk}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {jTab === "ach" ? (
+                  <div data-testid="ach-screen">
+                    <p className="mt-2 text-xs text-muted">{(hud.v113?.ach ?? []).filter((a) => a.got).length} of {(hud.v113?.ach ?? []).length} earned</p>
+                    <ul className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                      {(hud.v113?.ach ?? []).map((a) => (
+                        <li key={a.id} className={`plank border px-3 py-2 ${a.got ? "border-primary bg-bg" : "border-border bg-bg opacity-50"}`}>
+                          <p className="text-sm font-semibold">{a.got ? "★ " : "☆ "}{a.name}</p>
+                          <p className="text-xs text-muted">{a.text}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {jTab === "farm" ? (
+                  <ul className="mt-2 space-y-1" data-testid="farm-screen">
+                    <li className="text-xs text-muted">Build these through Sarah at the farm: "Bigger works".</li>
+                    {(hud.v113?.ups ?? []).map((u) => (
+                      <li key={u.id} className="plank border border-border bg-bg px-3 py-2">
+                        <div className="flex items-baseline justify-between"><p className="font-semibold">{u.name}</p><p className="text-sm text-primary">{u.tier}/{u.max}</p></div>
+                        <p className="text-xs text-muted">{u.next ? `Next: ${u.next}` : "Fully built."}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {jTab === "quests" ? <>
                 {(["active", "done"] as const).map((group) => {
                   const list = hud.journal.filter((entry) => (group === "done") === entry.done);
                   if (!list.length) return null;
@@ -392,6 +466,7 @@ export function RPG() {
                     </div>
                   );
                 })}
+                </> : null}
               </section>
             ) : null}
 
