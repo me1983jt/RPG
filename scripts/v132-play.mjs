@@ -73,7 +73,7 @@ const endingShot = async (name) => { await wait(400); const vis = await page.get
 const siegeFight = async (win) => {
   await talk("justin"); await click("v13-main-siege"); await wait(500);
   if (!win) { await T("v13SiegeEnd", false); return; }
-  for (let i = 0; i < 400; i++) { const r = await T("raidState"); if (i % 15 === 0 || r.none) steps.push(`siege ${i}: ${JSON.stringify(r).slice(0, 160)} foes ${JSON.stringify((await T("enemies")).filter((e) => !e.dead).map((e) => e.name + ':' + e.variant + ':' + e.kind)).slice(0, 200)}`); if (r.none) break; await fight((e) => e.kind === "bandit" || e.variant === "collector", 1); await T("addTime", 5); await wait(120); }
+  for (let i = 0; i < 1000; i++) { const r = await T("raidState"); if (i % 15 === 0 || r.none) steps.push(`siege ${i}: ${JSON.stringify(r).slice(0, 160)} foes ${JSON.stringify((await T("enemies")).filter((e) => !e.dead).map((e) => e.name + ':' + e.variant + ':' + e.kind)).slice(0, 200)}`); if (r.none) break; await fight((e) => e.kind === "bandit" || e.variant === "collector", 1); await T("addTime", 5); await wait(120); }
   await T("v13Tick");
 };
 await talk("sarah"); await click("v13-main-choose"); await click("v13-main-deal"); await closeAll(); await T("v13Tick"); await T("v13Tick");

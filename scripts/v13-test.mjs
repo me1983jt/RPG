@@ -216,7 +216,8 @@ check("diary-screen", (await page.getByTestId("diary-screen").locator("li").coun
 await page.getByTestId("diary-notes").fill("Check the north fence."); await page.getByTestId("diary-notes").blur(); await wait(200);
 check("notes-saved", (await S()).notes === "Check the north fence.");
 await page.getByTestId("tab-main").click(); await wait(200);
-check("main-tab", (await page.getByTestId("main-screen").locator("li").count()) === 9);
+check("main-tab", (await page.getByTestId("main-screen").locator(":scope > li").count()) === 9);
+check("main-notes", (await page.locator("[data-testid^=main-notes-] li").count()) > 0);
 check("main-tracker", await page.getByTestId("main-tracker").isVisible());
 await unjournal();
 
