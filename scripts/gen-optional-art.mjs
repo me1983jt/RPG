@@ -1,6 +1,6 @@
 // v11.1: list which optional art files exist, so the game only requests those (no 404s for missing art).
 // Run after adding art: node scripts/gen-optional-art.mjs
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 const root = new URL("../public/game/", import.meta.url).pathname;
 const want = [
   "v2/bike-parked", "v2/bike-ride", "v2/hero-ride", "v2/justin-ride", "v2/sarah-ride",
@@ -14,9 +14,15 @@ const want = [
   ...["holt", "jack", "mira", "nora", "sarah"].flatMap((k) => ["walk", "idle", "run", "gun", "gun-atk", "axe", "hit", "down", "crouch", "death"].map((a) => `v2/${k}-${a}`)),
   ...["cyndal", "loki"].flatMap((k) => ["walk", "idle", "run", "carry", "crouch", "hit", "down"].map((a) => `v2/${k}-${a}`)),
   ...["walk", "idle", "talk"].map((a) => `v2/marcel-${a}`),
+  ...["walk", "idle", "run", "gun", "gun-atk", "axe", "hit", "down", "crouch", "death"].map((a) => `v2/justin-${a}`),
   ...["scout", "armor", "brute", "torch", "gray", "blue"].flatMap((k) => ["walk", "hit"].map((a) => `v2/bandit-${k}-${a}`)),
   ...["birch", "bush", "log", "pine", "snag", "spruce"].flatMap((k) => [2, 3].map((i) => `v2/trees/${k}${i}`)),
   "v2/trees/stump1", "v2/trees/stump2", "v2/trees/stump3",
+  // v13 hooks: custom player sheets, armor paper-doll layers, the Collector, Harmony buildings
+  ...["walk", "idle", "run", "gun", "gun-atk", "axe", "hit", "down", "crouch", "death"].map((a) => `v2/player-${a}`),
+  ...["walk", "atk", "death", "idle"].map((a) => `v2/boss-collector-${a}`),
+  ...["store", "school", "clinic"].map((a) => `v2/harmony-${a}`),
+  ...(existsSync(`${root}v2/armor`) ? readdirSync(`${root}v2/armor`).filter((f) => f.endsWith(".png")).map((f) => `v2/armor/${f.slice(0, -4)}`) : []),
 ];
 const have = want.filter((n) => existsSync(`${root}${n}.png`));
 writeFileSync(`${root}v2/optional.json`, JSON.stringify(have, null, 1) + "\n");

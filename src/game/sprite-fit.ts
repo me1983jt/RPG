@@ -9,6 +9,7 @@ export const SPRITE_FIT: Record<string, number> = {
  "v2/cyndal-walk": 0.476,
  "v2/holt-walk": 0.54,
  "v2/jack-walk": 0.524,
+ "v2/justin-walk": 0.556,
  "v2/loki-walk": 0.46,
  "v2/marcel-walk": 0.532,
  "v2/mira-walk": 0.5,

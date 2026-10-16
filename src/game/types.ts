@@ -304,6 +304,8 @@ export interface Player {
   backId?: string;
   gridPos?: Record<string, [number, number]>;
   look: LookId;
+  /** Hair dye from character creation. */
+  hair?: "black" | "brown" | "gray" | "auburn";
   strength: number;
   vigor: number;
   endurance: number;
@@ -398,6 +400,8 @@ export interface V113Hud {
 }
 export interface HudSnapshot {
   v113?: V113Hud;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  v13?: any;
   phase: Phase;
   ready: boolean;
   hasSave: boolean;

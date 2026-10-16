@@ -20,9 +20,63 @@ import { Inventory } from "@/components/Inventory";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { RECIPES } from "@/game/types";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
+import { COAT_PICKS, HAT_PICKS, HAIRS, dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import type { PerkId, SkillId } from "@/game/progress";
 
 const RECIPE_ICON = [House, Columns3, Hammer, Flame] as const;
+
+function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { look: LookId }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let dead = false;
+    const load = (src: string) =>
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(src));
+        img.src = src;
+      });
+    void (async () => {
+      try {
+        const hero = await load("/game/hero.png?v=2072");
+        const ids = [trousers ? "trousers" : "", boots ? "boots" : "", coat, hat].filter(Boolean);
+        const parts: HTMLImageElement[] = [];
+        for (const id of ids) {
+          try {
+            parts.push(await load(`/game/overlay/${id}.png?v=2072`));
+          } catch {
+            /* missing sheet stays off the preview */
+          }
+        }
+        if (dead || !ref.current) return;
+        const cw = 88;
+        const ch = 124;
+        const tmp = document.createElement("canvas");
+        tmp.width = cw;
+        tmp.height = ch;
+        const tg = tmp.getContext("2d", { willReadFrequently: true });
+        const g = ref.current.getContext("2d");
+        if (!tg || !g) return;
+        tg.drawImage(hero, 0, 0, cw, ch, 0, 0, cw, ch);
+        const dyed = tg.getImageData(0, 0, cw, ch);
+        dyeBodySheet(dyed, 1, look, hair, 1);
+        tg.putImageData(dyed, 0, 0);
+        ref.current.width = cw * 2;
+        ref.current.height = ch * 2;
+        g.imageSmoothingEnabled = false;
+        g.clearRect(0, 0, cw * 2, ch * 2);
+        g.drawImage(tmp, 0, 0, cw * 2, ch * 2);
+        for (const part of parts) g.drawImage(part, 0, 0, cw, ch, 0, 0, cw * 2, ch * 2);
+      } catch {
+        /* preview is optional */
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [look, hair, coat, hat, trousers, boots]);
+  return <canvas ref={ref} aria-label="Character preview" className="h-36 w-auto short:h-24" />;
+}
 
 export function RPG() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,6 +92,14 @@ export function RPG() {
   const [name, setName] = useState("Packer");
   const [role, setRole] = useState<RoleId>("fighter");
   const [look, setLook] = useState<LookId>("wool");
+  const [hair, setHair] = useState<HairId>("black");
+  const [coat, setCoat] = useState<StartLook["coat"]>("");
+  const [hat, setHat] = useState<StartLook["hat"]>("");
+  const [trousers, setTrousers] = useState(true);
+  const [boots, setBoots] = useState(true);
+  const [backstory, setBackstory] = useState<"veteran" | "mechanic" | "farmer" | "hunter">("hunter");
+  const [hardMode, setHardMode] = useState(false);
+  const [jNotes, setJNotes] = useState<string | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
   const [step, setStep] = useState<"trade" | "points" | "trait">("trade");
   const [trait, setTrait] = useState<TraitId | null>(null);
@@ -45,7 +107,7 @@ export function RPG() {
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [jTab, setJTab] = useState<"quests" | "skills" | "ach" | "farm">("quests");
+  const [jTab, setJTab] = useState<"main" | "quests" | "skills" | "ach" | "farm" | "allies" | "diary" | "gear">("quests");
   const [toastN, setToastN] = useState(0);
   const toast = hud.v113?.toast;
   useEffect(() => {
@@ -159,7 +221,7 @@ export function RPG() {
 
   function startNew(): void {
     if (!trait || pointsLeft !== 0) return;
-    apiRef.current?.begin(name, role, bonus, trait, look);
+    apiRef.current?.begin(name, role, bonus, trait, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode });
   }
 
   return (
@@ -213,6 +275,18 @@ export function RPG() {
               <p className="mt-1 text-xs text-muted short:hidden">Only ground you've seen is drawn. White dot: you. Gold: quest marks.</p>
             </section>
           ) : null}
+          {hud.v13?.main.ending && hud.v13.main.slide < 99 ? (
+            <div className="pointer-events-auto absolute inset-0 z-[70] flex items-center justify-center bg-black/85 p-6" data-testid="ending-screen">
+              <div className="max-w-lg plank border-2 border-primary bg-surface p-5 text-center">
+                <p className="text-xs uppercase tracking-widest text-primary">The Long Winter · Ending</p>
+                <p className="mt-1 font-display text-2xl">{hud.v13.main.ending.title}</p>
+                <p className="mt-3 text-base leading-relaxed" data-testid="ending-slide">{hud.v13.main.ending.slides[Math.min(hud.v13.main.slide, hud.v13.main.ending.slides.length - 1)]}</p>
+                <button type="button" data-testid="ending-next" className="mt-4 min-h-11 plank bg-primary px-6 py-2 font-semibold text-bg" onClick={() => apiRef.current?.choose13(hud.v13.main.slide + 1 >= hud.v13.main.ending.slides.length ? "v13-ending-close" : "v13-ending-next")}>
+                  {hud.v13.main.slide + 1 >= hud.v13.main.ending.slides.length ? "Keep playing" : "Next"}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {toast && toastN === toast.n ? (
             <div role="status" data-testid="ach-toast" className="pointer-events-none absolute left-1/2 top-3 z-[60] -translate-x-1/2 plank border-2 border-primary bg-surface px-4 py-2 text-center shadow-lg">
               <p className="text-xs uppercase tracking-widest text-primary">Achievement</p>
@@ -228,6 +302,21 @@ export function RPG() {
             <p className="mt-1 line-clamp-2 text-base font-semibold leading-snug short:mt-0 short:line-clamp-1 short:text-sm">{hud.questText}</p>
             <p className="mt-1 text-sm font-semibold text-primary short:mt-0.5">{hud.clock}</p>
             <p className="text-sm font-semibold text-fg">{hud.karmaWord}</p>
+            {hud.v13 ? (
+              <div className="mt-1 border-t border-border pt-1 text-xs" data-testid="main-tracker">
+                <p className="font-bold uppercase tracking-widest text-primary">The Long Winter · Act {hud.v13.main.act}</p>
+                <p className="leading-snug short:line-clamp-1"><span className="font-semibold">{hud.v13.main.title}</span><span className="text-muted short:hidden"> · {hud.v13.main.goal}</span></p>
+                <p className="mt-0.5 text-muted" data-testid="weather-line">{hud.v13.weather.name} · {hud.v13.moon.name}{hud.v13.ail.length ? ` · ${hud.v13.ail.map((a: { name: string }) => a.name).join(", ")}` : ""}</p>
+                <div className="mt-0.5 flex gap-1" data-testid="needs-bars">
+                  {([["hunger", "Food", "#c98a4a"], ["thirst", "Water", "#5a8ac0"], ["sleep", "Sleep", "#9a8ac0"]] as const).map(([k, l, c]) => (
+                    <div key={k} className="flex-1" title={`${l} ${Math.round(hud.v13.needs[k])}`}>
+                      <div className="h-1.5 bg-bg"><div className="h-full" style={{ width: `${hud.v13.needs[k]}%`, background: c }} /></div>
+                      <span className="text-[10px] text-muted">{l}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {(() => {
               const act = hud.journal.filter((e) => !e.done && !e.id.startsWith("q11-season")).slice(0, 3);
               if (!act.length) return null;
@@ -282,6 +371,11 @@ export function RPG() {
                   </button>
                 ) : null}
               </div>
+            ) : null}
+            {hud.riding && hud.v13?.canTravel ? (
+              <button type="button" data-testid="travel-btn" className="pointer-events-auto self-center min-h-12 min-w-28 plank border-2 border-primary bg-surface px-6 py-2 text-base font-semibold" style={{ touchAction: "manipulation" }} onPointerDown={(e) => e.stopPropagation()} onClick={() => apiRef.current?.openTravel()}>
+                Travel
+              </button>
             ) : null}
             {!hud.riding && hud.canMount ? (
               <button
@@ -407,12 +501,55 @@ export function RPG() {
                   </button>
                 </div>
                 <div className="mt-1 grid grid-cols-4 gap-1" role="tablist">
-                  {([["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["farm", "Farm"]] as const).map(([k, l]) => (
+                  {([["main", "Main"], ["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["farm", "Farm"], ["allies", "Allies"], ["diary", "Diary"], ["gear", "Gear"]] as const).map(([k, l]) => (
                     <button key={k} type="button" role="tab" aria-selected={jTab === k} data-testid={`tab-${k}`} className={`min-h-10 plank border px-1 text-xs font-semibold ${jTab === k ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`} onClick={() => setJTab(k)}>
                       {l}
                     </button>
                   ))}
                 </div>
+                {jTab === "main" && hud.v13 ? (
+                  <ol className="mt-2 space-y-1" data-testid="main-screen">
+                    {hud.v13.main.acts.map((a: { n: number; title: string; goal: string; done: boolean }) => (
+                      <li key={a.n} className={`plank border px-3 py-2 ${a.n === hud.v13.main.act ? "border-primary bg-bg" : "border-border bg-bg"} ${a.n > hud.v13.main.act ? "opacity-40" : ""}`}>
+                        <p className="font-semibold">{a.done ? "✓ " : ""}Act {a.n}: {a.title}</p>
+                        <p className="text-xs text-muted">{a.n > hud.v13.main.act ? "…" : a.goal}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+                {jTab === "allies" && hud.v13 ? (
+                  <ul className="mt-2 space-y-1" data-testid="allies-screen">
+                    {hud.v13.loyal.map((c: { id: string; name: string; v: number; left: boolean; helps: boolean }) => (
+                      <li key={c.id} className="plank border border-border bg-bg px-3 py-2">
+                        <div className="flex items-baseline justify-between"><p className="font-semibold">{c.name}</p><p className="text-sm text-primary">{c.left ? "Gone" : `${c.v}`}</p></div>
+                        <div className="mt-1 h-1.5 bg-surface"><div className="h-full bg-primary" style={{ width: `${Math.max(0, (c.v + 100) / 2)}%` }} /></div>
+                        <p className="mt-1 text-xs text-muted">{c.left ? "Left after what you did." : c.helps ? "Loyal: helps more in a fight and on siege night." : c.v < 0 ? "Doesn't trust you. Below -40 they leave." : "Will stand with you."}</p>
+                      </li>
+                    ))}
+                    <li className="text-xs text-muted">Harmony: store {hud.v13.rebuilt.store ? "open" : "closed"}, school {hud.v13.rebuilt.school ? "open" : "closed"}, clinic {hud.v13.rebuilt.clinic ? "open" : "closed"}.</li>
+                    {hud.v13.bounties.map((b: { text: string; got: number; need: number; pay: number }, i: number) => <li key={i} className="text-xs">Bounty: {b.text} {Math.min(b.got, b.need)}/{b.need} ({b.pay} iron)</li>)}
+                  </ul>
+                ) : null}
+                {jTab === "diary" && hud.v13 ? (
+                  <div className="mt-2" data-testid="diary-screen">
+                    <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                      {[...hud.v13.diary].reverse().map((d: { day: number; text: string }, i: number) => <li key={i} className="text-xs"><span className="font-semibold text-primary">Day {d.day}.</span> {d.text}</li>)}
+                    </ul>
+                    <p className="mt-2 text-xs text-muted">Your own notes</p>
+                    <textarea data-testid="diary-notes" className="mt-1 h-20 w-full plank border border-border bg-bg p-2 text-sm" value={jNotes ?? hud.v13.notes} onChange={(e) => setJNotes(e.target.value)} onBlur={(e) => { apiRef.current?.setNotes(e.target.value); }} />
+                  </div>
+                ) : null}
+                {jTab === "gear" && hud.v13 ? (
+                  <ul className="mt-2 space-y-1" data-testid="gear-screen">
+                    <li className="text-xs text-muted">{hud.v13.set ? `${hud.v13.set.name}: ${hud.v13.set.text}` : "Wear a full matching set (head, chest, legs, hands, feet of one grade) for a bonus. Repair, patch and dye at the workbench through Sarah."}</li>
+                    {hud.v13.armor.map((a: { id: string; name: string; dura: number; patched: boolean }) => (
+                      <li key={a.id} className="plank border border-border bg-bg px-3 py-1.5 text-sm">
+                        <div className="flex justify-between"><span>{a.name}{a.patched ? " (patched)" : ""}</span><span className="text-primary">{a.dura}/100</span></div>
+                        <div className="mt-1 h-1 bg-surface"><div className="h-full bg-primary" style={{ width: `${a.dura}%` }} /></div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {jTab === "skills" ? (
                   <ul className="mt-2 space-y-1" data-testid="skills-screen">
                     {(hud.v113?.skills ?? []).map((sk) => (
@@ -477,15 +614,37 @@ export function RPG() {
                   <p className="text-sm text-primary">{hud.points} stat · {hud.skillPoints} skill</p>
                 </div>
                 <p className="mt-1 text-xs text-muted">{hud.karmaWord}. {hud.repLine}</p>
+                {hud.v13 ? (
+                  <div className="mt-2 plank border border-border bg-bg px-2 py-2 text-xs" data-testid="core-stats">
+                    <p className="font-semibold text-primary">{hud.v13.backstory ? `${hud.v13.backstory[0].toUpperCase()}${hud.v13.backstory.slice(1)} · ` : ""}What your stats do</p>
+                    <ul className="mt-1 grid grid-cols-2 gap-x-3">
+                      <li>Carry: {hud.v13.fx.carryLb} lb</li>
+                      <li>Health bonus: +{hud.v13.fx.hpBonus}</li>
+                      <li>Stamina bonus: +{hud.v13.fx.staminaBonus}</li>
+                      <li>Crit chance: {hud.v13.fx.critPct.toFixed(1)}%</li>
+                      <li>Gun accuracy: +{hud.v13.fx.accuracyPct}%</li>
+                      <li>Trader prices: -{hud.v13.fx.barterPct}%</li>
+                      <li>Talk checks: +{hud.v13.fx.talkBonus}</li>
+                      <li>Sickness resist: {Math.round(hud.v13.fx.sickResist * 100)}%</li>
+                    </ul>
+                    <p className="mt-2 font-semibold text-primary">Perks (every 3 skill levels)</p>
+                    <ul className="mt-1 space-y-0.5" data-testid="perk-list">
+                      {hud.v13.perks.filter((p: { got: string[] }) => p.got.length).map((p: { skill: string; got: string[] }) => <li key={p.skill}>{p.got.join(" · ")}</li>)}
+                      {!hud.v13.perks.some((p: { got: string[] }) => p.got.length) ? <li className="text-muted">None yet. Reach level 3 in any skill (Journal, Skills).</li> : null}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="mt-2 grid grid-cols-2 gap-2 short:grid-cols-3">
                   {(
                     [
                       ["strength", "Strength", hud.strength, "Harder hits"],
                       ["vigor", "Health", hud.vigor, "More life"],
                       ["endurance", "Endurance", hud.endurance, "More stamina"],
-                      ["intellect", "Intelligence", hud.intellect, "More skill points"],
+                      ["intellect", "Wits", hud.intellect, "Skill points, better prices, sharper talk"],
                       ["perception", "Perception", hud.perception, "See farther. Guns reach farther"],
                       ["luck", "Luck", hud.luck, "Better finds. The odd hard hit"],
+                      ["agility", "Agility", hud.v13?.core.agility ?? 1, "Stamina, crits"],
+                      ["grit", "Grit", hud.v13?.core.grit ?? 1, "Health, shrug off sickness"],
                     ] as const
                   ).map(([key, label, value, hint]) => (
                     <div key={key} className="flex items-center justify-between gap-2 plank border border-border bg-bg px-2 py-2">
@@ -732,7 +891,7 @@ export function RPG() {
             <p className="text-xs uppercase tracking-widest text-primary">Northwestern Maine</p>
             <h1 className="mt-1 font-display text-5xl leading-none short:text-3xl">Maine RPG</h1>
             <p className="mt-3 leading-relaxed text-muted short:mt-1 short:line-clamp-2 short:text-sm">
-              After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. No charms. Pick a trade, place three points, and take one trait.
+              After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. Name yourself, pick a trade, and set your clothes.
             </p>
             <p className="mt-3 text-xs uppercase tracking-widest text-primary short:mt-2">
               {step === "trade" ? "1 · Trade" : step === "points" ? "2 · Points" : "3 · Trait"}
@@ -776,24 +935,87 @@ export function RPG() {
                     </button>
                   ))}
                 </div>
-                <p className="mt-3 text-sm text-muted short:mt-2">Cloth</p>
-                <div className="mt-1 grid grid-cols-4 gap-2">
-                  {LOOKS.map((item) => (
+                <p className="mt-3 text-sm text-muted short:mt-2">Backstory</p>
+                <div className="mt-1 grid grid-cols-4 gap-1" data-testid="backstory-pick">
+                  {([["veteran", "Veteran", "Rifle, grit, first aid"], ["mechanic", "Mechanic", "Engines, gas, wits"], ["farmer", "Farmer", "Crops, cooking, endurance"], ["hunter", "Woods guide", "Tracks, traps, agility"]] as const).map(([id, l, h]) => (
+                    <button key={id} type="button" data-testid={`backstory-${id}`} aria-pressed={backstory === id} className={`plank border px-1.5 py-1.5 text-left ${backstory === id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setBackstory(id)}>
+                      <span className="block text-xs font-semibold">{l}</span>
+                      <span className="block text-[10px] leading-tight text-muted">{h}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-end gap-3 short:mt-2">
+                  <div className="plank border border-border bg-bg p-1">
+                    <LookPreview look={look} hair={hair} coat={coat} hat={hat} trousers={trousers} boots={boots} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-muted">Cloth</p>
+                    <div className="mt-1 grid grid-cols-2 gap-1">
+                      {LOOKS.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          aria-pressed={look === item.id}
+                          className={`plank border px-2 py-1.5 text-left ${look === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
+                          onClick={() => setLook(item.id)}
+                        >
+                          <span
+                            className="mb-1 block h-2 w-full border border-border"
+                            style={{ background: item.id === "wool" ? "#8c6242" : item.id === "spruce" ? "#46684a" : item.id === "linen" ? "#cec0a0" : "#42444a" }}
+                          />
+                          <span className="block text-sm font-semibold">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-muted short:mt-2">Hair</p>
+                <div className="mt-1 grid grid-cols-4 gap-1">
+                  {HAIRS.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      aria-pressed={look === item.id}
-                      className={`plank border px-2 py-2 text-left ${look === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                      onClick={() => setLook(item.id)}
+                      aria-pressed={hair === item.id}
+                      className={`plank border px-2 py-1.5 text-left ${hair === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
+                      onClick={() => setHair(item.id)}
                     >
-                      <span
-                        className="mb-1 block h-3 w-full border border-border"
-                        style={{ background: item.id === "wool" ? "#8c6242" : item.id === "spruce" ? "#46684a" : item.id === "linen" ? "#cec0a0" : "#42444a" }}
-                      />
-                      <span className="block text-sm font-semibold">{item.label}</span>
-                      <span className="block text-xs text-muted">{item.hint}</span>
+                      <span className="mb-1 block h-2 w-full border border-border" style={{ background: item.color }} />
+                      <span className="block text-xs font-semibold">{item.label}</span>
                     </button>
                   ))}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 short:mt-2">
+                  <div>
+                    <p className="text-sm text-muted">Coat</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {COAT_PICKS.map((item) => (
+                        <button key={item.label} type="button" aria-pressed={coat === item.id} className={`plank border px-2 py-1 text-xs font-semibold ${coat === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setCoat(item.id)}>
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted">Hat</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {HAT_PICKS.map((item) => (
+                        <button key={item.label} type="button" aria-pressed={hat === item.id} className={`plank border px-2 py-1 text-xs font-semibold ${hat === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setHat(item.id)}>
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" aria-pressed={trousers} className={`plank border px-3 py-1.5 text-sm ${trousers ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setTrousers((v) => !v)}>
+                    Trousers
+                  </button>
+                  <button type="button" aria-pressed={hardMode} data-testid="hard-mode" className={`plank border px-3 py-1.5 text-sm ${hardMode ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setHardMode((v) => !v)}>
+                    Hard needs
+                  </button>
+                  <button type="button" aria-pressed={boots} className={`plank border px-3 py-1.5 text-sm ${boots ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setBoots((v) => !v)}>
+                    Boots
+                  </button>
                 </div>
               </>
             ) : null}

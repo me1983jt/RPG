@@ -1,1 +1,18 @@
-["snowshoes", "snowshoes-portrait", "steeltoes", "steeltoes-portrait", "plate", "plate-portrait", "rig", "rig-portrait", "canvas", "canvas-portrait", "waxed", "waxed-portrait", "warden", "warden-portrait"]
+[
+  "snowshoes", "snowshoes-portrait",
+  "steeltoes", "steeltoes-portrait",
+  "plate", "plate-portrait",
+  "rig", "rig-portrait",
+  "canvas", "canvas-portrait",
+  "waxed", "waxed-portrait",
+  "warden", "warden-portrait",
+  "boots", "boots-portrait",
+  "huntcap", "huntcap-portrait",
+  "scraphelm", "scraphelm-portrait",
+  "toque", "toque-portrait",
+  "trousers", "trousers-portrait",
+  "gloves", "gloves-portrait",
+  "backpack", "backpack-portrait",
+  "felt", "felt-portrait",
+  "packframe", "packframe-portrait"
+]

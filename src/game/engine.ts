@@ -1,7 +1,8 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2071;
+const ART_V = 2072;
+import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
@@ -33,6 +34,7 @@ import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToS
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
+import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
 import {
   HEX_CX,
   HEX_CY,
@@ -75,7 +77,7 @@ import {
 
 export interface GameApi {
   destroy: () => void;
-  begin: (name: string, role: RoleId, bonus: { strength: number; vigor: number; endurance: number; intellect: number; perception: number; luck: number }, trait: TraitId, look: LookId) => void;
+  begin: (name: string, role: RoleId, bonus: { strength: number; vigor: number; endurance: number; intellect: number; perception: number; luck: number }, trait: TraitId, look: LookId, appearance?: StartLook) => void;
   continueGame: () => void;
   /** Title menu "Raid Mode": a standalone raid night at the farm that never touches the story save. */
   raidMode: () => void;
@@ -96,7 +98,10 @@ export interface GameApi {
   dogCommand: (mode: "stay" | "follow" | "track") => void;
   dogHeal: () => void;
   drawMap: (c: HTMLCanvasElement) => void;
-  spend: (stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck") => void;
+  spend: (stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck" | "agility" | "grit" | "wits") => void;
+  openTravel: () => void;
+  choose13: (id: string) => void;
+  setNotes: (text: string) => void;
   spendSkill: (id: SkillId) => void;
   retag: (id: SkillId) => void;
   takePerk: (id: PerkId) => void;
@@ -607,6 +612,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			questKills,
 			questText: hudQuestText(),
 			v113: v3Hud(),
+			v13: player ? v13Hud() : null,
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
@@ -694,6 +700,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			backId: "",
 			gridPos: {},
 			look: "wool",
+			hair: "black",
 			strength: 1,
 			vigor: 1,
 			endurance: 1,
@@ -792,14 +799,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// a moose-hide sling steadies a long gun
 		if (p.backId === "sling" && (w?.family === "carbine" || w?.family === "scatter")) p.atk += 1;
 		p.def = worn.reduce((n, id) => n + (GEAR[id]?.def ?? 0), 0);
+		if (p === player) p.def = def13(p.def);
+		if (p === player && buffOn("strong")) p.atk += 2;
 		if (p.perks?.includes("wool")) p.def += 2;
 		apMax = p.perks?.includes("quick") ? 10 : 8;
 		const extra = p.trait === "hide" ? 14 : p.trait === "step" ? -8 : 0;
-		const nextHp = Math.max(24, kit.hp + Math.max(0, p.level - 1) * 6 + Math.max(0, p.vigor - 1) * 8 + extra);
+		const nextHp = Math.max(24, kit.hp + Math.max(0, p.level - 1) * 6 + Math.max(0, p.vigor - 1) * 8 + extra) + (p === player ? fx13().hpBonus : 0);
 		if (nextHp > p.maxHp) p.hp += nextHp - p.maxHp;
 		p.maxHp = nextHp;
 		p.hp = Math.min(p.hp, p.maxHp);
-		p.maxStamina = 70 + p.endurance * 16;
+		p.maxStamina = 70 + p.endurance * 16 + (p === player ? fx13().staminaBonus : 0);
 		p.stamina = Math.min(p.maxStamina, p.stamina || p.maxStamina);
 	}
 	/** Icon file for an item: public/game/items/<id>.png, else the generic one for its shape. */
@@ -884,9 +893,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function heroFigure() {
 		if (!player) return "";
 		const family = GEAR[player.weaponId]?.family;
-		const name = family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero";
-		const worn = EQUIP_SLOTS.map((slot) => player[SLOT_FIELD[slot]]).filter((id) => id && images.get(`overlay-${id}`));
-		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}:${worn.join(",")}`;
+		const plName = plImg("idle") || plImg("walk");
+		const name = plName || (family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero");
+		const worn = plName ? [] : EQUIP_SLOTS.map((slot) => player[SLOT_FIELD[slot]]).filter((id) => id && images.get(`overlay-${id}`));
+		const armorLayers = plName ? armorLayerNames(plName.slice(3)) : [];
+		const key = `${name}:${player.hair}:${armorLayers.join(",")}:${JSON.stringify(w13.dye)}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}:${worn.join(",")}`;
 		if (key === figureKey && figureUrl) return figureUrl;
 		const img = images.get(name);
 		if (!img || !img.width) return "";
@@ -903,6 +914,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!g) return "";
 		g.imageSmoothingEnabled = false;
 		g.drawImage(src, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+		for (const ln of armorLayers) {
+			const ai = images.get(ln);
+			if (ai && ai.width === img.width && ai.height === img.height) g.drawImage(armorSource(ln, ai), col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+		}
 		for (const id of worn) {
 			const ov = images.get(`overlay-${id}`);
 			if (ov && ov.width === img.width && ov.height === img.height) g.drawImage(ov, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
@@ -1001,7 +1016,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (seed === 5402695) seed = 5402696;
 		return seed;
 	}
-	function bootNew(name, role, bonus, trait, look) {
+	function bootNew(name, role, bonus, trait, look, appearance) {
 		worldSeed = freshSeed();
 		exitSides = pickSides(worldSeed);
 		mapId = 0;
@@ -1018,6 +1033,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.luck += bonus.luck;
 		player.trait = trait;
 		player.look = look;
+		player.hair = appearance?.hair || "black";
+		pendingBackstory = appearance?.backstory || "";
+		pendingHard = !!appearance?.hard;
+		if (appearance) {
+			wearPiece(appearance.coat, "coatId");
+			wearPiece(appearance.hat, "headId");
+			if (!appearance.trousers) player.legsId = "";
+			else if (!player.legsId) wearPiece("trousers", "legsId");
+			if (!appearance.boots) player.feetId = "";
+			else if (!player.feetId) wearPiece("boots", "feetId");
+		}
 		ensureProgress(player);
 		player.tags = tagsForRole(role);
 		player.invested = {};
@@ -1043,6 +1069,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10 = freshQ10();
 		q11 = freshQ11();
 		v3 = freshV3();
+		w13 = freshW13();
+		if (pendingBackstory) { applyBackstory(pendingBackstory); pendingBackstory = ""; }
+		if (pendingHard) { w13.hard = true; pendingHard = false; }
 		q10World();
 		openedDoors.clear();
 		lootedChests.clear();
@@ -1168,6 +1197,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.maxHp = data.maxHp;
 		}
 		player.look = data.look ?? defaultLook(player.role);
+		player.hair = data.hair || "black";
 		ensureProgress(player);
 		if (Array.isArray(data.tags) && data.tags.length === 3) player.tags = data.tags;
 		else if ((player.level ?? 1) > 1) {
@@ -1220,6 +1250,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10 = loadQ10(data.q10);
 		q11 = loadQ11(data.q11);
 		v3 = loadV3(data.v113);
+		w13 = loadW13(data.v13);
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -1320,6 +1351,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.q10 = q10;
 		data.q11 = q11;
 		data.v113 = v3;
+		data.v13 = w13;
 		data.regions = [...regions.values()];
 		data.piles = piles.map((pile) => ({
 			id: pile.id,
@@ -1473,11 +1505,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const trail = skillOf("trail");
 		const home = mapId === 0 && player && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty);
 		const up = home ? 2 * (v3.up.lookout || 0) + (v3.up.solar && nightDark(clock) > .3 ? 3 : 0) : 0;
-		return 5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up;
+		return Math.max(2, Math.round((5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up) * (inside ? 1 : weather13().sight)));
 	}
 	function noticeRange(base) {
 		// v11.1: the motor bicycle is loud; raiders hear it coming from much farther off
-		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1) * (1 - .03 * lv("stealth"));
+		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1) * (1 - .03 * lv("stealth")) * (nightDark(clock) > .3 ? moon13().bold : 1) * (w13.weather.id === "fog" ? .7 : 1);
 	}
 	function reveal(tx, ty, r, remember) {
 		const r2 = r * r;
@@ -1559,7 +1591,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (choice?.check) {
 				const town = talkNpc ? townOf(talkNpc.role) : null;
 				const rep = town ? player.rep?.[town] ?? 0 : 0;
-				if (Math.random() * 100 >= checkChance(skillOf(choice.check.skill), choice.check.dc, rep, player.karma ?? 0)) {
+				if (Math.random() * 100 >= checkChance(skillOf(choice.check.skill) + fx13().talkBonus, choice.check.dc, rep, player.karma ?? 0)) {
 					const skillName = SKILLS.find((s) => s.id === choice.check.skill)?.name ?? "That";
 					dialogue = {
 						speaker: dialogue?.speaker ?? "Them",
@@ -1574,6 +1606,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
+		if (id.startsWith("v13-") && v13Choice(id)) return;
 		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id.startsWith("q113-") && v3Choice(id)) return;
 		if (id === "raid-ask") {
@@ -2422,6 +2455,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ripples = [];
 		if (!world) return;
 		if (mapId === 0) q11FarmProps();
+		v13World();
 		for (const q of Q11) {
 			const step = q11Cur(q);
 			const st = q11.q[q.id];
@@ -2495,6 +2529,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		q11Daily();
+		v13Tick(dt);
 		q11Season(dt);
 		q11HuntStep();
 		if (dialogue) return;
@@ -2622,7 +2657,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// -------- fishing
 	function q11OpenFish(site) {
-		const ice = seasonNow() === 3;
+		const ice = seasonNow() === 3 && FISH_WATER[site] !== "river";
+		if (seasonNow() === 3 && FISH_WATER[site] === "river") { dialogue = { speaker: Q11_SITES[site].name, text: "The Kennebec runs open in the riffles all winter. Cold hands, but the trout are in there.", choices: [{ label: "Wet a line", id: `q11-fish-cast-${site}` }, { label: "Leave it", id: "close" }] }; talkNpc = null; phase = "dialogue"; intent = null; sfx("talk"); sync(true); return; }
 		dialogue = { speaker: Q11_SITES[site].name, text: ice ? "Ice thick enough to stand on. Chop a hole, drop a line." : "Dark water, slow at the edge. Good spot for a line.", choices: [{ label: ice ? "Chop a hole and fish" : "Wet a line", id: `q11-fish-cast-${site}` }, { label: "Leave it", id: "close" }] };
 		talkNpc = null; phase = "dialogue"; intent = null; sfx("talk"); sync(true);
 	}
@@ -2631,16 +2667,26 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return .5 + .5 * Math.sin((performance.now() - fishGame.t0) / 1000 * fishGame.speed * Math.PI);
 	}
 	const FISH_PER_DAY = 3;
+	/** v13: water type per fishing site. Ice fishing on the ponds in winter; the river runs open. */
+	const FISH_WATER = { fishKennebec: "river", fishPond: "lake", fishHoleb: "lake" };
+	function fishWater(site) {
+		const w = FISH_WATER[site] ?? "lake";
+		return w === "lake" && seasonNow() === 3 ? "ice" : w;
+	}
 	function q11FishHook() {
 		const p = fishPos();
-		const hit = fishForce ?? (p >= fishGame.zone && p <= fishGame.zone + .2);
+		const hit = fishForce ?? (p >= fishGame.zone && p <= fishGame.zone + (fishGame.width ?? .2));
+		const water = fishGame.water ?? "lake";
 		fishGame = null;
 		if (!hit) { pushLog("You yank too soon. It spits the hook."); return; }
 		q11.fish.caught += 1;
 		if (q11.fish.day !== curDay()) { q11.fish.day = curDay(); q11.fish.today = 0; }
 		q11.fish.today = (q11.fish.today ?? 0) + 1;
-		if (Math.random() < .12) { q11.fish.rare += 1; giveItem("smokedfish", 3); pushLog("A brook trout as long as your arm, red-bellied. That's a fish they'll talk about at the store."); }
-		else { giveItem("smokedfish", 1); pushLog(seasonNow() === 3 ? "A yellow perch through the ice. Supper." : "A fat pickerel on the line. Supper."); }
+		train("fishing", 6);
+		w13.lastFish = water;
+		if (Math.random() < .12 * (perk13("fishing", 6) ? 2 : 1)) { q11.fish.rare += 1; giveItem("smokedfish", 3); pushLog(water === "river" ? "A brook trout as long as your arm, red-bellied. That's a fish they'll talk about at the store." : water === "ice" ? "A togue, a lake trout, up through the ice. A monster." : "A landlocked salmon, jumping. That's a fish they'll talk about at the store."); }
+		else if (water === "river") { giveItem("trout", 1); pushLog("A brook trout out of the riffle. Supper."); }
+		else { giveItem("smokedfish", 1); pushLog(water === "ice" ? "A yellow perch through the ice. Supper." : "A fat pickerel on the line. Supper."); }
 		sfx("level");
 	}
 	function paintFish() {
@@ -2649,7 +2695,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.save();
 		ctx.fillStyle = "rgba(20,24,28,.82)"; ctx.fillRect(x - 8, y - 30, w + 16, 58);
 		ctx.fillStyle = "#3b4a52"; ctx.fillRect(x, y, w, 18);
-		ctx.fillStyle = "#5fae5a"; ctx.fillRect(x + fishGame.zone * w, y, .2 * w, 18);
+		ctx.fillStyle = "#5fae5a"; ctx.fillRect(x + fishGame.zone * w, y, (fishGame.width ?? .2) * w, 18);
 		ctx.fillStyle = "#f2e6c8"; ctx.fillRect(x + fishPos() * w - 3, y - 6, 6, 30);
 		ctx.font = "600 14px sans-serif"; ctx.fillText("Set the hook when the bobber's in the green", x, y - 12);
 		ctx.restore();
@@ -2710,7 +2756,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return;
 		}
 		mode11 = kind;
-		bootNew("Justin", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
+		bootNew("Packer", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
 		mode11 = kind;
 		snow = Math.max(snow, 3);
 		jackMet = true;
@@ -2886,6 +2932,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				grantXp(q.xp); shiftRep("ponds", 2, 6);
 				pushLog(`${q.title}: done. ${q.after}`);
 				if (q.id === "bike") { achieve("bike"); train("mechanics", 20); }
+				v13SideQuestDone(q.id);
 				if (q.id === "meds") achieve("meds");
 				for (const area of [0, 1, 2]) {
 					const list = Q11.filter((x) => x.steps.every((st) => siteMap(st.site) === area || st.site.startsWith("npc:")) && x.steps.some((st) => siteMap(st.site) === area && !st.site.startsWith("npc:")));
@@ -2929,11 +2976,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const buy = { "q11-buy-shells": ["shells", 8, 10], "q11-buy-fuel": ["fuel", 1, 10], "q11-buy-gas": ["gas", 2, 8] }[id];
 		if (buy && q11.caravan === 3) { buy[2] = v3Price(buy[2]); train("barter", 3); if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
 		if (id === "q11-car-home" && q11.caravan === 3) { close(); if (!q11CaravanAmbush(true)) q11CaravanHome(); return true; }
-		if ((m = id.match(/^q11-fish-cast-(.+)$/)) && q11.fish.day === curDay() && (q11.fish.today ?? 0) >= FISH_PER_DAY) {
+		if ((m = id.match(/^q11-fish-cast-(.+)$/)) && q11.fish.day === curDay() && (q11.fish.today ?? 0) >= FISH_PER_DAY + (perk13("fishing", 3) ? 1 : 0)) {
 			return openD({ speaker: "Fishing", text: "They've gone off the bite. Nothing's touching it. Try again tomorrow.", choices: [{ label: "Reel in", id: "q11-fish-stop" }] });
 		}
 		if ((m = id.match(/^q11-fish-cast-(.+)$/))) {
-			fishGame = { t0: performance.now(), speed: .7 + Math.random() * .5, zone: .15 + Math.random() * .6, site: m[1] };
+			fishGame = { t0: performance.now(), speed: (.7 + Math.random() * .5) * (fishWater(m[1]) === "river" ? 1.25 : fishWater(m[1]) === "ice" && !perk13("fishing", 9) ? .8 : 1), zone: .15 + Math.random() * .6, width: Math.min(.36, .2 + .02 * lv("fishing")), site: m[1], water: fishWater(m[1]) };
 			return openD({ speaker: "Fishing", text: "The bobber rides the ripples. Wait for it to dip into the green, then set the hook.", choices: [{ label: "Set the hook!", id: "q11-fish-hook" }, { label: "Reel in", id: "q11-fish-stop" }] });
 		}
 		if (id === "q11-fish-hook" && fishGame) { q11FishHook(); close(); saveGame(); return true; }
@@ -2985,7 +3032,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	function v3Price(cost) {
-		return Math.max(1, Math.round(cost * (1 - Math.min(.3, .03 * lv("barter")))));
+		return Math.max(1, Math.round(cost * (1 - Math.min(.3, .03 * lv("barter") + (perk13("barter", 3) ? .05 : 0) + (perk13("barter", 9) ? .05 : 0)) - fx13().barterPct / 100 - (w13.rebuilt.store ? .1 : 0))));
 	}
 	// -------- farm upgrades
 	function upCost(u, tier) {
@@ -3289,6 +3336,867 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.kind !== "bandit") train("hunting", enemy.kind === "moose" ? 16 : enemy.kind === "rabbit" || enemy.kind === "squirrel" ? 3 : 8);
 		if (enemy.q11 === "meds" && !world.enemies.some((e) => !e.dead && e.q11 === "meds")) achieve("bridge");
 	}
+	// ======================= v13 (0.13.0) =======================
+	// Saved as data.v13. Every field merges over freshW13(), so pre-v13 saves load with defaults.
+	function freshW13() {
+		const loyal = {};
+		for (const c of COMPANIONS) loyal[c] = 20;
+		return {
+			core: { agility: 1, grit: 1 }, backstory: "", hard: false,
+			weather: { id: "clear", day: -1 }, needs: { hunger: 100, thirst: 100, sleep: 100 }, ail: {}, buffs: {},
+			dura: {}, patched: {}, dye: {}, loyal, left: {},
+			bounties: [], bountyDay: -99, bountyDone: 0, caravan: {}, rebuilt: { store: 0, school: 0, clinic: 0 },
+			road: { day: -1, n: 0, acc: 0 }, seen: { farm: true }, diary: [], notes: "", forageAcc: 0, forageDay: -1, forageN: 0,
+			camps: {}, freed: 0, migDay: -1, slipT: 0, lastHour: -1,
+			main: { act: 1, ltKills: 0, choice: "", siege: 0, won: false, ending: "", slide: 0, flags: {} },
+		};
+	}
+	function loadW13(raw) {
+		const b = freshW13();
+		if (!raw || typeof raw !== "object") return b;
+		const m = (k) => ({ ...b[k], ...(raw[k] ?? {}) });
+		return { ...b, ...raw, core: m("core"), weather: m("weather"), needs: m("needs"), ail: m("ail"), buffs: m("buffs"), dura: m("dura"), patched: m("patched"), dye: m("dye"), loyal: m("loyal"), left: m("left"), caravan: m("caravan"), rebuilt: m("rebuilt"), road: m("road"), seen: m("seen"), camps: m("camps"), main: { ...b.main, ...(raw.main ?? {}), flags: { ...(raw.main?.flags ?? {}) } }, bounties: Array.isArray(raw.bounties) ? raw.bounties : [], diary: Array.isArray(raw.diary) ? raw.diary : [] };
+	}
+	let w13 = freshW13();
+	let pendingBackstory = "";
+	let pendingHard = false;
+	function applyBackstory(id) {
+		const b = BACKSTORIES.find((x) => x.id === id);
+		if (!b || !player) return;
+		w13.backstory = id;
+		for (const [k, n] of Object.entries(b.core)) {
+			if (k === "agility" || k === "grit") w13.core[k] += n;
+			else if (k === "wits") player.intellect += n;
+			else player[k] = (player[k] ?? 0) + n;
+		}
+		for (const [k, n] of Object.entries(b.skills)) if (v3.skills[k]) v3.skills[k].lv = Math.max(v3.skills[k].lv, n);
+		for (const [it, n] of b.gear) if (n > 0 && GEAR[it]) giveItem(it, n);
+		refreshGear(player);
+		player.hp = player.maxHp;
+		diary(`Started out as a ${b.name.toLowerCase()}. ${b.blurb}`);
+	}
+	function countOf(id) {
+		return player?.bag.reduce((n, s) => n + (s.id === id ? s.qty : 0), 0) ?? 0;
+	}
+	function hourNow() {
+		return (((clock % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC) / DAY_LENGTH_SEC * 24;
+	}
+	function core13() {
+		const p = player;
+		return { strength: p?.strength ?? 1, endurance: p?.endurance ?? 1, agility: w13.core.agility ?? 1, perception: p?.perception ?? 1, wits: p?.intellect ?? 0, grit: w13.core.grit ?? 1 };
+	}
+	function fx13() {
+		return coreEffects(core13());
+	}
+	function perk13(skill, n) {
+		return lv(skill) >= n;
+	}
+	/** Older regression suites run with window.__v13Quiet: no random weather, moon, needs, sickness, foraging or road events. */
+	const quiet13 = () => typeof window !== "undefined" && !!window.__v13Quiet;
+	function weather13() {
+		if (quiet13()) return WEATHER.clear;
+		return WEATHER[w13.weather.id] ?? WEATHER.clear;
+	}
+	function moon13() {
+		if (quiet13()) return moonEffect(2);
+		return moonEffect(moonPhase(curDay()));
+	}
+	function buffOn(id) {
+		return (w13.buffs[id] ?? -1) > clock;
+	}
+	function diary(text) {
+		w13.diary.push({ day: curDay() + 1, text });
+		if (w13.diary.length > 120) w13.diary.shift();
+	}
+	function loyalty(fx) {
+		const d = LOYALTY_FX[fx];
+		if (!d) return;
+		const lead = perk13("leadership", 3) ? 1 : 0;
+		const bits = [];
+		for (const [c, n] of Object.entries(d)) {
+			if (w13.left[c]) continue;
+			const delta = n > 0 ? n + lead : n;
+			w13.loyal[c] = Math.max(-100, Math.min(100, (w13.loyal[c] ?? 20) + delta));
+			bits.push(`${COMPANION_NAME[c]} ${delta > 0 ? "+" : ""}${delta}`);
+			if (w13.loyal[c] <= LOYALTY_LEAVE && !w13.left[c]) {
+				w13.left[c] = curDay() + 1;
+				pushLog(`${COMPANION_NAME[c]} has had enough. "I can't stand with you after that." They won't ride with you now.`);
+				diary(`${COMPANION_NAME[c]} left us.`);
+				if (party && roleComp(party.role) === c) party = null;
+			}
+		}
+		if (bits.length) pushLog(`Loyalty: ${bits.join(", ")}.`);
+		if (n13(fx) > 0) train("leadership", 6);
+	}
+	function n13(fx) { return Object.values(LOYALTY_FX[fx] ?? {}).reduce((a, b) => a + b, 0); }
+	function roleComp(role) {
+		return role === "cal" ? "jack" : COMPANIONS.includes(role) ? role : null;
+	}
+	function helpsMore(role) {
+		const c = roleComp(role);
+		return !!c && (w13.loyal[c] ?? 0) >= LOYALTY_HELP;
+	}
+	// ---- armor wear, sets
+	function duraOf(id) {
+		return w13.dura[id] ?? DURA_MAX;
+	}
+	const ARMOR13_IDS = ["woolcap", "shirt", "trousers", "gloves", "boots"];
+	function armorPieces() {
+		return player ? [player.headId, player.coatId, player.legsId, player.handsId, player.feetId].filter((id) => id && GEAR[id]) : [];
+	}
+	function setBonus13() {
+		if (!player) return null;
+		const ids = [player.headId, player.coatId, player.legsId, player.handsId, player.feetId];
+		if (ids.some((id) => !id || !GEAR[id])) return null;
+		const q = GEAR[ids[0]].quality;
+		if (ids.some((id) => GEAR[id].quality !== q)) return null;
+		return { quality: q, ...SET_BONUS[q] };
+	}
+	/** Armor value after wear (a piece at 0 durability gives a quarter) plus the set bonus. */
+	function def13(base) {
+		if (!player) return base;
+		let d = 0;
+		for (const id of [player.coatId, player.headId, player.legsId, player.handsId, player.feetId, player.backId]) {
+			const g = GEAR[id];
+			if (!g) continue;
+			const u = duraOf(id) / DURA_MAX;
+			d += g.def * (u <= 0 ? .25 : .5 + .5 * u) + (w13.patched[id] ? .5 : 0);
+		}
+		const sb = setBonus13();
+		return Math.round(d) + (sb?.def ?? 0) + (base - [player.coatId, player.headId, player.legsId, player.handsId, player.feetId, player.backId].reduce((n, id) => n + (GEAR[id]?.def ?? 0), 0));
+	}
+	function wearArmor(dmg) {
+		const ids = armorPieces();
+		if (!ids.length) return;
+		const id = ids[Math.floor(Math.random() * ids.length)];
+		w13.dura[id] = Math.max(0, duraOf(id) - (2 + Math.min(4, Math.floor(dmg / 4))));
+		if (w13.dura[id] === 0 && !w13.flagsBroke?.[id]) pushLog(`Your ${GEAR[id].name.toLowerCase()} is worn through. Patch it or repair it at the workbench.`);
+		refreshGear(player);
+	}
+	function repairCost(id) {
+		const g = GEAR[id];
+		const tier = TIER_OF[g?.quality] ?? 1;
+		return Math.max(1, tier * 2 + Math.ceil((DURA_MAX - duraOf(id)) / 25) - (perk13("mechanics", 6) ? 1 : 0));
+	}
+	// ---- needs, sickness, buffs
+	function needsTick(hours) {
+		if (quiet13() || !player || mode11 || raidMode || snow < 3) return;
+		const r = w13.hard ? NEED_RATE.hard : NEED_RATE.normal;
+		const mul = fx13().drainMul;
+		const n = w13.needs;
+		n.hunger = Math.max(0, n.hunger - r.hunger * mul * hours);
+		n.thirst = Math.max(0, n.thirst - r.thirst * mul * hours);
+		n.sleep = Math.max(0, n.sleep - r.sleep * (buffOn("awake") ? .5 : 1) * hours);
+		const empty = (n.hunger <= 0 ? 1 : 0) + (n.thirst <= 0 ? 1 : 0) + (n.sleep <= 0 ? 1 : 0);
+		if (empty && player.hp > 1) player.hp = Math.max(1, player.hp - r.hurt * empty * hours * 4);
+	}
+	function needsSpeed() {
+		const n = w13.needs;
+		return (n.hunger < 15 ? .92 : 1) * (n.thirst < 15 ? .92 : 1) * (n.sleep < 15 ? .9 : 1);
+	}
+	function ailSpeed() {
+		let m = 1;
+		for (const id of Object.keys(w13.ail)) m *= AILMENTS[id]?.speed ?? 1;
+		return m;
+	}
+	function catchAil(id, why) {
+		if (quiet13() && why !== "Test.") return false;
+		if (w13.ail[id]) return false;
+		w13.ail[id] = curDay() + 1;
+		pushLog(`${AILMENTS[id].name}: ${why} ${AILMENTS[id].text} (${AILMENTS[id].cure})`);
+		diary(`Came down with ${AILMENTS[id].name.toLowerCase()}.`);
+		sync(true);
+		return true;
+	}
+	function cureAil(id, how) {
+		if (!w13.ail[id]) return false;
+		delete w13.ail[id];
+		pushLog(`${AILMENTS[id].name} is gone. ${how}`);
+		return true;
+	}
+	// ---- weather, moon, migration (daily)
+	function v13Daily(day) {
+		if (!player || mode11) return;
+		if (w13.weather.day !== day) {
+			const season = seasonNow();
+			const prev = w13.weather.id;
+			w13.weather = { id: rollWeather(season, Math.random()), day };
+			if (w13.weather.id !== prev) pushLog(`Weather: ${WEATHER[w13.weather.id].text}`);
+			if (w13.weather.id === "noreaster") diary("Nor'easter came through.");
+		}
+		const ph = moonPhase(day);
+		if (ph === 4) pushLog("Full moon tonight. Bright enough to read by. The raiders like it too.");
+		if (ph === 0) pushLog("New moon. Dark as the inside of a cow. Good night for sneaking.");
+		if (day - w13.bountyDay >= 3) { w13.bounties = makeBounties(day); w13.bountyDay = day; }
+		// sickness: colds in cold weather, infected cuts drain, bones heal slow
+		const cold = weather13().cold + (seasonNow() === 3 ? 1 : 0);
+		if (cold >= 2 && !buffOn("warm") && Math.random() < Math.max(0, .18 * cold / 3 - fx13().sickResist - .05 * lv("survival") - (perk13("survival", 3) ? .2 : 0))) catchAil("cold", "Too many nights in the wet and cold.");
+		if (w13.ail.cold && day - w13.ail.cold >= 3 && (buffOn("warm") || Math.random() < .5)) cureAil("cold", "Three days by the stove did it.");
+		if (w13.ail.cut) player.hp = Math.max(1, player.hp - AILMENTS.cut.hpDay * 3);
+		if (w13.ail.bone && day - w13.ail.bone >= 6) cureAil("bone", "It knit on its own. Slow.");
+		v13Migrate();
+		diaryDay(day);
+	}
+	function diaryDay(day) {
+		if (w13.lastDiary === day) return;
+		w13.lastDiary = day;
+		diary(`${SEASONS[seasonNow()]}, ${MOON_NAMES[moonPhase(day)].toLowerCase()}. ${WEATHER[w13.weather.id].name}.`);
+	}
+	function v13Migrate() {
+		if (!world || !player || mapId === 1 && !world.enemies) return;
+		const key = `${mapId}:${seasonNow()}:${curDay()}`;
+		if (w13.migKey === key) return;
+		w13.migKey = key;
+		const want = MIGRATION[mapId]?.[seasonNow()];
+		if (!want) return;
+		for (const [kind, n] of Object.entries(want)) {
+			const have = world.enemies.filter((e) => !e.dead && e.kind === kind).length;
+			for (let i = have; i < n; i++) {
+				const t = tileOf(player.x, player.y);
+				for (let k = 0; k < 40; k++) {
+					const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 30;
+					const tx = Math.round(t.tx + Math.cos(a) * r), ty = Math.round(t.ty + Math.sin(a) * r);
+					if (tx < 4 || ty < 4 || tx >= 152 || ty >= 152 || cellBlocked(world, tx, ty)) continue;
+					const hp = kind === "moose" ? 60 : kind === "deer" ? 26 : kind === "wolf" ? 22 : kind === "coyote" ? 14 : 6;
+					const atk = kind === "moose" ? 9 : kind === "deer" ? 3 : kind === "wolf" ? 5 : kind === "coyote" ? 3 : 1;
+					const e = q11Spawn([kind, null, null, hp, atk, Math.round(hp / 2)], { x: (tx + .5) * 64, y: (ty + .5) * 64 }, "mig", false);
+					if (e) { e.temper = kind === "wolf" || kind === "coyote" ? "hostile" : "shy"; e.mig = true; }
+					break;
+				}
+			}
+		}
+	}
+	// ---- per-step tick
+	function v13Tick(dt) {
+		if (!player || !world || mode11) return;
+		const h = hourNow();
+		const hr = Math.floor(clock / (DAY_LENGTH_SEC / 24));
+		if (w13.lastHour < 0) w13.lastHour = hr;
+		if (hr > w13.lastHour) { needsTick(Math.min(24, hr - w13.lastHour)); w13.lastHour = hr; }
+		if (w13.weather.day !== curDay()) v13Daily(curDay());
+		// discovered towns for fast travel
+		for (const t of townSpots()) if (!w13.seen[t.id] && t.map === mapId && Math.hypot(t.x - player.x, t.y - player.y) < 9 * TILE) { w13.seen[t.id] = true; pushLog(`Found: ${t.name}. You can ride here from anywhere now.`); }
+		// black ice: walking or riding, you can go down
+		if (w13.weather.id === "blackice" && phase === "play" && !inside && intent && !perk13("survival", 6)) {
+			w13.slipT += dt;
+			if (w13.slipT > 6) {
+				w13.slipT = 0;
+				if (Math.random() < (mounted ? .3 : .08) * (1 - .05 * lv("survival"))) {
+					if (mounted) { parkBike(false); pushLog("The back wheel goes out from under you on the black ice. You hit the road hard."); }
+					else pushLog("Your feet go out from under you on the black ice.");
+					player.hp = Math.max(1, player.hp - (mounted ? 8 : 3));
+					if (Math.random() < (mounted ? .5 : .2)) catchAil("bone", "You landed wrong.");
+					train("survival", 4);
+				}
+			}
+		}
+		if (mounted && weather13().bike === 0) { parkBike(false); pushLog("Can't ride in a nor'easter. You can't see the road."); }
+		if (weather13().cold >= 2 && !inside && h > 18) w13.survAcc = (w13.survAcc ?? 0) + dt;
+		if ((w13.survAcc ?? 0) > 30) { w13.survAcc = 0; train("survival", 2); }
+		// foraging while walking the woods
+		if (intent?.kind === "walk" && !inside && mapId !== 2 && !(mapId === 0 && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty))) {
+			w13.forageAcc += dt;
+			if (w13.forageAcc > 9) { w13.forageAcc = 0; forage(); }
+		}
+		v13RoadTick(dt);
+		v13CampTick();
+		v13MainTick();
+		v13SiegeTick(dt);
+	}
+	function forage(force = false) {
+		if (quiet13() && !force) return false;
+		if (w13.forageDay !== curDay()) { w13.forageDay = curDay(); w13.forageN = 0; }
+		if (!force && w13.forageN >= 4 + (perk13("foraging", 3) ? 1 : 0)) return false;
+		if (!force && seasonNow() === 3 && !perk13("foraging", 9)) return false;
+		if (!force && Math.random() > .22 + .04 * lv("foraging")) return false;
+		w13.forageN += 1;
+		const r = Math.random();
+		const it = seasonNow() === 3 ? "greens" : r < .45 ? "berries" : r < .7 || !perk13("foraging", 6) ? "greens" : "mushrooms";
+		giveItem(it, 1);
+		train("foraging", 5);
+		pushLog(it === "berries" ? "Foraging: a handful of blueberries off the ledge." : it === "mushrooms" ? "Foraging: chanterelles under the hemlocks." : "Foraging: fiddleheads and wild greens by the brook.");
+		return true;
+	}
+	// ---- fast travel by bike
+	function townSpots() {
+		const out = [];
+		for (const t of TOWNS13) {
+			let x = 0, y = 0;
+			if (t.id === "farm") { if (mapId !== 0) { out.push({ ...t, x: 0, y: 0 }); continue; } const c = farmCenter(); x = c.x; y = c.y; }
+			else if (t.id === "jack") { const n = mapId === 0 ? world?.npcs.find((m) => m.role === "cal") : null; if (!n) { out.push({ ...t, x: -1e6, y: -1e6 }); continue; } x = n.x; y = n.y; }
+			else if (t.id === "lowell") { const n = mapId === 0 ? world?.npcs.find((m) => m.role === "mira") : null; if (!n) { out.push({ ...t, x: -1e6, y: -1e6 }); continue; } x = n.x; y = n.y; }
+			else if (t.id === "skow") { if (mapId !== 2) { out.push({ ...t, x: -1e6, y: -1e6 }); continue; } x = player.x; y = player.y; }
+			out.push({ ...t, x, y });
+		}
+		return out;
+	}
+	function travelMenu() {
+		const opts = TOWNS13.filter((t) => w13.seen[t.id]).map((t) => ({ label: `${t.name} (${travelGas(here13(), t)} gas)`, id: `v13-go-${t.id}` }));
+		return openD13("Bike", `Where to? You've got ${countOf("gas")} gas. ${weather13().bike === 0 ? "Not in a nor'easter." : weather13().bike < .7 ? "Roads are bad today." : ""}`, [...opts, { label: "Stay put", id: "close" }]);
+	}
+	function here13() {
+		return { map: mapId, tx: tileOf(player.x, player.y).tx - WORLD_OX, ty: tileOf(player.x, player.y).ty - WORLD_OY };
+	}
+	function fastTravel(id) {
+		const t = TOWNS13.find((x) => x.id === id);
+		if (!t || !player) return;
+		if (!w13.seen[id]) { pushLog("You haven't been there yet."); return; }
+		if (!bikeBuilt()) { pushLog("You need the motor bicycle running for that."); return; }
+		if (weather13().bike === 0) { pushLog("Not in a nor'easter."); return; }
+		const gas = travelGas(here13(), t);
+		if (countOf("gas") < gas) { pushLog(`Not enough gas. That's ${gas} cans.`); return; }
+		takeItem("gas", gas);
+		train("mechanics", 4);
+		const arrive = () => {
+			if (id === "farm") { const c = farmCenter(); return { x: c.x + 60, y: c.y + 90 }; }
+			const s = townSpots().find((x) => x.id === id);
+			return s && s.x > -1e5 ? { x: s.x + 60, y: s.y + 60 } : null;
+		};
+		if (t.map !== mapId) travelTo(t.map, t.map === 0 && id !== "farm" ? null : t.map === 0 ? () => { const c = farmCenter(); return { x: c.x + 60, y: c.y + 90 }; } : null);
+		const at = arrive();
+		if (at && mapId === t.map) { const s = clearOutside(at.x, at.y); player.x = s.x; player.y = s.y; const focus = worldToScreen(player.x, player.y, 0, 0); camX = focus.sx - viewW / 2; camY = focus.sy - viewH / 2; }
+		pushLog(`You ride to ${t.name}. ${gas} gas gone.`);
+		if (Math.random() < .3 * (weather13().bike < .7 ? 1.5 : 1)) startRoadEvent(pickRoadEvent(Math.random()));
+		saveGame(); sync(true);
+	}
+	// ---- road events
+	function v13RoadTick(dt) {
+		if (quiet13() || inside || raid || dialogue || mapId === 1) return;
+		const t = tileOf(player.x, player.y);
+		const road = world.tiles[t.ty * MAP_W + t.tx] === 2 || world.tiles[t.ty * MAP_W + t.tx] === 5;
+		if (!road || !intent) return;
+		if (w13.road.day !== curDay()) { w13.road.day = curDay(); w13.road.n = 0; }
+		if (w13.road.n >= 1) return;
+		w13.road.acc += dt;
+		if (w13.road.acc < 40) return;
+		w13.road.acc = 0;
+		if (Math.random() < .25) startRoadEvent(pickRoadEvent(Math.random()));
+	}
+	function startRoadEvent(id) {
+		w13.road.n += 1;
+		const ev = ROAD_EVENTS.find((e) => e.id === id);
+		w13.roadEv = id;
+		diary(`On the road: ${ev.title.toLowerCase()}.`);
+		if (id === "car") return openD13(ev.title, ev.text, [{ label: lv("mechanics") >= 2 || perk13("mechanics", 9) ? "Get it running (Mechanics)" : "Siphon what's in the tank", id: "v13-road-car" }, { label: "Leave it", id: "close" }]);
+		if (id === "stranger") return openD13(ev.title, ev.text, [{ label: "Trade him some jerky for news (1 jerky)", id: "v13-road-help" }, { label: "Take his pack at gunpoint", id: "v13-road-rob" }, { label: "Walk on by", id: "close" }]);
+		if (id === "lostkid") return openD13(ev.title, ev.text, [{ label: "Walk him home to the Forks", id: "v13-road-kid" }, { label: "Point him the way and go", id: "close" }]);
+		// ambush
+		const ring = 220;
+		for (let i = 0; i < 3; i++) {
+			const a = i * 2.1 + Math.random();
+			const s = clearOutside(player.x + Math.cos(a) * ring, player.y + Math.sin(a) * ring);
+			q11Spawn(["bandit", null, "Road raider", 16, 4, 10], s, "ambush", true);
+		}
+		pushLog(`${ev.title}: ${ev.text}`);
+		sync(true);
+	}
+	// ---- caravans
+	function v13Caravan() {
+		const r = caravanOnRoad(curDay(), hourNow());
+		return r && mapId === 0 ? r : null;
+	}
+	function caravanKey(r) {
+		return `${r.id}:${curDay()}`;
+	}
+	function caravanMenu() {
+		const r = v13Caravan();
+		if (!r) return openD13("Road", "No caravan on the road right now. They run on a schedule: Lowelltown to Skowhegan every 2 days (9 to 3), Skowhegan to Bangor every 3 days (10 to 4).", [{ label: "Close", id: "close" }]);
+		if (w13.caravan[caravanKey(r)]) return openD13("Caravan", "The caravan's already gone by today.", [{ label: "Close", id: "close" }]);
+		return openD13(`Caravan: ${r.from} to ${r.to}`, "Two sledges and a horse, three men with deer rifles. The driver squints at you.", [{ label: "Ride guard for them", id: "v13-car-guard" }, { label: "Rob it", id: "v13-car-rob" }, { label: "Let it pass", id: "close" }]);
+	}
+	// ---- Harmony rebuilding
+	function rebuildCost(r) {
+		const cut = (perk13("carpentry", 6) ? .9 : 1) * (1 - .04 * lv("carpentry"));
+		return { wood: Math.ceil(r.cost.wood * cut), stone: Math.ceil(r.cost.stone * cut), iron: r.cost.iron, need: r.cost.need ?? [] };
+	}
+	function rebuildMenu() {
+		return openD13("Harmony", "Harmony's store, school and clinic stand empty down the road. Fix them up and folks will come back.", [...REBUILD.map((r) => {
+			const c = rebuildCost(r);
+			return { label: w13.rebuilt[r.id] ? `${r.name}: open` : `${r.name}: ${c.wood} wood, ${c.stone} stone, ${c.iron} iron${c.need.map(([i, n]) => `, ${n} ${GEAR[i]?.name.toLowerCase() ?? i}`).join("")} — ${r.effect}`, id: `v13-rebuild-${r.id}` };
+		}), ...(w13.rebuilt.clinic ? [{ label: "Clinic: get patched up (4 iron)", id: "v13-clinic" }] : []), { label: "Close", id: "close" }]);
+	}
+	function rebuild(id) {
+		const r = REBUILD.find((x) => x.id === id);
+		if (!r || w13.rebuilt[id]) return;
+		const c = rebuildCost(r);
+		if (player.wood < c.wood || player.stone < c.stone || player.scrap < c.iron || c.need.some(([i, n]) => countOf(i) < n)) { pushLog(`Not enough for the ${r.name.toLowerCase()}.`); return; }
+		player.wood -= c.wood; player.stone -= c.stone; player.scrap -= c.iron;
+		for (const [i, n] of c.need) takeItem(i, n);
+		w13.rebuilt[id] = curDay() + 1;
+		train("carpentry", 20); train("leadership", 10);
+		loyalty("rebuild");
+		pushLog(`The ${r.name} is open again. ${r.effect}`);
+		diary(`Reopened the ${r.name}.`);
+		shiftRep("ponds", 3, 8);
+		v13WorldProps();
+		saveGame(); sync(true);
+	}
+	function rebuiltN() {
+		return Object.values(w13.rebuilt).filter(Boolean).length;
+	}
+	// ---- cooking
+	function cookMenu() {
+		return openD13("Stove", "The farmhouse stove's going. What are you making?", [...RECIPES13.map((r) => ({ label: `${r.name}: ${r.need.map(([i, n]) => `${n} ${GEAR[i]?.name.toLowerCase() ?? i}`).join(", ")}. ${r.text}`, id: `v13-cook-${r.id}` })), { label: "Close", id: "close" }]);
+	}
+	function cook(id) {
+		const r = RECIPES13.find((x) => x.id === id);
+		if (!r) return false;
+		if (r.need.some(([i, n]) => countOf(i) < n)) { pushLog(`Not enough for ${r.name.toLowerCase()}.`); return false; }
+		for (const [i, n] of r.need) takeItem(i, n);
+		const qty = 1 + (perk13("cooking", 3) ? 1 : 0);
+		giveItem(r.makes, qty);
+		train("cooking", 8);
+		pushLog(`You cook ${r.name.toLowerCase()}${qty > 1 ? ` (${qty} servings)` : ""}.`);
+		sync(true);
+		return true;
+	}
+	/** Eating, drinking and v13 cures from the pack. Returns true when it used the item. */
+	function v13Use(def, stack) {
+		const f = FOOD_VALUE[def.id];
+		if (def.id === "medicine") { if (cureAil("cut", "The medicine knocks the infection down.") || cureAil("cold", "The medicine clears your head.") ) train("medicine", 6); return false; }
+		if (def.family === "bandage") { train("firstaid", 5); if (w13.ail.bone && countOf("wood") >= 0 && player.wood >= 1 && perk13("firstaid", 6)) { player.wood -= 1; cureAil("bone", "You splint it with a stave and a bandage."); } if (perk13("firstaid", 3) && w13.ail.cut) cureAil("cut", "Clean cut, clean bandage."); return false; }
+		if (!f) return false;
+		stack.qty -= 1;
+		if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
+		const more = 1 + .05 * lv("cooking");
+		const n = w13.needs;
+		if (f.hunger) n.hunger = Math.min(100, n.hunger + f.hunger * more);
+		if (f.thirst) n.thirst = Math.min(100, n.thirst + f.thirst * more);
+		if (f.sleep) n.sleep = Math.min(100, n.sleep + f.sleep);
+		if (perk13("cooking", 9) && RECIPES13.some((r) => r.makes === def.id)) n.thirst = Math.min(100, n.thirst + 10);
+		if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal);
+		const r = RECIPES13.find((x) => x.makes === def.id);
+		if (r?.buff) {
+			const hrs = r.hours * (1 + .05 * lv("cooking")) * (r.buff === "warm" && perk13("cooking", 6) ? 1.5 : 1);
+			w13.buffs[r.buff] = clock + hrs / 24 * DAY_LENGTH_SEC;
+			if (r.buff === "cheer") for (const c of COMPANIONS) if (!w13.left[c]) w13.loyal[c] = Math.min(100, w13.loyal[c] + 3);
+			if (r.buff === "strong") refreshGear(player);
+		}
+		if (def.id === "tonic") cureAil("cold", "The spruce tonic burns going down and clears you right out.");
+		sfx("click");
+		pushLog(`${def.name}: ${f.hunger ? "fed" : ""}${f.thirst ? `${f.hunger ? ", " : ""}watered` : ""}${f.sleep ? " and awake" : ""}.${r?.buff ? ` ${r.text}` : ""}`);
+		return true;
+	}
+	function sleep13() {
+		const n = w13.needs;
+		n.sleep = 100;
+		n.hunger = Math.max(0, n.hunger - 10);
+		n.thirst = Math.max(0, n.thirst - 12);
+		if (w13.ail.cold) w13.ail.cold -= 1;
+	}
+	// ---- workbench: repair, patch, dye
+	function benchMenu() {
+		const pieces = armorPieces();
+		if (!pieces.length) return openD13("Workbench", "You're not wearing anything worth fixing.", [{ label: "Close", id: "close" }]);
+		const ch = [];
+		for (const id of pieces) {
+			const d = duraOf(id);
+			if (d < DURA_MAX) ch.push({ label: `Repair ${GEAR[id].name} (${d}/${DURA_MAX}): ${repairCost(id)} iron`, id: `v13-repair-${id}` });
+			if (!w13.patched[id] || d < 60) ch.push({ label: `Patch ${GEAR[id].name} with hide (+40, a bit tougher)`, id: `v13-patch-${id}` });
+		}
+		ch.push({ label: "Dye your armor", id: "v13-dyes" });
+		ch.push({ label: "Close", id: "close" });
+		return openD13("Workbench", `The bench, the vise and a tin of rivets. ${setBonus13() ? `Wearing the ${setBonus13().name}: ${setBonus13().text}` : "A full matching set gives a bonus."}`, ch);
+	}
+	function dyeMenu() {
+		return openD13("Dye", "Boil it up in the kettle. Which color?", [...DYES.map((d) => ({ label: `${d.name} (${d.need[1]} ${GEAR[d.need[0]]?.name.toLowerCase() ?? d.need[0]})`, id: `v13-dye-${d.id}` })), { label: "Wash it out (plain)", id: "v13-dye-none" }, { label: "Close", id: "close" }]);
+	}
+	function dyeAll(id) {
+		const d = DYES.find((x) => x.id === id);
+		if (id === "none") { w13.dye = {}; pushLog("You wash the dye out."); return; }
+		if (!d) return;
+		if (countOf(d.need[0]) < d.need[1]) { pushLog(`You need ${d.need[1]} ${GEAR[d.need[0]]?.name.toLowerCase() ?? d.need[0]}.`); return; }
+		takeItem(d.need[0], d.need[1]);
+		for (const p of ["head", "chest", "legs", "hands", "feet"]) w13.dye[p] = d.hex;
+		pushLog(`Your armor comes out of the kettle ${d.name.toLowerCase()}.`);
+		figureKey = "";
+	}
+	// ---- bounty board
+	function bountyMenu() {
+		if (!w13.bounties.length) { w13.bounties = makeBounties(curDay()); w13.bountyDay = curDay(); }
+		return openD13("Bounty board", "Notes tacked up on the store door. New ones every few days.", [...w13.bounties.map((b) => ({ label: `${b.text}: ${Math.min(b.got, b.need)}/${b.need} (${b.pay} iron)${b.got >= b.need ? " — collect" : b.kind === "deliver" ? ` — hand in ${GEAR[b.item]?.name.toLowerCase() ?? b.item}` : ""}`, id: `v13-bounty-${b.id}` })), { label: "Close", id: "close" }]);
+	}
+	function bountyTurnIn(id) {
+		const b = w13.bounties.find((x) => x.id === id);
+		if (!b || b.paid) return;
+		if (b.kind === "deliver" && b.got < b.need) {
+			const give = Math.min(countOf(b.item), b.need - b.got);
+			if (give > 0) { takeItem(b.item, give); b.got += give; }
+		}
+		if (b.got < b.need) { pushLog(`Not done yet: ${b.got}/${b.need}.`); return; }
+		b.paid = true;
+		player.scrap += b.pay;
+		w13.bountyDone += 1;
+		loyalty("bounty");
+		pushLog(`Bounty paid: ${b.pay} iron.`);
+		w13.bounties = w13.bounties.filter((x) => !x.paid);
+		if (!w13.bounties.length) { w13.bounties = makeBounties(curDay() + 1); w13.bountyDay = curDay(); }
+	}
+	function v13Kill(enemy) {
+		for (const b of w13.bounties) {
+			if (b.kind === "raiders" && enemy.kind === "bandit") b.got += 1;
+			if (b.kind === enemy.kind) b.got += 1;
+		}
+		if (enemy.lt && !enemy.ltCounted) { enemy.ltCounted = true; w13.main.ltKills += 1; pushLog(`Lieutenant down (${w13.main.ltKills}/3).`); if (enemy.v13camp) w13.camps[enemy.v13camp] = { ...(w13.camps[enemy.v13camp] ?? {}), lt: true }; }
+		if (enemy.name === "Caravan robber" && w13.caravanGuard && !world.enemies.some((e) => !e.dead && e !== enemy && e.name === "Caravan robber")) {
+			const r = CARAVAN13.find((c) => c.id === w13.caravanGuard);
+			w13.caravanGuard = "";
+			player.scrap += 8;
+			if (r) giveItem(r.cargo[0][0], Math.ceil(r.cargo[0][1] / 2));
+			loyalty("guard-caravan");
+			grantXp(25);
+			pushLog("The caravan gets through. The driver pays you 8 iron and a share of the load.");
+		}
+		if (enemy.variant === "collector") { w13.main.collectorDown = true; pushLog("The Collector goes down in the snow."); }
+	}
+	// ---- raider camps (night raids)
+	const CAMPS13 = [
+		{ id: "camp0", map: 0, tx: 50, ty: 30, name: "Raider camp at the gravel pit" },
+		{ id: "camp1", map: 1, tx: 30, ty: 70, name: "Raider camp in the Holeb cut" },
+		{ id: "camp2", map: 2, tx: 30, ty: 30, name: "Raider camp behind the mill" },
+	];
+	const DEPOT13 = { map: 1, tx: 92, ty: 34 };
+	function camp13Spot(c) {
+		return q10Tile(c.tx, c.ty);
+	}
+	function v13World() {
+		if (!world || mode11) return;
+		for (const c of CAMPS13) {
+			if (c.map !== mapId) continue;
+			const s = camp13Spot(c);
+			const t = tileOf(s.x, s.y);
+			if (!world.props.some((p) => p.v13camp === c.id)) { addProp(world, "firepot", t.tx, t.ty - 2, { v13camp: c.id }) || addProp(world, "firepot", t.tx + 2, t.ty - 2, { v13camp: c.id }); addProp(world, "crates", t.tx + 3, t.ty, { v13camp: c.id, label: "RAIDER CAMP" }); }
+			const st = w13.camps[c.id] ?? {};
+			if (!st.lt && !world.enemies.some((e) => !e.dead && e.v13camp === c.id && e.lt)) {
+				const lt = q11Spawn(["bandit", "armor", `Lieutenant ${["Roy", "Dube", "Gagnon"][CAMPS13.indexOf(c)]}`, 44, 8, 40], { x: s.x + 40, y: s.y + 30 }, "camp", false);
+				if (lt) { lt.lt = true; lt.v13camp = c.id; lt.elite = true; }
+				for (let i = 0; i < 2; i++) { const g = q11Spawn(["bandit", "scout", "Camp guard", 16, 4, 10], { x: s.x - 50 + i * 100, y: s.y + 70 }, "camp", false); if (g) g.v13camp = c.id; }
+			}
+		}
+		if (mapId === DEPOT13.map && w13.main.act >= 6) {
+			const s = q10Tile(DEPOT13.tx, DEPOT13.ty);
+			const t = tileOf(s.x, s.y);
+			if (!world.props.some((p) => p.v13depot)) addProp(world, "crates", t.tx, t.ty, { v13depot: true, label: "SUPPLY DEPOT" });
+			if (!w13.main.flags.grokPath && !world.enemies.some((e) => !e.dead && e.variant === "grok")) {
+				const g = q11Spawn(["bandit", "grok", "The Grok", 220, 15, 90], { x: s.x - 600, y: s.y + 300 }, "v13grok", true);
+				if (g) g.v13grok = true;
+			}
+		}
+		v13WorldProps();
+	}
+	function v13WorldProps() {
+		if (!world || mapId !== 0) return;
+		const base = Q11_SITES.school;
+		for (const [i, r] of REBUILD.entries()) {
+			if (!w13.rebuilt[r.id] || world.props.some((p) => p.v13town === r.id)) continue;
+			const s = q10Tile(base.tx + 5 + i * 5, base.ty - 4);
+			const t = tileOf(s.x, s.y);
+			addProp(world, "shack", t.tx, t.ty, { v13town: r.id, skin: `harmony-${r.id}`, label: r.name.toUpperCase() });
+		}
+	}
+	function nearCamp() {
+		for (const c of CAMPS13) {
+			if (c.map !== mapId) continue;
+			const s = camp13Spot(c);
+			if (Math.hypot(s.x - player.x, s.y - player.y) < 6 * TILE) return c;
+		}
+		return null;
+	}
+	function campStealth() {
+		const dark = nightDark(clock);
+		return Math.max(5, Math.min(92, 30 + dark * 30 + lv("stealth") * 4 + skillOf("sneak") * .3 + moon13().stealth * (perk13("stealth", 6) && moon13().stealth > 0 ? 2 : 1) + (w13.weather.id === "fog" ? 12 : 0) + (perk13("stealth", 3) ? 10 : 0) + core13().agility * 2));
+	}
+	function v13CampTick() {
+		if (dialogue || raid || inside) return;
+		const c = nearCamp();
+		if (!c || nightDark(clock) < .3) { w13.campPrompt = ""; return; }
+		const st = w13.camps[c.id] ?? {};
+		if (st.raidDay === curDay() || w13.campPrompt === c.id) return;
+		w13.campPrompt = c.id;
+		openD13(c.name, `Lanterns and a cookfire. Two guards, and the lieutenant asleep by the sledges. ${st.prisoners === 0 ? "" : "You can see people tied up by the woodpile."} Your odds of getting in quiet: about ${Math.round(campStealth())}%.`, [{ label: "Sneak in: steal supplies, free the prisoners, deal with the lieutenant", id: `v13-camp-${c.id}` }, { label: "Back off", id: "close" }]);
+	}
+	function campRaid(id, forceOk) {
+		const c = CAMPS13.find((x) => x.id === id);
+		if (!c) return;
+		const st = w13.camps[id] = { ...(w13.camps[id] ?? {}) };
+		st.raidDay = curDay();
+		let ok = forceOk ?? Math.random() * 100 < campStealth();
+		if (!ok && perk13("stealth", 9) && !st.retried) { st.retried = true; ok = Math.random() * 100 < campStealth(); }
+		train("stealth", 12);
+		if (ok) {
+			giveItem("shells", 4); giveItem("jerky", 2); player.scrap += 8;
+			if (Math.random() < .5) giveItem("medicine", 1);
+			if (st.prisoners !== 0) { st.prisoners = 0; w13.freed += 3; loyalty("free-prisoners"); pushLog("You cut the ropes. Three people from the Forks slip off into the dark toward Harmony."); diary("Freed three prisoners from a raider camp."); }
+			const lt = world.enemies.find((e) => !e.dead && e.lt && e.v13camp === id);
+			if (lt) { lt.hp = 0; markDead(lt, lt.xp); }
+			else if (!st.lt) { st.lt = true; w13.main.ltKills += 1; pushLog(`You find the lieutenant asleep by the sledges. He doesn't wake up (${w13.main.ltKills}/3).`); }
+			pushLog("In and out. Nobody woke up. You took what they'd stolen.");
+			achieve("ghost");
+		} else {
+			pushLog("A guard kicks a can. Shouting. The whole camp's up.");
+			for (const e of world.enemies) if (!e.dead && e.v13camp === id) { e.aggro = true; e.temper = "hostile"; }
+		}
+		saveGame(); sync(true);
+	}
+	// ---- main quest: The Long Winter
+	function mainAct() {
+		return MAIN_ACTS.find((a) => a.n === w13.main.act) ?? MAIN_ACTS[MAIN_ACTS.length - 1];
+	}
+	function mainAdvance(note) {
+		const a = mainAct();
+		if (a.n >= 9) return;
+		pushLog(`The Long Winter — ${a.title}: done. ${a.done}`);
+		diary(`${a.title}: ${a.done}`);
+		w13.main.act += 1;
+		const nx = mainAct();
+		pushLog(`The Long Winter — Act ${nx.n}, ${nx.title}: ${nx.goal}`);
+		grantXp(30 + 10 * a.n);
+		if (note) pushLog(note);
+		if (nx.n === 6 && mapId === 1) v13World();
+		achieve(`main${a.n}`);
+		saveGame(); sync(true);
+	}
+	/** Hook for later story content: every act check runs here, and side quests feed it. */
+	function v13MainTick() {
+		const a = w13.main.act;
+		if (a === 1 && snow >= 3 && v3.ach.raid1) mainAdvance();
+		else if (a === 3 && (w13.loyal.jack ?? 0) >= 30 && w13.main.flags.jackTalk) mainAdvance();
+		else if (a === 4 && w13.main.flags.marcel) mainAdvance();
+		else if (a === 5 && w13.main.ltKills >= 3) mainAdvance();
+		else if (a === 6 && mapId === DEPOT13.map) {
+			const s = q10Tile(DEPOT13.tx, DEPOT13.ty);
+			if (Math.hypot(s.x - player.x, s.y - player.y) < 4 * TILE) { w13.main.flags.depot = true; giveItem("gas", 3); giveItem("medicine", 2); mainAdvance(); }
+		}
+		else if (a === 2 && w13.main.flags.signal) mainAdvance();
+		else if (a === 7 && w13.main.choice) mainAdvance();
+		else if (a === 8 && w13.main.siege === 2) {
+			const alive = COMPANIONS.filter((c) => !w13.left[c]).length + (q10.dog >= 4 && v3.dog.down < 0 ? 1 : 0);
+			w13.main.ending = pickEnding(w13.main.choice, true, w13.main.won, alive, rebuiltN());
+			w13.main.slide = 0;
+			mainAdvance();
+			diary(`Ending: ${ENDINGS[w13.main.ending].title}.`);
+		}
+	}
+	function v13SideQuestDone(id) {
+		const feed = { bunker: ["jack", 20], meds: ["marcel", 10], mill: ["marcel", 6], garden: ["mira", 12], school: ["sarah", 10], grok: ["justin", 10], radio: ["sarah", 4], fuel: ["justin", 6], bike: ["justin", 8], lighthouse: ["sarah", 6], wolves: ["sarah", 6] };
+		const f = feed[id];
+		if (f && !w13.left[f[0]]) { w13.loyal[f[0]] = Math.min(100, (w13.loyal[f[0]] ?? 20) + f[1]); pushLog(`${COMPANION_NAME[f[0]]} thinks better of you (+${f[1]}).`); }
+		if (id === "grok") w13.main.flags.grokPath = true;
+	}
+	function v13SiegeStart() {
+		if (w13.main.act !== 8 || w13.main.siege) return;
+		w13.main.siege = 1;
+		if (!raidCanStart()) { const span = DAY_LENGTH_SEC; clock = Math.floor(clock / span) * span + (21.5 / 24) * span; }
+		startRaid();
+		if (!raid) { w13.main.siege = 0; return; }
+		raid.siege = true;
+		raid.waves = 5;
+		raid.collector = false;
+		const allies = siegeAllies();
+		raid.house += 30 * allies; raid.houseMax += 30 * allies;
+		pushLog(`Siege of Harmony. ${allies ? `${allies} allies on the walls with you.` : "Nobody's coming. It's you and the farm."}`);
+		diary("The Collector came for the farm.");
+		sync(true);
+	}
+	function siegeAllies() {
+		const comps = COMPANIONS.filter((c) => !w13.left[c] && (w13.loyal[c] ?? 0) >= 10).length;
+		const towns = w13.main.choice === "unite" ? 1 + rebuiltN() + (perk13("leadership", 9) ? 2 : 0) : 0;
+		return comps + towns + (q10.dog >= 4 && v3.dog.down < 0 ? 1 : 0);
+	}
+	function v13SiegeTick(dt) {
+		if (!raid?.siege) return;
+		if (!raid.collector && raid.wave >= raid.waves) {
+			raid.collector = true;
+			const fh = raidHouse();
+			const c = fh ? propCenter(fh) : { x: player.x, y: player.y };
+			spawnRaider("collector", clearOutside(c.x + 700, c.y - 300), { hp: 260, atk: 14, xp: 200, name: "The Collector" });
+			pushLog("A big man in a stolen state trooper's coat walks up the road like he owns it. The Collector.");
+		}
+		raid.allyT = (raid.allyT ?? 0) + dt;
+		if (raid.allyT > 5) {
+			raid.allyT = 0;
+			const n = siegeAllies();
+			const foes = world.enemies.filter((e) => !e.dead && e.raid && e.variant !== "collector");
+			for (let i = 0; i < Math.min(n, foes.length); i++) { const e = foes[i]; e.hp -= 8; e.hurt = .2; if (e.hp <= 0) { markDead(e, e.xp); raid.kills += 1; } }
+		}
+	}
+	function v13RaidEnd(won, wasSiege) {
+		if (!wasSiege) return;
+		w13.main.won = !!won && !!w13.main.collectorDown;
+		w13.main.siege = 2;
+	}
+	// ---- dialogue
+	function openD13(speaker, text, choices) {
+		dialogue = { speaker, text, choices };
+		talkNpc = talkNpc ?? null; phase = "dialogue"; intent = null; sfx("talk"); sync(true);
+		return true;
+	}
+	function v13TalkChoices(role) {
+		if (raid || mode11 || !player) return [];
+		const out = [];
+		const a = w13.main.act;
+		const c = roleComp(role);
+		if (c && w13.left[c]) return [];
+		if (role === "sarah") {
+			out.push({ label: "Cook a meal", id: "v13-cook" });
+			if (mapId === 0) out.push({ label: "Turn in and sleep till morning", id: "v13-sleep" });
+			if ((v3.up.bench ?? 0) >= 1) out.push({ label: "Use the workbench (repair, patch, dye)", id: "v13-bench" });
+			out.push({ label: "Rebuild Harmony", id: "v13-rebuild" });
+			if (a === 7 && !w13.main.choice) out.push({ label: "The Long Winter: decide what we do about the Collector", id: "v13-main-choose" });
+		}
+		if (role === "cyndal" && a === 2) out.push({ label: "The Long Winter: what's on the radio?", id: "v13-main-signal" });
+		if (role === "cal") {
+			out.push({ label: "Trade talk (Jack's trust)", id: "v13-jack" });
+			if (a === 3) out.push({ label: "The Long Winter: about those old maps", id: "v13-main-jack" });
+		}
+		if (role === "marcel") {
+			out.push({ label: "Bounty board", id: "v13-bounty" });
+			if (a === 4) out.push({ label: "The Long Winter: the Augusta broadcast", id: "v13-main-marcel" });
+		}
+		if (role === "justin") {
+			out.push({ label: "Caravan on the road?", id: "v13-caravan" });
+			if (a === 8 && !w13.main.siege) out.push({ label: "The Long Winter: we're ready for them", id: "v13-main-siege" });
+		}
+		if (MAIN_ACTS[a - 1] && MAIN_ACTS[a - 1].intro[0].toLowerCase().startsWith(role === "cal" ? "jack" : role) && !w13.main.flags[`intro${a}`]) out.push({ label: `The Long Winter: ${MAIN_ACTS[a - 1].title}`, id: `v13-main-intro` });
+		return out;
+	}
+	function v13Choice(id) {
+		let m;
+		if (id === "v13-cook") return cookMenu();
+		if ((m = id.match(/^v13-cook-(.+)$/))) { cook(m[1]); return cookMenu(); }
+		if (id === "v13-bench") return benchMenu();
+		if (id === "v13-sleep") {
+			if (raid) { pushLog("Not tonight. They're on the road."); return close13(); }
+			const span = DAY_LENGTH_SEC;
+			const h = hourNow();
+			clock = Math.floor(clock / span) * span + (h >= 7 ? span : 0) + (7 / 24) * span;
+			sleep13();
+			player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * .4));
+			player.stamina = player.maxStamina;
+			pushLog("You sleep like a stone under three quilts. Morning.");
+			saveGame();
+			return close13();
+		}
+		if ((m = id.match(/^v13-repair-(.+)$/))) { const c = repairCost(m[1]); if (player.scrap < c) pushLog(`That's ${c} iron.`); else { player.scrap -= c; w13.dura[m[1]] = DURA_MAX; train("mechanics", 4); pushLog(`Good as new: ${GEAR[m[1]].name}.`); refreshGear(player); } return benchMenu(); }
+		if ((m = id.match(/^v13-patch-(.+)$/))) { if (countOf("hide") < 1) pushLog("You need a hide to patch with."); else { takeItem("hide", 1); w13.dura[m[1]] = Math.min(DURA_MAX, duraOf(m[1]) + 40); w13.patched[m[1]] = true; pushLog(`You patch the ${GEAR[m[1]].name.toLowerCase()} with a square of hide.`); refreshGear(player); } return benchMenu(); }
+		if (id === "v13-dyes") return dyeMenu();
+		if ((m = id.match(/^v13-dye-(.+)$/))) { dyeAll(m[1]); return benchMenu(); }
+		if (id === "v13-rebuild") return rebuildMenu();
+		if ((m = id.match(/^v13-rebuild-(.+)$/))) { rebuild(m[1]); return rebuildMenu(); }
+		if (id === "v13-clinic") { if (player.scrap < 4 && !perk13("medicine", 9)) pushLog("4 iron for the clinic."); else { if (!perk13("medicine", 9)) player.scrap -= 4; w13.ail = {}; player.hp = player.maxHp; pushLog("The clinic sets you right. All patched up."); } return rebuildMenu(); }
+		if (id === "v13-bounty") return bountyMenu();
+		if ((m = id.match(/^v13-bounty-(.+)$/))) { bountyTurnIn(m[1]); return bountyMenu(); }
+		if (id === "v13-caravan") return caravanMenu();
+		if (id === "v13-car-guard") {
+			const r = v13Caravan(); if (!r) return close13();
+			w13.caravan[caravanKey(r)] = "guard";
+			for (let i = 0; i < 3; i++) { const a = i * 2.1; q11Spawn(["bandit", null, "Caravan robber", 16, 4, 10], clearOutside(player.x + Math.cos(a) * 260, player.y + Math.sin(a) * 260), "caravan", true); }
+			pushLog("You fall in beside the lead sledge. Sure enough, at the bend there's men in the trees.");
+			w13.caravanGuard = r.id;
+			return close13();
+		}
+		if (id === "v13-car-rob") {
+			const r = v13Caravan(); if (!r) return close13();
+			w13.caravan[caravanKey(r)] = "rob";
+			for (const [it, n] of r.cargo) giveItem(it, n);
+			player.karma = (player.karma ?? 0) - 4; shiftRep("ponds", -4, -10);
+			loyalty("rob-caravan");
+			pushLog("You take the sledges at gunpoint. The drivers walk home. Word will get around.");
+			diary(`Robbed the ${r.from}–${r.to} caravan.`);
+			return close13();
+		}
+		if ((m = id.match(/^v13-go-(.+)$/))) { close13(); fastTravel(m[1]); return true; }
+		if (id === "v13-road-car") { const ok = lv("mechanics") >= 2 || perk13("mechanics", 9) || Math.random() < .5; if (ok) { giveItem("gas", 2); player.scrap += 3; pushLog("Two cans of gas and a box of hose clamps."); } else { giveItem("gas", 1); pushLog("A cup of stale gas. Better than nothing."); } train("mechanics", 6); train("scavenging", 5); return close13(); }
+		if (id === "v13-road-help") { if (countOf("jerky") > 0) takeItem("jerky", 1); loyalty("stranger-help"); pushLog("He tells you raiders have been working the Forks road at night. He thanks you and goes."); return close13(); }
+		if (id === "v13-road-rob") { giveItem("shells", 3); player.karma = (player.karma ?? 0) - 3; loyalty("stranger-rob"); pushLog("Three shells and a can of beans. He doesn't look back."); return close13(); }
+		if (id === "v13-road-kid") { loyalty("lost-kid"); shiftRep("ponds", 3, 8); grantXp(20); pushLog("His mother cries and hugs you both. She gives you a jar of honey, all they've got."); giveItem("syrup", 1); diary("Walked a lost boy home to the Forks."); return close13(); }
+		if ((m = id.match(/^v13-camp-(.+)$/))) { close13(); campRaid(m[1]); return true; }
+		if (id === "v13-jack") {
+			if (player.scrap >= 3) { player.scrap -= 3; loyalty("trade-jack"); pushLog("You trade Jack 3 iron for a box of .30-30. He nods. \"Square.\""); giveItem("shells", 2); }
+			else pushLog("Jack doesn't deal on credit.");
+			return close13();
+		}
+		if (id === "v13-main-intro") { const a = mainAct(); w13.main.flags[`intro${a.n}`] = true; return openD13(a.intro[0], a.intro[1], [{ label: "Close", id: "close" }]); }
+		if (id === "v13-main-signal") { w13.main.flags.signal = true; return openD13("Cyndal", "\"Listen.\" Static, then a calm voice: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" It loops. \"Same words every hour, Dad says nobody talks that calm anymore.\"", [{ label: "Close", id: "close" }]); }
+		if (id === "v13-main-jack") {
+			w13.main.flags.jackTalk = true;
+			if ((w13.loyal.jack ?? 0) < 30) return openD13("Jack Ready", `"You're not there yet." (Jack's trust: ${w13.loyal.jack}/30. Trade with him, finish his bunker map job.)`, [{ label: "Close", id: "close" }]);
+			return openD13("Jack Ready", "He unrolls the survey maps on the hood of the truck. \"That broadcast's a trap. I've watched folks go south on it. Nobody comes back up the Kennebec.\"", [{ label: "Close", id: "close" }]);
+		}
+		if (id === "v13-main-marcel") { w13.main.flags.marcel = true; return openD13("Marcel Thibodeau", "\"Caravans that answer that signal never come back. Not one. There's a man they call the Collector. Raiders work for him now.\"", [{ label: "Close", id: "close" }]); }
+		if (id === "v13-main-choose") {
+			const avg = Math.round(COMPANIONS.reduce((n, c) => n + (w13.left[c] ? -50 : w13.loyal[c]), 0) / COMPANIONS.length);
+			const canUnite = rebuiltN() >= 1 && avg >= 20;
+			return openD13("Sarah", MAIN_ACTS[6].intro[1], [
+				{ label: canUnite ? "Unite the towns" : `Unite the towns (needs a rebuilt Harmony building and loyalty: avg ${avg}/20)`, id: canUnite ? "v13-main-unite" : "v13-main-choose" },
+				{ label: "Make a deal with the Collector", id: "v13-main-deal" },
+				{ label: "Go it alone", id: "v13-main-alone" },
+			]);
+		}
+		if ((m = id.match(/^v13-main-(unite|deal|alone)$/))) {
+			w13.main.choice = m[1];
+			loyalty(m[1] === "deal" ? "deal-collector" : m[1]);
+			if (m[1] === "deal") { player.scrap = Math.max(0, player.scrap - 20); w13.main.siege = 2; w13.main.won = true; pushLog("You send word down the river: the farm pays his toll. He sends back a single shell casing. Deal."); }
+			return close13();
+		}
+		if (id === "v13-main-siege") { close13(); v13SiegeStart(); return true; }
+		if (id === "v13-ending-next") { w13.main.slide += 1; sync(true); return true; }
+		return false;
+	}
+	function close13() {
+		dialogue = null; talkNpc = null; phase = "play"; sync(true);
+		return true;
+	}
+	/** Weather overlay drawn in screen space: snow, nor'easter, fog, rain, black-ice sheen. */
+	function paintWeather13() {
+		const id = w13.weather.id;
+		if (id === "clear" || !ctx) return;
+		const t = performance.now() / 1000;
+		ctx.save();
+		if (id === "fog") {
+			const hr = player ? worldToScreen(player.x, player.y, camX, camY) : { sx: viewW / 2, sy: viewH / 2 };
+			const hp = zoomPoint(hr.sx, hr.sy);
+			const g = ctx.createRadialGradient(hp.sx, hp.sy - 40, 60, hp.sx, hp.sy - 40, Math.max(viewW, viewH) * .55);
+			g.addColorStop(0, "rgba(206,210,212,0.05)"); g.addColorStop(.45, "rgba(206,210,212,0.55)"); g.addColorStop(1, "rgba(206,210,212,0.86)");
+			ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH);
+		}
+		if (id === "blackice") { ctx.fillStyle = "rgba(120,160,210,0.10)"; ctx.fillRect(0, 0, viewW, viewH); }
+		if (id === "noreaster") { ctx.fillStyle = "rgba(200,206,214,0.32)"; ctx.fillRect(0, 0, viewW, viewH); }
+		const n = id === "noreaster" ? 260 : id === "snow" ? 120 : id === "rain" ? 140 : 0;
+		const wind = id === "noreaster" ? 520 : id === "rain" ? 60 : 40;
+		const fall = id === "rain" ? 700 : id === "noreaster" ? 260 : 90;
+		ctx.strokeStyle = id === "rain" ? "rgba(170,190,215,0.55)" : "rgba(250,250,252,0.85)";
+		ctx.fillStyle = "rgba(250,250,252,0.9)";
+		ctx.lineWidth = id === "rain" ? 1 : 2;
+		for (let i = 0; i < n; i++) {
+			const sx = ((i * 97.13 + t * wind * (0.7 + (i % 5) * .1)) % (viewW + 80) + viewW + 80) % (viewW + 80) - 40;
+			const sy = ((i * 53.71 + t * fall * (0.8 + (i % 7) * .06)) % (viewH + 40) + viewH + 40) % (viewH + 40) - 20;
+			if (id === "rain" || id === "noreaster") { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - wind * .02, sy - (id === "rain" ? 14 : 4)); ctx.stroke(); }
+			else { ctx.beginPath(); ctx.arc(sx, sy, 1.2 + (i % 3) * .6, 0, Math.PI * 2); ctx.fill(); }
+		}
+		ctx.restore();
+	}
+	function v13Running() {
+		return !!player && player.stamina > 0 && (holdWalk || intent?.kind === "walk" && (intent.path?.length ?? 0) > 6);
+	}
+	function v13Hud() {
+		const fx = fx13();
+		const sb = setBonus13();
+		return {
+			core: core13(), fx, points: player?.points ?? 0, backstory: w13.backstory,
+			weather: { id: w13.weather.id, ...weather13() }, moon: { phase: moonPhase(curDay()), name: MOON_NAMES[moonPhase(curDay())] },
+			needs: { ...w13.needs }, hard: w13.hard, ail: Object.keys(w13.ail).map((k) => ({ id: k, ...AILMENTS[k] })), buffs: Object.keys(w13.buffs).filter((k) => buffOn(k)),
+			loyal: COMPANIONS.map((c) => ({ id: c, name: COMPANION_NAME[c], v: w13.loyal[c], left: !!w13.left[c], helps: w13.loyal[c] >= LOYALTY_HELP })),
+			armor: armorPieces().map((id) => ({ id, name: GEAR[id].name, dura: duraOf(id), patched: !!w13.patched[id] })), set: sb ? { name: sb.name, text: sb.text } : null,
+			skills: NEW_SKILLS.map((s) => ({ ...s, lv: v3.skills[s.id]?.lv ?? 0 })),
+			perks: Object.entries(SKILL_PERKS).map(([k, list]) => ({ skill: k, got: list.slice(0, perkCount(v3.skills[k]?.lv ?? 0)), next: list[perkCount(v3.skills[k]?.lv ?? 0)] ?? "" })),
+			rebuilt: { ...w13.rebuilt }, bounties: w13.bounties.map((b) => ({ text: b.text, got: b.got, need: b.need, pay: b.pay })),
+			diary: w13.diary.slice(-40), notes: w13.notes,
+			main: { act: w13.main.act, title: mainAct().title, goal: mainAct().goal, acts: MAIN_ACTS.map((a) => ({ n: a.n, title: a.title, goal: a.goal, done: a.n < w13.main.act })), ending: w13.main.ending ? { id: w13.main.ending, ...ENDINGS[w13.main.ending] } : null, slide: w13.main.slide },
+			canTravel: mounted && bikeBuilt(),
+		};
+	}
+	// ======================= end v13 =======================
 	/** Stand-in shop sign for a building with no Grok Build art yet. */
 	function paintSign(text, x, y, h, dcx, dcy) {
 		const r = worldToScreen(x, y, dcx, dcy);
@@ -3347,13 +4255,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const q11x = q10x?.replace ? null : q11Talk(npc.role, q11, Q11C(), !!raid);
 			if (q11x?.replace) Object.assign(line, q11x.replace);
 			else {
-				const extra = [...(q11x?.add ?? []), ...q11FarmChoices(npc.role)];
+				const extra = [...(q11x?.add ?? []), ...q11FarmChoices(npc.role), ...v13TalkChoices(npc.role)];
 				if (extra.length) line.choices = [...line.choices.slice(0, -1), ...extra, ...line.choices.slice(-1)];
 			}
 			if (rep <= -10) line.text = `You are not welcome here, and they do not pretend otherwise. ${line.text}`;
 			line.choices = line.choices.map((choice) => {
 				if (!choice.check) return choice;
-				const chance = checkChance(skillOf(choice.check.skill), choice.check.dc, rep, player.karma ?? 0);
+				const chance = checkChance(skillOf(choice.check.skill) + fx13().talkBonus, choice.check.dc, rep, player.karma ?? 0);
 				const skillName = SKILLS.find((s) => s.id === choice.check.skill)?.name ?? "Check";
 				return { ...choice, label: `${choice.label} · ${skillName} ${chance}%` };
 			});
@@ -3884,7 +4792,117 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (family === "knife") return "hero-knife";
 		return "hero";
 	}
+	/** v13: the player's body. v2/player-<action>.png when it exists, else Justin's gw15 sheet (dyed
+	 * to the creator's hair and cloth in heroSource), else null so callers fall back to the old hero art. */
+	function plImg(action) {
+		const src = images.get(`v2/player-${action}`) || images.get(`v2/justin-${action}`);
+		if (!src) return null;
+		const n = `pl/${action}`;
+		if (images.get(n) !== src) images.set(n, src);
+		return n;
+	}
+	/** v13 armor paper doll: public/game/v2/armor/<piece>-<tier>-<action>.png, stacked feet, legs,
+	 * chest, hands, head over the body, same grid as the body sheet. Missing layers are skipped. Player only. */
+	const ARMOR_ORDER = [["feet", "feetId"], ["legs", "legsId"], ["chest", "coatId"], ["hands", "handsId"], ["head", "headId"]];
+	const TIER_OF = { poor: 1, standard: 2, good: 3, rare: 4 };
+	function armorLayerNames(act) {
+		if (!player) return [];
+		const out = [];
+		for (const [piece, field] of ARMOR_ORDER) {
+			const id = player[field];
+			const g = id && GEAR[id];
+			if (!g) continue;
+			const tier = TIER_OF[g.quality] ?? 1;
+			const n = `v2/armor/${piece}-${tier}-${act}`;
+			if (images.get(n)) out.push(n);
+			else if (act !== "walk" && images.get(`v2/armor/${piece}-${tier}-walk`) && (act === "idle" || act === "run")) out.push(`v2/armor/${piece}-${tier}-walk`);
+		}
+		return out;
+	}
+	/** Armor dye: a multiply tint per piece (v13.dye[piece] = hex), cached per layer and colour. */
+	function armorSource(name, img) {
+		const piece = name.split("/")[2]?.split("-")[0];
+		const hex = w13.dye?.[piece];
+		if (!hex) return img;
+		const key = `dye:${name}:${hex}`;
+		const c = tinted.get(key);
+		if (c) return c;
+		const cv = document.createElement("canvas");
+		cv.width = img.width; cv.height = img.height;
+		const g = cv.getContext("2d");
+		if (!g) return img;
+		g.drawImage(img, 0, 0);
+		g.globalCompositeOperation = "multiply";
+		g.fillStyle = hex;
+		g.fillRect(0, 0, cv.width, cv.height);
+		g.globalCompositeOperation = "destination-in";
+		g.drawImage(img, 0, 0);
+		tinted.set(key, cv);
+		return cv;
+	}
+	let armorDrawn = [];
+	function paintArmor(act, frame, dir, dcx, dcy, lunge = false) {
+		armorDrawn = armorLayerNames(act);
+		for (const n of armorDrawn) {
+			const img = images.get(n);
+			if (!img) continue;
+			blitLayer(n, frame, dir, dcx, dcy, lunge);
+		}
+	}
+	function blitLayer(n, frame, dir, dcx, dcy, lunge) {
+		const body = plImg(act0(n)) || plImg("walk");
+		const bimg = body && images.get(body);
+		const img = images.get(n);
+		if (!bimg || !img || !ctx) return;
+		const raw = worldToScreen(player.x, player.y, dcx, dcy);
+		const foot = zoomPoint(raw.sx, raw.sy);
+		const lean = lunge ? lungeOf(dir) : { x: 0, y: 0 };
+		const cols = sheetCols(img), rows = 8;
+		const sw = img.width / cols, sh = img.height / rows;
+		const fcols = sheetCols(bimg);
+		let frac = bimg.foot ?? .92;
+		if (bimg.feet) { const f = bimg.feet[(dir % 8) * fcols + (frame % fcols)]; if (f) frac = f; }
+		const dh = HERO_H * heroScale(body) * zoom;
+		const dw = dh * (sw / sh);
+		ctx.drawImage(armorSource(n, img), (frame % cols) * sw, (dir % rows) * sh, sw, sh, foot.sx + lean.x * zoom - dw / 2, foot.sy + lean.y * zoom - dh * frac, dw, dh);
+	}
+	function act0(n) {
+		return n.split("-").slice(2).join("-");
+	}
+	/** v13: draw the player from the pl/* sheets with weapon, hit and down poses, plus armor layers. */
+	function paintPlayerBody(flinch, drawCamX, drawCamY) {
+		if (!plImg("walk") || !player) return false;
+		const family = GEAR[player.weaponId]?.family;
+		const gun = family === "carbine" || family === "revolver" || family === "scatter";
+		const axe = family === "axe" || family === "pry" || family === "pickaxe";
+		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack";
+		const moving = player.anim !== player.idleAnim;
+		player.idleAnim = player.anim;
+		let act = "walk";
+		let frame = player.frame;
+		let lunge = false;
+		if (flinch) { act = flinch.name.slice(3); frame = flinch.frame; }
+		else if (swingAnim > 0 && !work && gun && plImg("gun-atk")) { act = "gun-atk"; frame = Math.min(3, Math.floor((1 - swingAnim / .48) * 4)); }
+		else if (swingAnim > 0 && !work && plImg("axe")) { act = "axe"; frame = Math.min(5, Math.floor((1 - swingAnim / .48) * 6)); }
+		else if (swingAnim > 0 && !work) { act = "walk"; lunge = true; }
+		else if (work && work.swing > .05 && plImg("axe")) { act = "axe"; frame = Math.min(5, Math.floor((1 - Math.min(1, work.swing / .48)) * 6)); }
+		else if (!moving && gun && using && plImg("gun")) { act = "gun"; frame = Math.floor(performance.now() / 320) % 4; }
+		else if (!moving && plImg("idle")) { act = "idle"; frame = Math.floor(performance.now() / 300) % 4; }
+		else if (moving && v13Running() && plImg("run")) act = "run";
+		const name = plImg(act) || plImg("walk");
+		blit(name, player.x, player.y, HERO_H, true, frame, player.dir, drawCamX, drawCamY, lunge);
+		paintArmor(act, frame, player.dir, drawCamX, drawCamY, lunge);
+		if (swingAnim > 0 && !work && act === "walk") paintSwingArc();
+		void axe;
+		return true;
+	}
 	function heroActionPose() {
+		if (phase === "dead" && plImg("down")) {
+			if (!fellAt) fellAt = performance.now();
+			const u = Math.min(1, (performance.now() - fellAt) / 520);
+			return { name: plImg("down"), frame: u >= 1 ? 3 : Math.min(2, Math.floor(u * 3)) };
+		}
+		if (player && player.hurt > 0 && plImg("hit") && !(swingAnim > 0 && !work)) return { name: plImg("hit"), frame: Math.min(2, Math.floor((1 - Math.min(1, player.hurt / .3)) * 3)) };
 		if (phase === "dead" && images.get("hero-down")) {
 			if (!fellAt) fellAt = performance.now();
 			const u = Math.min(1, (performance.now() - fellAt) / 520);
@@ -3955,8 +4973,35 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			hands: player.handsId ? PIECE_RGB[player.handsId] : null
 		};
 	}
+	function dyePlayerBody(img, name = "hero") {
+		const hair = player.hair || "black";
+		const key = `body:${name}:${player.look}:${hair}`;
+		const cached = tinted.get(key);
+		if (cached) return cached;
+		const stamp = document.createElement("canvas");
+		stamp.width = img.width;
+		stamp.height = img.height;
+		const g = stamp.getContext("2d", { willReadFrequently: true });
+		if (!g) return img;
+		g.drawImage(img, 0, 0);
+		const data = g.getImageData(0, 0, stamp.width, stamp.height);
+		dyeBodySheet(data, sheetCols(img), player.look, hair, 8);
+		g.putImageData(data, 0, 0);
+		tinted.set(key, stamp);
+		return stamp;
+	}
+	function wearPiece(id, field) {
+		if (!id || !GEAR[id]) {
+			player[field] = "";
+			return;
+		}
+		if (!player.bag.some((s) => s.id === id)) player.bag.push({ id, qty: 1 });
+		player[field] = id;
+	}
 	function heroSource(name, img) {
-		if (!/^(v2\/)?hero/.test(name) || !player) return img;
+		if (!player || !img?.width) return img;
+		if (name.startsWith("pl/")) return images.get(`v2/player-${name.slice(3)}`) === img ? img : dyePlayerBody(img, name);
+		if (!/^(v2\/)?hero/.test(name)) return img;
 		const colors = wornColors();
 		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
 		const cached = tinted.get(key);
@@ -4254,6 +5299,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
+		berries: "apple", mushrooms: "apple", chowder: "smokedfish", venisonsteak: "meat", pie: "apple", coffee: "cider", tonic: "dandelion", trout: "smokedfish",
 		snare: "wire", grokclaw: "antlers",
 		gas: "fuel", carburetor: "oil", chain: "wire", engine: "packframe", gastank: "fuel", sparkplug: "matches", tire: "pelt",
 		medicine: "kit", bone: "antlers", steeltrap: "wire", greens: "dandelion", water: "cider",
@@ -4655,6 +5701,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!isGun(familyHit) && hasPerk("logger")) dmg += 2;
 		if (isGun(familyHit) && hasPerk("steady")) dmg += 1;
 		if (isGun(familyHit)) { dmg = Math.round(dmg * (1 + .04 * lv("marksmanship"))); train("marksmanship", 2); }
+		// v13 crits: agility and wits, marksmanship perks; companions with high loyalty add a share
+		{ const crit = fx13().critPct + (isGun(familyHit) && perk13("marksmanship", 6) ? 5 : 0); if (Math.random() * 100 < crit) { dmg = Math.round(dmg * (isGun(familyHit) && perk13("marksmanship", 9) ? 2 : 1.6)); floater(player.x, player.y - 60, "Crit!"); } }
+		if (party && helpsMore(party.role)) dmg = Math.round(dmg * (1.1 + .04 * lv("leadership") + (perk13("leadership", 6) ? .15 : 0)));
 		return Math.max(1, dmg);
 	}
 	function shellCount(p) {
@@ -4816,6 +5865,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		corpseOf(enemy);
 		grantXp(xp);
 		v3Kill(enemy);
+		v13Kill(enemy);
 		if (enemy.name) pushLog(`${enemy.name} is down.`);
 		if (enemy.id === WARDEN_ENEMY_ID) {
 			wardenState = 3;
@@ -5187,6 +6237,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player || player.invuln > 0 || phase !== "play") return;
 		const dmg = Math.max(1, amount - player.def);
 		player.hp -= dmg;
+		if (!mode11) {
+			wearArmor(amount);
+			const biter = world?.enemies.find((e) => !e.dead && e.kind !== "bandit" && Math.hypot(e.x - fromX, e.y - fromY) < 40);
+			if (biter && Math.random() < .15 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
+			if (dmg >= player.maxHp * .3 && Math.random() < .2) catchAil("bone", "That hit cracked something.");
+		}
 		player.invuln = .38;
 		player.hurt = .4;
 		sfx("hurt");
@@ -5615,7 +6671,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// snowshoes: faster over snow
 		const shoeT = tileOf(player.x, player.y);
 		const shoes = player.feetId === "snowshoes" && world.tiles[shoeT.ty * MAP_W + shoeT.tx] === 4 ? 1.22 : 1;
-		const pace = (mounted ? SCREEN_SPEED * 2 : player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * (mounted ? 1 : shoes);
+		const wx = weather13();
+		const hardy = perk13("survival", 9) && w13.weather.id === "noreaster" ? 1 : wx.speed;
+		const pace = (mounted ? SCREEN_SPEED * 2 * Math.max(.4, wx.bike) : (player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * hardy * ailSpeed() * needsSpeed() * (setBonus13()?.quality === "standard" ? 1.05 : 1)) * (mounted ? 1 : shoes);
 		const fromX = player.x;
 		const fromY = player.y;
 		tickWork(dt);
@@ -6181,7 +7239,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mini.height = 132;
 	}
 	/** v12: gw14 people sheets by role (Cal's art is the "jack" set). */
-	const V2_WHO = { holt: "holt", cal: "jack", mira: "mira", nora: "nora", sarah: "sarah", cyndal: "cyndal", loki: "loki", marcel: "marcel" };
+	const V2_WHO = { holt: "holt", cal: "jack", mira: "mira", nora: "nora", sarah: "sarah", cyndal: "cyndal", loki: "loki", marcel: "marcel", justin: "justin" };
 	function v2Who(npc) {
 		const k = V2_WHO[npc.role];
 		return k && images.get(`v2/${k}-walk`) ? k : "";
@@ -6284,6 +7342,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return n && images.get(n) ? n : "";
 	}
 	function beastSheetOld(enemy) {
+		// v13 art hook: public/game/v2/boss-collector-{walk,atk,death}.png; the warden sheet stands in
+		if (enemy.variant === "collector") return images.get("v2/boss-collector-walk") ? "v2/boss-collector-walk" : "boss-warden";
 		if (enemy.variant === "holeb") return "boss-holeb";
 		if (enemy.variant === "warden") return "boss-warden";
 		if (enemy.variant === "pelletier") return "boss-pelletier";
@@ -6315,7 +7375,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Full visible height (top of head/antlers to hooves) in inches. */
 	const BEAST_IN = {
-		holeb: 120, grok: 98, warden: 74, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
+		holeb: 120, grok: 98, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
 		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
 		bear: 40, moose: 96, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
@@ -6361,7 +7421,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { x: c.x, y: c.y + 40 };
 	}
 	function raidWaves(n) {
-		return Math.min(5, 3 + Math.floor((n - 1) / 3));
+		return Math.min(6, 3 + Math.floor((n - 1) / 3) + moon13().waves);
 	}
 	function raidCanStart() {
 		if (!player || !world || raid || inside || snow < 3 || mapId !== 0) return false;
@@ -6530,9 +7590,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 			return;
 		}
+		const wasSiege = !!raid.siege;
 		guardPost.clear();
 		raid = null;
 		pushLog(why);
+		v13RaidEnd(won, wasSiege);
 		if (won) {
 			raidsHeld += 1;
 			achieve("raid1");
@@ -7273,6 +8335,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Night darkness, 0 by day. Ramps in through the evening (17-21h), keeps deepening to its
 	 * darkest around 2-4h, then lifts through dawn (4-7h). Capped so a phone screen stays readable. */
 	function nightDark(total) {
+		return Math.min(.95, nightDarkBase(total) * moonEffect(moonPhase(Math.floor(total / DAY_LENGTH_SEC))).dark);
+	}
+	function nightDarkBase(total) {
 		const span = DAY_LENGTH_SEC;
 		const h = (((total % span) + span) % span) / span * 24;
 		const ease = (t) => t * t * (3 - 2 * t);
@@ -7664,6 +8729,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				if (mounted && images.get("v2/hero-ride") && phase !== "dead") { blit("v2/hero-ride", player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
 				if (phase === "dead") {
+					if (plImg("death")) {
+						if (!fellAt) fellAt = performance.now();
+						const f = Math.min(5, Math.floor((performance.now() - fellAt) / 150));
+						blit(plImg("death"), player.x, player.y, HERO_H, true, f, player.dir, drawCamX, drawCamY, false);
+						paintArmor("death", f, player.dir, drawCamX, drawCamY);
+						return;
+					}
 					if (images.get("v2/hero-death")) {
 						if (!fellAt) fellAt = performance.now();
 						const f = Math.min(5, Math.floor((performance.now() - fellAt) / 150));
@@ -7688,6 +8760,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				// the v19 swing strips are front views: use them when facing the camera, otherwise keep the lunge
 				const facingCam = player.dir === 0 || player.dir === 1 || player.dir === 7;
 				const flinch = heroActionPose();
+				if (paintPlayerBody(flinch, drawCamX, drawCamY)) return;
 				const axeSwing = !flinch && swingAnim > 0 && !work && heroKey() === "hero-axe" && images.get("v2/hero-axe");
 				const idle = !flinch && !axeSwing && !(swingAnim > 0) && heroKey() === "hero" && player.anim === player.idleAnim && images.get("v2/hero-idle");
 				player.idleAnim = player.anim;
@@ -7733,6 +8806,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
+		if (!inside) paintWeather13();
 		paintSeason();
 		paintRipples(drawCamX, drawCamY);
 		paintFish();
@@ -7829,7 +8903,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		const img = images.get(name);
 		if (sheet && img && /^v2\/bandit-[a-z]+-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
-		if (heroLog && /^(v2\/)?hero/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
+		if (heroLog && /^((v2\/)?hero|pl\/)/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
 		const lean = lunge ? lungeOf(dir) : {
@@ -8463,10 +9537,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			canvas.removeEventListener("wheel", onWheel);
 			if (window.__controlsTest) delete window.__controlsTest;
 		},
-		begin(name, role, bonus, trait, look) {
+		begin(name, role, bonus, trait, look, appearance) {
 			unlockAudio();
 			sfx("click");
-			bootNew(name, role, bonus, trait, look);
+			bootNew(name, role, bonus, trait, look, appearance);
 		},
 		startMode(kind) {
 			q11StartMode(kind);
@@ -8476,7 +9550,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("click");
 			raidMode = true;
 			useRaidMode.setState({ result: null });
-			bootNew("Justin", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
+			bootNew("Packer", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
 			snow = Math.max(snow, 3);
 			jackMet = true;
 			raidNight = 0;
@@ -8756,12 +9830,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const b = nearBike();
 			if (b) { mountBike(b); sync(true); }
 		},
+		openTravel() {
+			if (player && phase === "play") travelMenu();
+		},
+		choose13(id) {
+			if (id === "v13-ending-next") { w13.main.slide += 1; sync(true); return; }
+			if (id === "v13-ending-close") { w13.main.slide = 99; sync(true); }
+		},
+		setNotes(text) {
+			w13.notes = String(text).slice(0, 4000);
+			saveGame();
+		},
 		spend(stat) {
 			if (!player || player.points < 1 || phase === "menu") return;
 			player.points -= 1;
-			player[stat] += 1;
+			if (stat === "agility" || stat === "grit") w13.core[stat] += 1;
+			else if (stat === "wits") player.intellect += 1;
+			else player[stat] += 1;
 			refreshGear(player);
-			pushLog(`${stat === "vigor" ? "health" : stat === "intellect" ? "intelligence" : stat === "perception" ? "perception" : stat === "endurance" ? "endurance" : stat === "luck" ? "luck" : "strength"} rises.`);
+			pushLog(`${stat === "vigor" ? "health" : stat === "intellect" ? "intelligence" : stat === "perception" ? "perception" : stat === "endurance" ? "endurance" : stat === "luck" ? "luck" : stat === "agility" ? "agility" : stat === "grit" ? "grit" : stat === "wits" ? "wits" : "strength"} rises.`);
 			saveGame();
 			sync(true);
 		},
@@ -8886,6 +9973,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				setTrap(id === "snare" ? "snare" : "trap");
 				return;
 			}
+			if (v13Use(def, stack)) { saveGame(); sync(true); return; }
 			if (def.kind === "weapon") {
 				if (player.weaponId === id) {
 					player.weaponId = "";
@@ -9072,6 +10160,33 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 		},
 		choose: (id) => applyChoice(id),
+		v13State: () => JSON.parse(JSON.stringify({ ...w13, hud: v13Hud(), player: player ? { name: player.name, hair: player.hair, def: player.def, atk: player.atk, maxHp: player.maxHp, maxStamina: player.maxStamina, hp: player.hp, scrap: player.scrap, look: player.look, coat: player.coatId, head: player.headId, legs: player.legsId, hands: player.handsId, feet: player.feetId, bag: player.bag.filter((b) => ARMOR13_IDS.includes(b.id)) } : null, sight: sightRadius(), mapId })),
+		v13Set: (patch) => { for (const [k, v] of Object.entries(patch)) w13[k] = v && typeof v === "object" && !Array.isArray(v) ? { ...w13[k], ...v } : v; if (player) refreshGear(player); sync(true); },
+		statsNow: () => statsOpen,
+		bagNow: () => player ? { bag: player.bag.map((b) => `${b.id}x${b.qty}`), over: layoutGrid(player).over } : null,
+		v13Take: (id, n = 1) => takeItem(id, n),
+		statsToggle: () => { api.toggleStats(); return statsOpen; },
+		v13Reset: (k, v) => { w13[k] = v; if (player) refreshGear(player); sync(true); },
+		v13Weather: (id) => { w13.weather = { id, day: curDay() }; sync(true); return { sight: sightRadius(), speed: weather13().speed, bike: weather13().bike }; },
+		v13Daily: () => { w13.weather.day = -1; v13Daily(curDay()); },
+		v13Needs: (h) => { needsTick(h); sync(true); return { ...w13.needs }; },
+		v13Forage: () => forage(true),
+		v13Fx: () => ({ ...fx13(), core: core13() }),
+		v13Hurt: (n, kind) => { const e = kind ? world.enemies.find((q) => !q.dead && q.kind === kind) : null; player.invuln = 0; hurtPlayer(n, e ? e.x : player.x + 10, e ? e.y : player.y); return { hp: player.hp, dura: { ...w13.dura }, ail: { ...w13.ail } }; },
+		v13Ail: (id) => catchAil(id, "Test."),
+		v13Camp: (id, ok) => { campRaid(id, ok); return { camps: { ...w13.camps }, freed: w13.freed, lt: w13.main.ltKills }; },
+		v13DepotSpot: () => q10Tile(DEPOT13.tx, DEPOT13.ty),
+		v13CampSpot: (id) => { const c = CAMPS13.find((x) => x.id === id); return c ? camp13Spot(c) : null; },
+		v13Road: (id) => { w13.road.n = 0; startRoadEvent(id); return w13.roadEv; },
+		v13Travel: (id) => { fastTravel(id); return { mapId, x: player.x, y: player.y, gas: countOf("gas") }; },
+		v13Act: (n) => { w13.main.act = n; sync(true); },
+		v13Tick: () => v13MainTick(),
+		v13Siege: () => { v13SiegeStart(); return raid ? { siege: !!raid.siege, waves: raid.waves, house: raid.house } : null; },
+		v13SiegeEnd: (won) => { if (won) w13.main.collectorDown = true; endRaid(!!won, "Test: the siege ends."); v13MainTick(); return { ...w13.main }; },
+		v13Caravan: () => v13Caravan(),
+		v13Moon: (day) => ({ phase: moonPhase(day), ...moonEffect(moonPhase(day)), dark: nightDark(day * DAY_LENGTH_SEC + DAY_LENGTH_SEC * 23 / 24) }),
+		v13Body: () => ({ walk: plImg("walk"), hit: plImg("hit"), down: plImg("down"), gun: plImg("gun"), gunAtk: plImg("gun-atk"), axe: plImg("axe"), death: plImg("death"), cols: plImg("hit") ? sheetCols(images.get(plImg("hit"))) : 0, armor: armorLayerNames("walk") }),
+		v13Hours: (h) => { clock += h / 24 * DAY_LENGTH_SEC; },
 		invEquip: (id, slot) => api.invEquip(id, slot),
 		invUnequip: (slot) => api.invUnequip(slot),
 		invUse: (id) => api.invUse(id),
@@ -9275,16 +10390,18 @@ const TALL_COMBAT = new Set();
 const TRACTOR_ROW = 6;
 const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2/tractor-drive": 4 };
 /** v12: gw14 people (88x124 cells, 8 facing rows). */
-const V2_FOLK = /^v2\/(holt|jack|mira|nora|sarah|cyndal|loki|marcel|bandit-[a-z]+)-/;
+const V2_FOLK = /^v2\/(holt|jack|mira|nora|sarah|cyndal|loki|marcel|justin|player|boss-collector|bandit-[a-z]+)-/;
 /** v12: raider attack / death come from the gw14 action sheets under the legacy -atk / -dead names. */
 const ART_ALIAS = {};
 for (const k of ["scout", "armor", "brute", "torch", "gray", "blue"]) {
 	ART_ALIAS[`v2/bandit-${k}-walk-atk`] = k === "brute" || k === "torch" ? `v2/bandit-${k}-axe` : `v2/bandit-${k}-gun-atk`;
 	ART_ALIAS[`v2/bandit-${k}-walk-dead`] = `v2/bandit-${k}-death`;
 }
+ART_ALIAS["v2/boss-collector-walk-atk"] = "v2/boss-collector-atk";
+ART_ALIAS["v2/boss-collector-walk-dead"] = "v2/boss-collector-death";
 function sheetRowsOf(name) {
 	if (TALL_COMBAT.has(name)) return 8;
-	if (V2_COLS[name] || V2_FOLK.test(name)) return 8;
+	if (V2_COLS[name] || V2_FOLK.test(name) || name.startsWith("pl/") || name.startsWith("v2/armor/")) return 8;
 	if (name.startsWith("overlay-")) return 8;
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
 	if (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
@@ -9293,14 +10410,14 @@ function sheetRowsOf(name) {
 /** v10.1: the gw12 Justin sheets are a 69 px figure in an 88x124 cell; draw them at the same 69 px hero height as the walk. */
 const HERO69 = new Set(["hero", "hero-gun", "hero-gun-atk", "hero-hit", "hero-down", "v2/hero-idle", "v2/hero-axe", "v2/hero-death"]);
 function heroScale(name) {
-	return HERO69.has(name) ? 0.806 * 124 / 69 : 1;
+	return HERO69.has(name) || name.startsWith("pl/") ? 0.806 * 124 / 69 : 1;
 }
 /** 4 frames across (352px), 6 (528px) or 8 (704px). Anything else stays 4. */
 function sheetCols(img) {
 	if (img && img.cols) return img.cols;
 	if (img && img.width % 88 === 0) {
 		const c = img.width / 88;
-		if (c === 4 || c === 6 || c === 8) return c;
+		if (c === 3 || c === 4 || c === 6 || c === 8) return c;
 	}
 	return 4;
 }
@@ -9415,7 +10532,7 @@ async function loadImages(images) {
 		/* no manifest: stand-ins only */
 	}
 	const extra = [...OPTIONAL_ART].filter((n) => n.startsWith("v2/"));
-	for (const n of [...extra]) if (/^v2\/bandit-[a-z]+-walk$/.test(n)) extra.push(`${n}-atk`, `${n}-dead`);
+	for (const n of [...extra]) if (/^v2\/(bandit-[a-z]+|boss-collector)-walk$/.test(n)) extra.push(`${n}-atk`, `${n}-dead`);
 	// v11.2 lazy loading: bosses and attack/death sheets aren't needed for the first screen.
 	// The menu opens once the core set is in; the rest streams in right after.
 	const all = [...IMAGES, ...extra];

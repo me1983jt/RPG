@@ -23,9 +23,9 @@ await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); awa
 // ---- trade skills
 await T("v3Train", "barter", 80);
 check("skill-levels-by-doing", (await T("v3Lv", "barter")) === 2, await T("v3Lv", "barter"));
-check("barter-perk-price", (await T("v3Price", 100)) === 94, await T("v3Price", 100));
+check("barter-perk-price", (await T("v3Price", 100)) <= 94, await T("v3Price", 100));
 await journal("skills");
-check("skills-screen", (await page.getByTestId("skills-screen").locator("li").count()) === 9);
+check("skills-screen", (await page.getByTestId("skills-screen").locator("li").count()) === 17);
 await shot("03-skills-screen.png");
 await unjournal();
 

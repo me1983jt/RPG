@@ -152,6 +152,7 @@ export interface SaveData {
   perception?: number;
   luck?: number;
   look?: LookId;
+  hair?: "black" | "brown" | "gray" | "auburn";
   points?: number;
   opened?: number[];
   looted?: number[];
@@ -261,6 +262,7 @@ export function playerToSave(
     perception: p.perception,
     luck: p.luck,
     look: p.look,
+    hair: p.hair,
     points: p.points,
     removed,
     slain,

@@ -1,3 +1,4 @@
+import { NEW_SKILLS } from "@/game/v13";
 /** beta v11.3 data: achievements, trade skills, farm upgrades, Skowhegan, traps. Engine wiring lives in engine.ts ("v113" block). */
 
 export interface AchDef { id: string; name: string; text: string }
@@ -5,6 +6,15 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "moose", name: "Big as a Barn", text: "Bring down your first moose." },
   { id: "deer", name: "Venison Supper", text: "Bring down your first deer." },
   { id: "bike", name: "She Runs", text: "Build the motor bicycle." },
+  { id: "ghost", name: "Ghost in the Camp", text: "Raid a raider camp without waking anyone." },
+  { id: "main1", name: "Cambridge Road", text: "The Long Winter, act 1." },
+  { id: "main2", name: "The Signal", text: "The Long Winter, act 2." },
+  { id: "main3", name: "Jack's Maps", text: "The Long Winter, act 3." },
+  { id: "main4", name: "Across the Kennebec", text: "The Long Winter, act 4." },
+  { id: "main5", name: "The Lieutenants", text: "The Long Winter, act 5." },
+  { id: "main6", name: "Through the Grok's Woods", text: "The Long Winter, act 6." },
+  { id: "main7", name: "The Choice", text: "The Long Winter, act 7." },
+  { id: "main8", name: "Siege of Harmony", text: "The Long Winter, act 8." },
   { id: "ride", name: "Down the Tote Road", text: "Ride the motor bicycle." },
   { id: "winter", name: "Wintered Over", text: "Live through your first winter." },
   { id: "grok", name: "The Grok Is Down", text: "Beat The Grok." },
@@ -28,7 +38,7 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "level5", name: "Seasoned", text: "Reach character level 5." },
 ];
 
-export type TradeSkill = "hunting" | "trapping" | "farming" | "mechanics" | "barter" | "medicine" | "stealth" | "carpentry" | "marksmanship";
+export type TradeSkill = "hunting" | "trapping" | "farming" | "mechanics" | "barter" | "medicine" | "stealth" | "carpentry" | "marksmanship" | "cooking" | "foraging" | "fishing" | "survival" | "leadership" | "scavenging" | "tracking" | "firstaid";
 export interface TradeSkillDef { id: TradeSkill; name: string; how: string; perk: string }
 /** Each skill levels by doing (XP 25 * level to reach the next level, max 10). Every level gives its perk once more. */
 export const TRADE_SKILLS: TradeSkillDef[] = [
@@ -41,6 +51,7 @@ export const TRADE_SKILLS: TradeSkillDef[] = [
   { id: "stealth", name: "Stealth", how: "Get close to animals and raiders without being seen.", perk: "Enemies notice you 3% later." },
   { id: "carpentry", name: "Carpentry", how: "Build farm upgrades.", perk: "Farm upgrades cost 4% less wood and stone." },
   { id: "marksmanship", name: "Marksmanship", how: "Land gunshots.", perk: "Guns hit 4% harder." },
+  ...NEW_SKILLS.map((s) => ({ id: s.id, name: s.name, how: s.how, perk: s.perk })),
 ];
 export const SKILL_MAX = 10;
 export function skillNeed(level: number): number {
