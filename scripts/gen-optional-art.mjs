@@ -9,3 +9,11 @@ const want = [
 const have = want.filter((n) => existsSync(`${root}${n}.png`));
 writeFileSync(`${root}v2/optional.json`, JSON.stringify(have, null, 1) + "\n");
 console.log("optional art present:", have.length ? have.join(", ") : "none");
+
+// v11.2: audio hooks. Drop mp3s in public/game/audio/sfx/<name>.mp3 or public/game/audio/music/<track>.mp3.
+const aroot = `${root}audio/`;
+const sfx = ["hit", "hurt", "build", "talk", "level", "gather", "die", "click", "chop", "mine", "shoot"].map((n) => `sfx/${n}`);
+const music = ["menu", "day", "night", "raid"].map((n) => `music/${n}`);
+const haveA = [...sfx, ...music].filter((n) => existsSync(`${aroot}${n}.mp3`));
+writeFileSync(`${aroot}manifest.json`, JSON.stringify(haveA, null, 1) + "\n");
+console.log("audio present:", haveA.length ? haveA.join(", ") : "none");

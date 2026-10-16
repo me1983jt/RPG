@@ -23,8 +23,77 @@ function tone(freq: number, dur: number, type: OscillatorType, gain: number, del
   osc.stop(t + dur + 0.02);
 }
 
+/**
+ * v11.2 sound + music hooks. Real files are optional: public/game/audio/manifest.json lists the ones that exist
+ * (written by scripts/gen-optional-art.mjs), e.g. "sfx/shoot", "music/day". Only listed files are ever requested,
+ * so missing audio never 404s; sfx fall back to the built-in tones and music stays silent.
+ */
+const audioFiles = new Set<string>();
+let manifestTried = false;
+function loadManifest(): void {
+  if (manifestTried || typeof window === "undefined") return;
+  manifestTried = true;
+  fetch("/game/audio/manifest.json")
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list: unknown) => {
+      if (Array.isArray(list)) for (const n of list) if (typeof n === "string") audioFiles.add(n);
+      if (wantTrack) setMusic(wantTrack, true);
+    })
+    .catch(() => {});
+}
+if (typeof window !== "undefined") loadManifest();
+const sfxCache = new Map<string, HTMLAudioElement>();
+let musicEl: HTMLAudioElement | null = null;
+let musicTrack = "";
+let wantTrack = "";
+let musicVol = 0.35;
+export function audioState(): { files: string[]; track: string; playing: string } {
+  return { files: [...audioFiles], track: wantTrack, playing: musicTrack };
+}
+/** Ask for a music track ("menu" | "day" | "night" | "raid"). Plays /game/audio/music/<track>.mp3 if it exists. */
+export function setMusic(track: string, force = false): void {
+  if (track === wantTrack && !force) return;
+  wantTrack = track;
+  const key = `music/${track}`;
+  if (!audioFiles.has(key)) {
+    if (musicEl) { musicEl.pause(); musicEl = null; musicTrack = ""; }
+    return;
+  }
+  if (musicTrack === track && musicEl) return;
+  try {
+    if (musicEl) musicEl.pause();
+    const el = new Audio(`/game/audio/${key}.mp3`);
+    el.loop = true;
+    el.volume = musicVol;
+    void el.play().catch(() => {});
+    musicEl = el;
+    musicTrack = track;
+  } catch {
+    musicEl = null;
+  }
+}
+export function setMusicVolume(v: number): void {
+  musicVol = Math.max(0, Math.min(1, v));
+  if (musicEl) musicEl.volume = musicVol;
+}
+function playFile(name: string): boolean {
+  const key = `sfx/${name}`;
+  if (!audioFiles.has(key)) return false;
+  try {
+    let base = sfxCache.get(key);
+    if (!base) { base = new Audio(`/game/audio/${key}.mp3`); sfxCache.set(key, base); }
+    const a = base.cloneNode() as HTMLAudioElement;
+    a.volume = 0.6;
+    void a.play().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sfx(name: "hit" | "hurt" | "build" | "talk" | "level" | "gather" | "die" | "click" | "chop" | "mine" | "shoot"): void {
   unlockAudio();
+  if (playFile(name)) return;
   if (!ctx) return;
   switch (name) {
     case "hit":

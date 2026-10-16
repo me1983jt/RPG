@@ -3,7 +3,7 @@
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
 const ART_V = 2071;
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
-import { sfx, unlockAudio } from "@/game/audio";
+import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
@@ -28,7 +28,7 @@ import {
   type SkillId,
 } from "@/game/progress";
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
-import { b64ToBytes, bytesToB64, hasSave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
+import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
@@ -91,6 +91,8 @@ export interface GameApi {
   toggleStats: () => void;
   dismount: () => void;
   mount: () => void;
+  setSlot: (n: number) => void;
+  drawMap: (c: HTMLCanvasElement) => void;
   spend: (stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck") => void;
   spendSkill: (id: SkillId) => void;
   retag: (id: SkillId) => void;
@@ -575,13 +577,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const side = snow >= 3 ? q10Hud(q10) || q11Hud(q11) : "";
 		return side || questText(quest, questKills);
 	}
+	function musicTick() {
+		setMusic(phase === "menu" ? "menu" : raid ? "raid" : nightDark(clock) > .3 ? "night" : "day");
+	}
 	function sync(force = false) {
 		if (!force) return;
+		musicTick();
 		const p = player;
 		useHud.setState({
 			phase,
 			ready: useHud.getState().ready,
 			hasSave: hasSave(),
+			slot: getSlot(),
+			slots: slotInfos(),
 			name: p?.name ?? "Packer",
 			hp: p?.hp ?? 44,
 			maxHp: p?.maxHp ?? 44,
@@ -2528,7 +2536,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function q11HuntStart(kind) {
 		const wind = Math.floor(Math.random() * 8);
 		q11.hunt = { kind, wind, on: true };
-		const spec = kind === "moose" ? ["moose", null, "Bull moose", 52, 10, 22] : kind === "bear" ? ["wolf", "bear", "Black bear", 58, 9, 26] : ["deer", null, "Whitetail buck", 20, 2, 10];
+		const spec = kind === "moose" ? ["moose", null, "Bull moose", 52, 10, 22] : kind === "bear" ? ["wolf", "bear", "Black bear", 58, 9, 26] : ["deer", null, "Whitetail buck", 26, 3, 10];
 		let spot = null;
 		for (let k = 0; k < 8 && !spot; k++) {
 			const a = Math.random() * Math.PI * 2;
@@ -2583,12 +2591,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!fishGame) return 0;
 		return .5 + .5 * Math.sin((performance.now() - fishGame.t0) / 1000 * fishGame.speed * Math.PI);
 	}
+	const FISH_PER_DAY = 3;
 	function q11FishHook() {
 		const p = fishPos();
 		const hit = fishForce ?? (p >= fishGame.zone && p <= fishGame.zone + .2);
 		fishGame = null;
 		if (!hit) { pushLog("You yank too soon. It spits the hook."); return; }
 		q11.fish.caught += 1;
+		if (q11.fish.day !== curDay()) { q11.fish.day = curDay(); q11.fish.today = 0; }
+		q11.fish.today = (q11.fish.today ?? 0) + 1;
 		if (Math.random() < .12) { q11.fish.rare += 1; giveItem("smokedfish", 3); pushLog("A brook trout as long as your arm, red-bellied. That's a fish they'll talk about at the store."); }
 		else { giveItem("smokedfish", 1); pushLog(seasonNow() === 3 ? "A yellow perch through the ice. Supper." : "A fat pickerel on the line. Supper."); }
 		sfx("level");
@@ -2629,9 +2640,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ label: "Sell a pelt (5 iron)", id: "q11-sell-pelt" },
 				{ label: "Sell a hide (3 iron)", id: "q11-sell-hide" },
 				{ label: "Sell a jar of syrup (6 iron)", id: "q11-sell-syrup" },
-				{ label: "Buy 8 shells (8 iron)", id: "q11-buy-shells" },
+				{ label: "Buy 8 shells (10 iron)", id: "q11-buy-shells" },
 				{ label: "Buy a fuel can (10 iron)", id: "q11-buy-fuel" },
-				{ label: "Buy 2 cans of gas (6 iron)", id: "q11-buy-gas" },
+				{ label: "Buy 2 cans of gas (8 iron)", id: "q11-buy-gas" },
 				{ label: "Head home", id: "q11-car-home" },
 			],
 		};
@@ -2856,8 +2867,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			return q11Choice("q11-farm");
 		}
+		if (id === "q11-hunt" && q11.huntDay === curDay()) return openD({ speaker: "Justin", text: "We've been out once today. Let the woods settle. Tomorrow.", choices: [{ label: "All right", id: "close" }] });
 		if (id === "q11-hunt") return openD({ speaker: "Justin", text: "Short trip or long? Mind the wind. If it's at your back they'll smell you a quarter mile off.", choices: [{ label: "Deer in the cutover", id: "q11-hunt-deer" }, { label: "Moose in the alders", id: "q11-hunt-moose" }, { label: "Bear up on the ridge", id: "q11-hunt-bear" }, { label: "Not today", id: "close" }] });
-		if ((m = id.match(/^q11-hunt-(deer|moose|bear)$/))) { close(); q11HuntStart(m[1]); return true; }
+		if ((m = id.match(/^q11-hunt-(deer|moose|bear)$/))) { close(); q11.huntDay = curDay(); q11HuntStart(m[1]); return true; }
 		if (id === "q11-caravan") return openD({ speaker: "Justin", text: "Bangor's a long day with the cart. Which way? Route 2's quick but there's road agents. The river road's slower and quieter. The back roads are coyote country.", choices: [...CARAVAN_ROUTES.map((r, i) => ({ label: r.label, id: `q11-car-route-${i}` })), { label: "Not today", id: "close" }] });
 		if ((m = id.match(/^q11-car-route-(\d)$/))) {
 			q11.route = Number(m[1]); q11.caravan = 1;
@@ -2868,9 +2880,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const sell = { "q11-sell-pelt": ["pelt", 5], "q11-sell-hide": ["hide", 3], "q11-sell-syrup": ["syrup", 6] }[id];
 		if (sell && q11.caravan === 3) { if (takeItem(sell[0], 1)) { player.scrap += sell[1]; pushLog(`Sold. +${sell[1]} iron.`); sfx("click"); } else pushLog("You haven't got one to sell."); q11Market(); return true; }
-		const buy = { "q11-buy-shells": ["shells", 8, 8], "q11-buy-fuel": ["fuel", 1, 10], "q11-buy-gas": ["gas", 2, 6] }[id];
+		const buy = { "q11-buy-shells": ["shells", 8, 10], "q11-buy-fuel": ["fuel", 1, 10], "q11-buy-gas": ["gas", 2, 8] }[id];
 		if (buy && q11.caravan === 3) { if (player.scrap >= buy[2]) { player.scrap -= buy[2]; giveItem(buy[0], buy[1]); pushLog(`Bought. -${buy[2]} iron.`); } else pushLog("Not enough iron."); q11Market(); return true; }
 		if (id === "q11-car-home" && q11.caravan === 3) { close(); if (!q11CaravanAmbush(true)) q11CaravanHome(); return true; }
+		if ((m = id.match(/^q11-fish-cast-(.+)$/)) && q11.fish.day === curDay() && (q11.fish.today ?? 0) >= FISH_PER_DAY) {
+			return openD({ speaker: "Fishing", text: "They've gone off the bite. Nothing's touching it. Try again tomorrow.", choices: [{ label: "Reel in", id: "q11-fish-stop" }] });
+		}
 		if ((m = id.match(/^q11-fish-cast-(.+)$/))) {
 			fishGame = { t0: performance.now(), speed: .7 + Math.random() * .5, zone: .15 + Math.random() * .6, site: m[1] };
 			return openD({ speaker: "Fishing", text: "The bobber rides the ripples. Wait for it to dip into the green, then set the hook.", choices: [{ label: "Set the hook!", id: "q11-fish-hook" }, { label: "Reel in", id: "q11-fish-stop" }] });
@@ -7467,6 +7482,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ty1: Math.ceil(maxY / 64) + 3
 		};
 	}
+	/** v11.2 full map: only explored tiles show (fog of war), with quest markers and you. */
+	function drawWorldMap(c) {
+		const g = c.getContext("2d");
+		if (!g) return;
+		const w = c.width, h = c.height;
+		g.fillStyle = "#0c0f0c";
+		g.fillRect(0, 0, w, h);
+		if (!world || !player) return;
+		const sx = w / 156, sy = h / 156;
+		const colors = ["#6e5a3e", "#3e5a3a", "#7a7568", "#4a5248", "#d9e0dc"];
+		for (let ty = 0; ty < 156; ty++) for (let tx = 0; tx < 156; tx++) {
+			const i = ty * 156 + tx;
+			const tile = world.tiles[i] ?? 0;
+			if (!explored[i]) continue;
+			g.fillStyle = tile === 5 ? "#24384a" : colors[tile] ?? "#8a7048";
+			g.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy));
+		}
+		g.fillStyle = "rgba(240,230,212,.35)";
+		for (const p of world.props) {
+			if (!explored[p.ty * 156 + p.tx] || !canWalkIn(p)) continue;
+			g.fillRect(p.tx * sx - 1, p.ty * sy - 1, 4, 4);
+		}
+		q10Mini(g, sx, sy);
+		const pt = tileOf(player.x, player.y);
+		g.fillStyle = "#f0e6d4";
+		g.beginPath(); g.arc(pt.tx * sx, pt.ty * sy, 5, 0, Math.PI * 2); g.fill();
+		g.strokeStyle = "#101410"; g.lineWidth = 2; g.stroke();
+	}
 	function drawMini() {
 		const w = mini.width;
 		const h = mini.height;
@@ -7744,11 +7787,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	loadImages(images).then(() => {
 		useHud.setState({
 			ready: true,
-			hasSave: hasSave()
+			hasSave: hasSave(),
+			slot: getSlot(),
+			slots: slotInfos()
 		});
 	});
 	useHud.setState({
 		hasSave: hasSave(),
+		slot: getSlot(),
+		slots: slotInfos(),
 		ready: false
 	});
 	function craft(id) {
@@ -8151,6 +8198,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		dismount() {
 			parkBike(true);
+		},
+		setSlot(n) {
+			if (phase !== "menu") return;
+			setSlot(n);
+			useHud.setState({ slot: getSlot(), slots: slotInfos(), hasSave: hasSave() });
+		},
+		drawMap(c) {
+			drawWorldMap(c);
 		},
 		mount() {
 			const b = nearBike();
@@ -8597,6 +8652,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11Spot: (key) => q11Spot(key),
 		bikeInfo: () => { const b = world?.props.find((p) => p.farmBike); const n = nearBike(); return { mounted, built: bikeBuilt(), farmBike: b ? propCenter(b) : null, near: !!n, nearFarm: !!n?.farmBike, gas: player?.bag.find((s) => s.id === "gas")?.qty ?? 0, gasDist, notice: noticeRange(100), optional: [...OPTIONAL_ART] }; },
 		mountNow: () => api.mount(),
+		audio: () => audioState(),
+		lazyPending: () => LAZY_STATE.pending,
 		dismountNow: () => api.dismount(),
 		q11Cur: (id) => { const q = questById(id); const st = q11.q[id]; const step = q && q11Cur(q); return { s: st?.s ?? 0, n: q?.steps.length ?? 0, kind: step?.kind ?? "", site: step?.site ?? "", left: st?.left ?? 0 }; },
 		q11Targets: () => q11Targets().map((t) => ({ key: t.key, mode: t.mode, x: Math.round(t.x), y: Math.round(t.y) })),
@@ -8780,7 +8837,19 @@ async function loadImages(images) {
 		/* no manifest: stand-ins only */
 	}
 	const extra = [...OPTIONAL_ART].filter((n) => n.startsWith("v2/"));
-	return Promise.all([...IMAGES, ...extra].map((name) => new Promise((resolve) => {
+	// v11.2 lazy loading: bosses and attack/death sheets aren't needed for the first screen.
+	// The menu opens once the core set is in; the rest streams in right after.
+	const all = [...IMAGES, ...extra];
+	const core = all.filter((n) => !LAZY_SHEET.test(n));
+	const lazy = all.filter((n) => LAZY_SHEET.test(n));
+	await loadSet(images, core);
+	LAZY_STATE.pending = lazy.length;
+	LAZY_STATE.done = loadSet(images, lazy).then(() => { LAZY_STATE.pending = 0; });
+}
+const LAZY_SHEET = /^boss-|-(atk|dead)$/;
+const LAZY_STATE = { pending: -1, done: Promise.resolve() };
+function loadSet(images, list) {
+	return Promise.all(list.map((name) => new Promise((resolve) => {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {

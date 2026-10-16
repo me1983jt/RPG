@@ -13,6 +13,7 @@ import {
   Plus,
   ScrollText,
   DoorOpen,
+  Map as MapIcon,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
@@ -43,6 +44,16 @@ export function RPG() {
   const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(() => typeof window === "undefined" || window.innerHeight >= 500);
+  const mapRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!mapOpen) return;
+    const draw = () => mapRef.current && apiRef.current?.drawMap(mapRef.current);
+    draw();
+    const t = window.setInterval(draw, 500);
+    return () => window.clearInterval(t);
+  }, [mapOpen]);
   const [confirmExit, setConfirmExit] = useState(false);
   const short = useShortScreen();
   const playing = hud.phase !== "menu";
@@ -181,6 +192,18 @@ export function RPG() {
               Leave
             </button>
           ) : null}
+          {mapOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
+            <section className="pointer-events-auto absolute left-1/2 top-2 bottom-36 z-50 flex max-w-[94vw] -translate-x-1/2 flex-col plank border border-border bg-surface p-3 short:top-1 short:bottom-[3.6rem] short:p-2" aria-label="World map">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="font-display text-xl short:text-base">Map</p>
+                <button type="button" className="min-h-10 px-2 text-sm text-primary" onClick={() => setMapOpen(false)}>
+                  Close
+                </button>
+              </div>
+              <canvas ref={mapRef} width={468} height={468} data-testid="world-map" style={{ aspectRatio: "1 / 1" }} className="mx-auto mt-1 min-h-0 max-w-full flex-1 plank border border-border bg-bg" />
+              <p className="mt-1 text-xs text-muted short:hidden">Only ground you've seen is drawn. White dot: you. Gold: quest marks.</p>
+            </section>
+          ) : null}
           <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
@@ -189,6 +212,27 @@ export function RPG() {
             <p className="mt-1 line-clamp-2 text-base font-semibold leading-snug short:mt-0 short:line-clamp-1 short:text-sm">{hud.questText}</p>
             <p className="mt-1 text-sm font-semibold text-primary short:mt-0.5">{hud.clock}</p>
             <p className="text-sm font-semibold text-fg">{hud.karmaWord}</p>
+            {(() => {
+              const act = hud.journal.filter((e) => !e.done && !e.id.startsWith("q11-season")).slice(0, 3);
+              if (!act.length) return null;
+              return (
+                <div className="mt-1 border-t border-border pt-1" data-testid="quest-tracker">
+                  <button type="button" className="flex min-h-10 w-full items-center justify-between text-xs uppercase tracking-widest text-primary" onClick={() => setTrackerOpen((o) => !o)}>
+                    Tracking {act.length} <span>{trackerOpen ? "–" : "+"}</span>
+                  </button>
+                  {trackerOpen ? (
+                    <ul className="space-y-0.5">
+                      {act.map((e) => (
+                        <li key={e.id} className="text-xs leading-snug short:line-clamp-1">
+                          <span className="font-semibold">{e.title}</span>
+                          <span className="text-muted short:hidden"> · {e.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              );
+            })()}
             {hud.party ? (
               <p className="text-xs">
                 {hud.party.name} with you · {hud.party.hp}/{hud.party.maxHp}
@@ -200,7 +244,9 @@ export function RPG() {
             {hud.riding ? (
               <button
                 type="button"
-                className="pointer-events-auto self-center plank bg-primary px-4 py-2 text-sm font-semibold text-bg"
+                data-testid="dismount-btn"
+                style={{ touchAction: "manipulation" }}
+                className="pointer-events-auto self-center min-h-12 min-w-28 plank bg-primary px-6 py-2 text-base font-semibold text-bg"
                 onClick={() => apiRef.current?.dismount()}
               >
                 Dismount
@@ -210,7 +256,7 @@ export function RPG() {
               <button
                 type="button"
                 data-testid="ride-btn"
-                className="pointer-events-auto self-center plank bg-primary px-4 py-2 text-sm font-semibold text-bg"
+                className="pointer-events-auto self-center min-h-12 min-w-28 plank bg-primary px-6 py-2 text-base font-semibold text-bg"
                 style={{ touchAction: "manipulation" }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => apiRef.current?.mount?.()}
@@ -218,7 +264,7 @@ export function RPG() {
                 Ride
               </button>
             ) : null}
-            {hud.log.length > 0 ? (
+            {hud.log.length > 0 && !journalOpen && !mapOpen ? (
               // On short (phone landscape) screens the hero stands mid-screen right above this list, so show
               // only the two newest lines, smaller, at the left edge instead of centred over the hero.
               <ul
@@ -322,7 +368,7 @@ export function RPG() {
             ) : null}
 
             {journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
-              <section className="pointer-events-auto mx-auto max-h-[18rem] w-full max-w-lg overflow-y-auto plank border border-border bg-surface p-3 short:max-h-[14rem]" aria-label="Quest journal">
+              <section className="pointer-events-auto mx-auto max-h-[min(70vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]" aria-label="Quest journal">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Journal</p>
                   <button type="button" className="text-sm text-primary" onClick={() => setJournalOpen(false)}>
@@ -350,7 +396,7 @@ export function RPG() {
             ) : null}
 
             {hud.statsOpen ? (
-              <section className="pointer-events-auto mx-auto max-h-[18rem] w-full max-w-lg overflow-y-auto plank border border-border bg-surface p-3 short:max-h-[14rem]">
+              <section className="pointer-events-auto mx-auto max-h-[min(70vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Stats</p>
                   <p className="text-sm text-primary">{hud.points} stat · {hud.skillPoints} skill</p>
@@ -480,7 +526,8 @@ export function RPG() {
                 <button
                   key={part}
                   type="button"
-                  className={`plank border px-3 py-2 text-xs font-semibold capitalize short:px-2 short:py-1 ${hud.aim === part ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`}
+                  style={{ touchAction: "manipulation" }}
+                  className={`min-h-10 min-w-12 plank border px-3 py-2 text-xs font-semibold capitalize short:px-2 short:py-1 ${hud.aim === part ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`}
                   onClick={() => apiRef.current?.setAim(part)}
                 >
                   {part}
@@ -501,7 +548,7 @@ export function RPG() {
                       <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
                       <p className="mt-1 text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
                     </div>
-                    <button type="button" className="shrink-0 text-sm text-primary" onClick={() => apiRef.current?.tap("pause")}>
+                    <button type="button" className="-my-2 -mr-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
                       Pause
                     </button>
                   </div>
@@ -529,27 +576,27 @@ export function RPG() {
                   </ActionButton>
                 </div>
               </div>
-              <div className="pointer-events-auto grid grid-cols-6 gap-1 short:w-72 short:shrink-0">
+              <div className="pointer-events-auto grid grid-cols-7 gap-1 short:w-[22rem] short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />
                     Talk
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Attack" onClick={() => apiRef.current?.tap("attack")}>
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <Axe className="size-4" aria-hidden />
                     Attack
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Build" pressed={hud.buildOpen} onClick={() => apiRef.current?.tap("build")}>
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <House className="size-4" aria-hidden />
                     Build
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Pack" pressed={hud.packOpen} onClick={() => apiRef.current?.togglePack()}>
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <Backpack className="size-4" aria-hidden />
                     Pack
                   </span>
@@ -564,13 +611,29 @@ export function RPG() {
                     setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen));
                   }}
                 >
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <BookOpen className="size-4" aria-hidden />
                     Journal
                   </span>
                 </ActionButton>
+                <ActionButton
+                  wide
+                  label="Map"
+                  pressed={mapOpen}
+                  onClick={() => {
+                    if (hud.statsOpen) apiRef.current?.toggleStats();
+                    if (hud.packOpen) apiRef.current?.togglePack();
+                    setJournalOpen(false);
+                    setMapOpen((o) => !o);
+                  }}
+                >
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
+                    <MapIcon className="size-4" aria-hidden />
+                    Map
+                  </span>
+                </ActionButton>
                 <ActionButton wide label="Stats" pressed={hud.statsOpen} onClick={() => apiRef.current?.toggleStats()}>
-                  <span className="flex flex-col items-center gap-0.5 text-[10px] font-semibold leading-none">
+                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <ScrollText className="size-4" aria-hidden />
                     Stats
                   </span>
@@ -779,6 +842,24 @@ export function RPG() {
                       </button>
                     </div>
                   ) : null}
+                  {step === "trade" ? (
+                    <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Save slot" data-testid="save-slots">
+                      {(hud.slots ?? []).map((sl) => (
+                        <button
+                          key={sl.slot}
+                          type="button"
+                          role="radio"
+                          aria-checked={hud.slot === sl.slot}
+                          data-testid={`slot-${sl.slot}`}
+                          className={`min-h-14 plank border px-2 py-2 text-left text-xs ${hud.slot === sl.slot ? "border-primary bg-primary/20" : "border-border bg-surface-2"}`}
+                          onClick={() => apiRef.current?.setSlot(sl.slot)}
+                        >
+                          <span className="block font-semibold">Slot {sl.slot}</span>
+                          <span className="block truncate text-muted">{sl.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   {hud.hasSave && step === "trade" ? (
                     <button
                       type="button"
@@ -927,7 +1008,8 @@ function ActionButton({
       type="button"
       aria-label={label}
       aria-pressed={pressed}
-      className={`flex items-center justify-center plank border ${wide ? "h-14 w-full min-w-0 px-1 short:h-11" : "h-12 w-12 short:h-9 short:w-9"} ${pressed ? "border-primary bg-primary text-bg" : "border-border bg-surface text-fg"}`}
+      style={{ touchAction: "manipulation" }}
+      className={`flex select-none items-center justify-center plank border ${wide ? "h-14 w-full min-w-0 px-1 short:h-12" : "h-12 w-12 short:h-11 short:w-11"} ${pressed ? "border-primary bg-primary text-bg" : "border-border bg-surface text-fg"}`}
       onClick={onClick}
     >
       {children}

@@ -387,6 +387,8 @@ export interface HudSnapshot {
   phase: Phase;
   ready: boolean;
   hasSave: boolean;
+  slot?: number;
+  slots?: { slot: number; used: boolean; label: string }[];
   name: string;
   hp: number;
   maxHp: number;
