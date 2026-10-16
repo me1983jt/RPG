@@ -4024,7 +4024,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!raid.collector && raid.wave >= raid.waves) {
 			raid.collector = true;
 			const fh = raidHouse();
-			const c = fh ? propCenter(fh) : { x: player.x, y: player.y };
+			const c = fh ?? { x: player.x, y: player.y }; // v13.2 fix: raidHouse() is already a point (propCenter on it threw)
 			spawnRaider("collector", clearOutside(c.x + 700, c.y - 300), { hp: 260, atk: 14, xp: 200, name: "The Collector" });
 			pushLog("A big man in a stolen state trooper's coat walks up the road like he owns it. The Collector.");
 		}
@@ -4248,6 +4248,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					{ label: "Barn lantern — 12 iron", id: "q10-buy-lantern" },
 					{ label: "Smoked jerky — 5 iron", id: "q10-buy-jerky" },
 					{ label: "Gas, quart can — 4 iron", id: "q10-buy-gas" },
+					// v13.2 fix: the store talk returned early, so the bounty board and Act 4 never showed up here
+					...v13TalkChoices("marcel"),
 					{ label: "Take care, Marcel", id: "close" },
 				],
 			};
@@ -7522,7 +7524,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!raid || !player || !world) return;
 		const fh = raidHouse();
 		if (!fh) { endRaid(false, "The raid breaks off."); return; }
-		if (nightShade(clock) < .12) {
+		// v13.2 fix: the siege of Harmony runs till it's decided; dawn used to end it early and count as a loss
+		if (nightShade(clock) < .12 && !raid.siege) {
 			endRaid(!inside, inside ? "Dawn. You sat it out behind the door. The raiders drift off with what they could carry." : "Dawn comes up grey over the orchard. They pull back to the road.");
 			return;
 		}
@@ -7570,6 +7573,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (live === 0) {
 			if (raid.wave >= raid.waves) {
+				// v13.2 fix: on siege night the Collector must walk in before the night can be won
+				if (raid.siege && !raid.collector) { v13SiegeTick(0); return; }
+				if (raid.siege && !w13.main.collectorDown && world.enemies.some((e) => !e.dead && e.variant === "collector")) return;
 				endRaid(true, "The last of them breaks for the road.");
 				return;
 			}
@@ -10208,6 +10214,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v13Travel: (id) => { fastTravel(id); return { mapId, x: player.x, y: player.y, gas: countOf("gas") }; },
 		v13Act: (n) => { w13.main.act = n; sync(true); },
 		v13Tick: () => v13MainTick(),
+		v13SpawnCollector: () => { if (raid) { raid.wave = raid.waves; raid.collector = false; v13SiegeTick(0); } return !!raid; },
 		v13Siege: () => { v13SiegeStart(); return raid ? { siege: !!raid.siege, waves: raid.waves, house: raid.house } : null; },
 		v13SiegeEnd: (won) => { if (won) w13.main.collectorDown = true; endRaid(!!won, "Test: the siege ends."); v13MainTick(); return { ...w13.main }; },
 		v13Caravan: () => v13Caravan(),
