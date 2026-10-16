@@ -34,7 +34,7 @@ import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToS
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
-import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
+import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
 import {
   HEX_CX,
   HEX_CY,
@@ -3597,11 +3597,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			w13.slipT += dt;
 			if (w13.slipT > 6) {
 				w13.slipT = 0;
-				if (Math.random() < (mounted ? .3 : .08) * (1 - .05 * lv("survival"))) {
+				if (Math.random() < (mounted ? .12 : .06) * (1 - .05 * lv("survival"))) { // v13.2 balance: was .3/.08
 					if (mounted) { parkBike(false); pushLog("The back wheel goes out from under you on the black ice. You hit the road hard."); }
 					else pushLog("Your feet go out from under you on the black ice.");
 					player.hp = Math.max(1, player.hp - (mounted ? 8 : 3));
-					if (Math.random() < (mounted ? .5 : .2)) catchAil("bone", "You landed wrong.");
+					if (Math.random() < (mounted ? .3 : .12)) catchAil("bone", "You landed wrong."); // v13.2: was .5/.2
 					train("survival", 4);
 				}
 			}
@@ -4073,6 +4073,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			out.push({ label: "Caravan on the road?", id: "v13-caravan" });
 			if (a === 8 && !w13.main.siege) out.push({ label: "The Long Winter: we're ready for them", id: "v13-main-siege" });
 		}
+		if (MAIN_TALK[a]?.[role] && !raid) out.push({ label: "The Long Winter: what do you make of it?", id: "v13-main-talk" });
 		if (MAIN_ACTS[a - 1] && MAIN_ACTS[a - 1].intro[0].toLowerCase().startsWith(role === "cal" ? "jack" : role) && !w13.main.flags[`intro${a}`]) out.push({ label: `The Long Winter: ${MAIN_ACTS[a - 1].title}`, id: `v13-main-intro` });
 		return out;
 	}
@@ -4132,6 +4133,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else pushLog("Jack doesn't deal on credit.");
 			return close13();
 		}
+		if (id === "v13-main-talk") { const r = talkNpc?.role; const line = MAIN_TALK[w13.main.act]?.[r]; if (!line) return close13(); if (!w13.main.flags[`talk${w13.main.act}${r}`]) { w13.main.flags[`talk${w13.main.act}${r}`] = true; diary(`${talkNpc.name}: ${line.replace(/^"|"$/g, "").slice(0, 120)}`); } return openD13(talkNpc.name, line, [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-intro") { const a = mainAct(); w13.main.flags[`intro${a.n}`] = true; return openD13(a.intro[0], a.intro[1], [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-signal") { w13.main.flags.signal = true; return openD13("Cyndal", "\"Listen.\" Static, then a calm voice: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" It loops. \"Same words every hour, Dad says nobody talks that calm anymore.\"", [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-jack") {
@@ -4208,7 +4210,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			perks: Object.entries(SKILL_PERKS).map(([k, list]) => ({ skill: k, got: list.slice(0, perkCount(v3.skills[k]?.lv ?? 0)), next: list[perkCount(v3.skills[k]?.lv ?? 0)] ?? "" })),
 			rebuilt: { ...w13.rebuilt }, bounties: w13.bounties.map((b) => ({ text: b.text, got: b.got, need: b.need, pay: b.pay })),
 			diary: w13.diary.slice(-40), notes: w13.notes,
-			main: { act: w13.main.act, title: mainAct().title, goal: mainAct().goal, acts: MAIN_ACTS.map((a) => ({ n: a.n, title: a.title, goal: a.goal, done: a.n < w13.main.act })), ending: w13.main.ending ? { id: w13.main.ending, ...ENDINGS[w13.main.ending] } : null, slide: w13.main.slide },
+			main: { act: w13.main.act, title: mainAct().title, goal: mainAct().goal, acts: MAIN_ACTS.map((a) => ({ n: a.n, title: a.title, goal: a.goal, done: a.n < w13.main.act, notes: a.n <= w13.main.act ? [...(MAIN_JOURNAL[a.n] ?? []), ...(a.n < w13.main.act ? [a.done] : [])] : [] })), ending: w13.main.ending ? { id: w13.main.ending, ...ENDINGS[w13.main.ending] } : null, slide: w13.main.slide },
 			canTravel: mounted && bikeBuilt(),
 		};
 	}
@@ -6268,8 +6270,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!mode11) {
 			wearArmor(amount);
 			const biter = world?.enemies.find((e) => !e.dead && e.kind !== "bandit" && Math.hypot(e.x - fromX, e.y - fromY) < 40);
-			if (biter && Math.random() < .15 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
-			if (dmg >= player.maxHp * .3 && Math.random() < .2) catchAil("bone", "That hit cracked something.");
+			if (biter && Math.random() < .08 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
+			if (dmg >= player.maxHp * .3 && Math.random() < .12) catchAil("bone", "That hit cracked something.");
 		}
 		player.invuln = .38;
 		player.hurt = .4;

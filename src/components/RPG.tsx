@@ -319,7 +319,8 @@ export function RPG() {
             ) : null}
             {(() => {
               const act = hud.journal.filter((e) => !e.done && !e.id.startsWith("q11-season")).slice(0, 3);
-              if (!act.length) return null;
+              // v13.2 touch: the tracker toggle sat under open panels and dialogue on phones
+              if (!act.length || journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen) return null;
               return (
                 <div className="mt-1 border-t border-border pt-1" data-testid="quest-tracker">
                   <button type="button" className="flex min-h-10 w-full items-center justify-between text-xs uppercase tracking-widest text-primary" onClick={() => setTrackerOpen((o) => !o)}>
@@ -493,10 +494,10 @@ export function RPG() {
             ) : null}
 
             {journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
-              <section className="pointer-events-auto mx-auto max-h-[min(70vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]" aria-label="Quest journal">
+              <section className="pointer-events-auto mx-auto max-h-[min(56vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]" aria-label="Quest journal">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Journal</p>
-                  <button type="button" className="text-sm text-primary" onClick={() => setJournalOpen(false)}>
+                  <button type="button" className="min-h-10 min-w-10 px-2 text-sm text-primary" onClick={() => setJournalOpen(false)}>
                     Close
                   </button>
                 </div>
@@ -509,10 +510,11 @@ export function RPG() {
                 </div>
                 {jTab === "main" && hud.v13 ? (
                   <ol className="mt-2 space-y-1" data-testid="main-screen">
-                    {hud.v13.main.acts.map((a: { n: number; title: string; goal: string; done: boolean }) => (
+                    {hud.v13.main.acts.map((a: { n: number; title: string; goal: string; done: boolean; notes?: string[] }) => (
                       <li key={a.n} className={`plank border px-3 py-2 ${a.n === hud.v13.main.act ? "border-primary bg-bg" : "border-border bg-bg"} ${a.n > hud.v13.main.act ? "opacity-40" : ""}`}>
                         <p className="font-semibold">{a.done ? "✓ " : ""}Act {a.n}: {a.title}</p>
                         <p className="text-xs text-muted">{a.n > hud.v13.main.act ? "…" : a.goal}</p>
+                        {a.notes?.length ? <ul className="mt-1 space-y-0.5 text-xs italic" data-testid={`main-notes-${a.n}`}>{a.notes.map((t, i) => <li key={i}>{t}</li>)}</ul> : null}
                       </li>
                     ))}
                   </ol>
@@ -608,7 +610,7 @@ export function RPG() {
             ) : null}
 
             {hud.statsOpen ? (
-              <section className="pointer-events-auto mx-auto max-h-[min(70vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]">
+              <section className="pointer-events-auto mx-auto max-h-[min(36vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Stats</p>
                   <p className="text-sm text-primary">{hud.points} stat · {hud.skillPoints} skill</p>
@@ -655,7 +657,7 @@ export function RPG() {
                       <span className="text-lg">{value}</span>
                       <button
                         type="button"
-                        className="plank bg-primary px-3 py-2 text-sm font-semibold text-bg disabled:opacity-40"
+                        className="min-h-10 min-w-10 plank bg-primary px-3 py-2 text-sm font-semibold text-bg disabled:opacity-40"
                         disabled={hud.points < 1}
                         onClick={() => apiRef.current?.spend(key)}
                       >
@@ -754,7 +756,7 @@ export function RPG() {
             ) : null}
             </div>
 
-            <div className="pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto">
+            <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
               <span className="px-1 text-[10px] uppercase tracking-wide text-muted">Aim</span>
               {(["head", "chest", "arm", "leg"] as const).map((part) => (
                 <button
@@ -774,8 +776,8 @@ export function RPG() {
               ) : null}
             </div>
 
-            <div className="pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1">
-              <div className="flex min-w-0 flex-1 items-stretch gap-2">
+            <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
+              <div className={`flex min-w-0 flex-1 items-stretch gap-2 ${journalOpen || hud.statsOpen ? "hidden" : ""}`}>
                 <section className="pointer-events-auto min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">

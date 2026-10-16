@@ -107,7 +107,7 @@ export function moonEffect(phase: number) {
 }
 
 // ---------------- needs
-export const NEED_RATE = { normal: { hunger: 2.2, thirst: 3, sleep: 2.4, hurt: 0.5 }, hard: { hunger: 4, thirst: 5.5, sleep: 3.6, hurt: 1.5 } };
+export const NEED_RATE = { normal: { hunger: 2.2, thirst: 2.6, sleep: 2.4, hurt: 0.5 }, hard: { hunger: 4, thirst: 5.5, sleep: 3.6, hurt: 1.5 } };
 export const FOOD_VALUE: Record<string, { hunger?: number; thirst?: number; sleep?: number }> = {
   meat: { hunger: 18 }, apple: { hunger: 10, thirst: 4 }, smokedfish: { hunger: 22 }, jerky: { hunger: 20 }, greens: { hunger: 8, thirst: 3 }, water: { thirst: 45 },
   stew: { hunger: 55, thirst: 15 }, chowder: { hunger: 50, thirst: 20 }, pie: { hunger: 40 }, coffee: { thirst: 15, sleep: 30 }, tonic: { thirst: 20 }, venisonsteak: { hunger: 45 }, mushrooms: { hunger: 9 }, berries: { hunger: 7, thirst: 4 },
@@ -173,7 +173,7 @@ export const LOYALTY_HELP = 50;
 // ---------------- bounty board
 export type BountyKind = "raiders" | "deer" | "coyote" | "deliver";
 export const BOUNTY_POOL: { kind: BountyKind; text: string; n: [number, number]; item?: string; pay: number }[] = [
-  { kind: "raiders", text: "Thin out the raiders on the roads", n: [2, 4], pay: 6 },
+  { kind: "raiders", text: "Thin out the raiders on the roads", n: [2, 4], pay: 4 },
   { kind: "deer", text: "Bring down deer for the Skowhegan smokehouse", n: [1, 2], pay: 5 },
   { kind: "coyote", text: "Coyotes are at the hens. Shoot some", n: [2, 3], pay: 4 },
   { kind: "deliver", text: "Hides wanted for winter coats", n: [2, 3], item: "hide", pay: 3 },
@@ -270,3 +270,61 @@ export function pickEnding(choice: "unite" | "deal" | "alone" | "", sieged: bool
   void sieged; void rebuilt;
   return "alone";
 }
+
+// ---------------- v13.2: more to say about each act (Talk > "What do you make of it?") and journal notes
+type Who = "justin" | "sarah" | "cyndal" | "loki" | "cal" | "marcel" | "mira";
+export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
+  1: {
+    justin: "\"Stack the wood on the north side, it's a windbreak and it's dry. They come at night with torches. They want the hens and the stove more than they want us. Make it cost 'em.\"",
+    cyndal: "\"Dad says the first raid's the worst one, because you don't know what it sounds like yet. I'm keeping Loki in the root cellar.\"",
+    loki: "\"Can Biscuit sleep inside? He's scared of the dark.\" He is not asking about the dog.",
+  },
+  2: {
+    sarah: "\"Calm voice. Too calm. Folks on the radio these days sound tired. That one sounds like he's reading a grocery list.\"",
+    justin: "\"Augusta's ninety miles. Nobody walks ninety miles on a promise. Not this winter.\"",
+    loki: "\"Cyndal let me hold the antenna. I'm the antenna now.\"",
+  },
+  3: {
+    justin: "\"Jack Ready's been up that ridge since before the lights went. He trusts that dog more than people. Trade fair and don't push.\"",
+    sarah: "\"Bring him something he can't make himself. Pie works on most men. Not Jack, but most men.\"",
+    cal: "\"I had a cousin went south on a radio promise in '09. Different radio, same promise.\"",
+  },
+  4: {
+    justin: "\"The bridge in Skowhegan's the only crossing left with the ice like this. Somebody's always watching a bridge.\"",
+    mira: "\"Marcel knows every sled that comes up the river. If something's taking caravans, he's counted them.\"",
+    sarah: "\"Bring back coffee if Marcel's got any. Real coffee. I'll owe you.\"",
+  },
+  5: {
+    marcel: "\"Three camps. Gravel pit east of your place, the Holeb cut, and behind the mill here. Hit them on a dark night. A full moon'll get you shot.\"",
+    justin: "\"No sense fighting the whole camp. Get in, cut the ropes, find the man in charge. Cold, I know. So's he.\"",
+    mira: "\"The folks they're holding are from the Forks. If you get them out, send them to Harmony. We'll find room.\"",
+    cyndal: "\"I can hear them on the radio at night. They talk about 'the Collector' like he's the weather.\"",
+  },
+  6: {
+    sarah: "\"You're going past the Grok. I've heard it at night from the porch. Don't you get brave out there.\"",
+    cal: "\"Grok's territory starts at the second beaver flowage. Walk the ridge, not the bottom. It hunts the bottom.\"",
+    marcel: "\"If that depot's got fuel, half the valley could run a generator till spring. Think on that before you burn it.\"",
+  },
+  7: {
+    justin: "\"I won't tell you what to do. I'll tell you I've never seen a deal with a man like that end with both sides standing.\"",
+    mira: "\"Harmony will stand with you, if you've stood with Harmony. Fix the store, help the clinic. People remember.\"",
+    marcel: "\"A deal keeps my store open. I won't lie to you about that. I won't like myself for it either.\"",
+    cal: "\"Alone's how I've done it fourteen years. It works fine till it doesn't.\"",
+  },
+  8: {
+    sarah: "\"Kids are in the root cellar with Biscuit and a lamp. Whatever happens up here, they're not coming out till it's quiet.\"",
+    cyndal: "\"I'm calling the towns on the radio every ten minutes. If anyone's coming, they'll know where.\"",
+    mira: "\"Lanterns on the Lowelltown road. Ours, I think. I hope.\"",
+  },
+};
+export const MAIN_JOURNAL: Record<number, string[]> = {
+  1: ["Justin and Sarah took me in at the Cambridge Road farm. Wood, walls, and a long first night."],
+  2: ["Cyndal's radio picked up a broadcast from Augusta: fuel, medicine, order. Same words every hour."],
+  3: ["Jack Ready has old survey maps of the river. He'll share them when he trusts me."],
+  4: ["Jack thinks the broadcast is bait. Marcel in Skowhegan counts the sleds on the river. Go ask him."],
+  5: ["The raiders answer to the Collector. He keeps three lieutenants at camps along the river.", "Best on a dark night. Fog helps. A full moon doesn't."],
+  6: ["The last lieutenant pointed north, past the Holeb woods: a supply depot. The road runs through the Grok's ground."],
+  7: ["The depot ledger lists every caravan he took. He'll come for the farm next. Unite the towns, take his deal, or hold alone."],
+  8: ["The Collector is coming down the road with everything he's got. Hold the farm. Bring him down."],
+  9: ["It's over, one way or the other."],
+};

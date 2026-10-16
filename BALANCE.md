@@ -115,3 +115,21 @@ Weather is rolled once a day from a table for each season.
 - Fast travel: by bike only, to towns you've already visited. Costs gas by distance (`travelGas`) and can trigger a road event.
 - Road events: at most 1 a day, with a 25% roll every 40 s of riding or walking on a road.
 - Loyalty: companions leave at −40.
+
+## v13.2 balance pass
+
+A day is 12 real minutes (`DAY_LENGTH_SEC`), so the hourly rates below are per in-game hour.
+
+| Area | Before | After | Why |
+|---|---|---|---|
+| Thirst, normal mode | 3 / h (72 a day) | **2.6 / h** (62 a day) | One water (45) plus a meal's worth is about a day. Normal mode should be gentle |
+| Hunger | 2.2 / h normal, 4 / h hard | unchanged | One stew (55) about covers a day on normal |
+| Black ice, slipping (checked every 6 s while moving) | 30% riding, 8% walking | **12% riding, 6% walking** | Riding meant a fall about every 20 s |
+| Broken bone from a black-ice fall | 50% riding, 20% walking | **30% riding, 12% walking** | Together with the change above, a bone on almost every icy ride was too much |
+| Infected cut from an animal bite | 15% a hit | **8% a hit** | A coyote pack gave a cut almost every fight |
+| Broken bone from a big hit (30%+ of max HP) | 20% | **12%** | Too punishing |
+| "Thin out the raiders" bounty | 6 iron each (up to 24) | **4 iron each (up to 16)** | It paid more than the risk, next to shells at 10 iron for 8 |
+| Siege of Harmony | Ended at dawn and counted as a loss | **Runs until it's decided.** The Collector always walks in after the last wave | Bug: a held farm could get the "fallen" ending |
+| Moose | 96 in tall | **92 in**, shoulder about 66 px | Realistic scale |
+
+Prices and loot (camp raids, caravans, Marcel, Bangor) were reviewed and are unchanged.
