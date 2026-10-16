@@ -52,10 +52,10 @@ const PANTS_RGB: Record<LookId, [number, number, number]> = {
   soot: [34, 34, 38],
 };
 
-function mix(r: number, g: number, b: number, target: [number, number, number], amt: number): [number, number, number] {
+function mix(r: number, g: number, b: number, target: [number, number, number], amt: number, minScale = 0.45): [number, number, number] {
   const lum = r * 0.3 + g * 0.59 + b * 0.11;
   const tl = target[0] * 0.3 + target[1] * 0.59 + target[2] * 0.11 || 1;
-  const scale = Math.max(0.45, Math.min(1.35, lum / tl));
+  const scale = Math.max(minScale, Math.min(1.35, lum / tl));
   let nr = target[0] * scale;
   let ng = target[1] * scale;
   let nb = target[2] * scale;
@@ -70,13 +70,15 @@ function mix(r: number, g: number, b: number, target: [number, number, number], 
 }
 
 /** Recolor the painted player sheet in place: hair, shirt, trousers. Face and boots stay. */
-export function dyeBodySheet(data: ImageData, cols: number, look: LookId, hair: HairId, rows = 8): void {
+export type BodyDyeOpts = { shirt?: [number, number, number] | null; pants?: [number, number, number] | null; hat?: [number, number, number] | null };
+export function dyeBodySheet(data: ImageData, cols: number, look: LookId, hair: HairId, rows = 8, opts: BodyDyeOpts = {}): void {
   const px = data.data;
   const cw = data.width / cols;
   const ch = data.height / rows;
-  const shirt = LOOK_RGB[look] ?? LOOK_RGB.wool;
+  const shirt = opts.shirt ?? LOOK_RGB[look] ?? LOOK_RGB.wool;
   const hairC = HAIR_RGB[hair] ?? HAIR_RGB.black;
-  const pants = PANTS_RGB[look] ?? PANTS_RGB.wool;
+  const pants = opts.pants ?? PANTS_RGB[look] ?? PANTS_RGB.wool;
+  const hatC = opts.hat ?? null;
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const x0 = col * cw;
@@ -107,8 +109,9 @@ export function dyeBodySheet(data: ImageData, cols: number, look: LookId, hair: 
           const skin = r > 145 && r > g + 28 && g > b - 8 && by < 0.42 && lum > 70;
           if (skin) continue;
           let next: [number, number, number] | null = null;
-          if (by < 0.17 && lum < 120) next = mix(r, g, b, hairC, 0.88);
-          else if (by > 0.2 && by < 0.54 && lum > 22 && lum < 210) next = mix(r, g, b, shirt, 0.8);
+          if (hatC && by < 0.1 && !skin) next = mix(r, g, b, hatC, 0.92, 0.75);
+          else if (by < 0.17 && lum < 120) next = mix(r, g, b, hairC, 0.88);
+          else if (by > 0.2 && by < 0.54 && lum > 22 && lum < 210) next = mix(r, g, b, shirt, opts.shirt ? 0.9 : 0.8, opts.shirt ? 0.72 : 0.45);
           else if (by > 0.56 && by < 0.86 && lum > 14 && lum < 170) next = mix(r, g, b, pants, 0.72);
           if (!next) continue;
           px[i] = next[0];

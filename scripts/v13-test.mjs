@@ -281,6 +281,15 @@ await T("v13Reset", "main", { ...base, flags: {} }); await choose("v13-main-alon
 await T("v13Siege"); await T("v13SiegeEnd", false);
 check("ending-fallen", (await S()).main.ending === "fallen", (await S()).main);
 
+// ---- v13.1: rewards with a full pack go on the ground, not into thin air
+await T("v13Take", "grokclaw", 9);
+const fp = await T("fillPack");
+await T("giveReward", "grokclaw", 1);
+const ps = await T("pilesNow");
+check("full-pack-reward-drops", fp.full && (await T("countOf", "grokclaw")) === 0 && ps.some((p) => (p.title === "Dropped" || p.title === "Farm stash") && p.items.some((i) => i.startsWith("grokclaw"))), { fp, ps: ps.slice(-2) });
+await T("addTime", 600 * 3); await wait(300);
+check("dropped-reward-keeps", (await T("pilesNow")).some((p) => p.items.some((i) => i.startsWith("grokclaw"))));
+
 // ---- save compatibility: strip v13 from the save and reload
 await T("saveNow");
 await page.evaluate(() => { for (const k of Object.keys(localStorage)) { if (!k.startsWith("maine-rpg-save")) continue; try { const d = JSON.parse(localStorage.getItem(k)); if (d && typeof d === "object") { delete d.v13; if (d.data) delete d.data.v13; localStorage.setItem(k, JSON.stringify(d)); } } catch {} } Storage.prototype.setItem = function () {}; });

@@ -761,7 +761,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		p.stamina = p.maxStamina;
 		p.hp = p.maxHp;
 	}
+	/** v13.1: rewards never vanish. If the pack is full, the item goes on the ground at your feet
+	 *  (or into the farm stash pile when you're home) with a message. Use tryGive() when a full pack
+	 *  should refuse instead (buying, crafting, picking up). */
 	function giveItem(id, qty = 1) {
+		if (tryGive(id, qty)) return true;
+		if (!player || !GEAR[id] || qty < 1) return false;
+		const home = mapId === 0 && !mode11 && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty);
+		const title = home ? "Farm stash" : "Dropped";
+		let pile = piles.find((q) => q.title === title && Math.hypot(q.x - player.x, q.y - player.y) < (home ? 600 : 48));
+		if (!pile) leavePile(player.x + 14, player.y + 10, title, [{ id, qty }], 0, "", 0);
+		else { const st = pile.items.find((q) => q.id === id); if (st) st.qty += qty; else pile.items.push({ id, qty }); }
+		const nm = qty > 1 ? `${GEAR[id].name} ×${qty}` : GEAR[id].name;
+		pushLog(home ? `Pack's full. ${nm} goes in the farm stash by your feet.` : `Pack's full. You set ${nm} on the ground. Pick it up when you've room.`);
+		floater(player.x, player.y - 8, "Pack full: on the ground");
+		return true;
+	}
+	function tryGive(id, qty = 1) {
 		if (!player || !GEAR[id] || qty < 1) return false;
 		const stack = player.bag.find((s) => s.id === id);
 		if (stack && (stack.qty - wornCount(player, id) > 0 || canFit(player, id))) {
@@ -1745,7 +1761,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("The bench is short. You need the timber and the iron in hand.");
 			return;
 		}
-		if (!giveItem(item)) {
+		if (!tryGive(item)) {
 			pushLog("Your pack is full.");
 			return;
 		}
@@ -1797,7 +1813,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		let gotAny = false;
 		for (let i = 0; i < qty; i++) {
-			if (!giveItem(item)) break;
+			if (!tryGive(item)) break;
 			gotAny = true;
 		}
 		if (!gotAny) {
@@ -4716,7 +4732,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (Math.random() < player.luck * .05) {
 			const goods = ["pork", "maple", "matches", "pelt", "oil"];
 			const foundId = goods[Math.random() * goods.length | 0];
-			if (giveItem(foundId)) pushLog(`Luck turns up a ${GEAR[foundId].name.toLowerCase()}.`);
+			if (tryGive(foundId)) pushLog(`Luck turns up a ${GEAR[foundId].name.toLowerCase()}.`);
 		}
 		vacate(world, prop);
 		world.props = world.props.filter((p) => p.id !== prop.id);
@@ -4762,7 +4778,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				"oil"
 			];
 			const foundId = goods[Math.random() * goods.length | 0];
-			if (giveItem(foundId)) pushLog(`Luck turns up a ${GEAR[foundId].name.toLowerCase()}.`);
+			if (tryGive(foundId)) pushLog(`Luck turns up a ${GEAR[foundId].name.toLowerCase()}.`);
 		}
 		sfx("gather");
 		burst(propCenter(prop).x, propCenter(prop).y, "#e8dcc8", 8);
@@ -4935,7 +4951,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		trousers: [70, 56, 46],
 		chaps: [108, 68, 38],
 		gloves: [92, 66, 48],
-		bracers: [122, 78, 46]
+		bracers: [122, 78, 46],
+		// v13.1: creator coats and hats, so the player never reads as Justin's green work coat
+		canvas: [184, 156, 108],
+		waxed: [104, 78, 50],
+		toque: [156, 42, 38],
+		huntcap: [222, 100, 28],
+		boots: [60, 44, 34]
 	};
 	const tinted = /* @__PURE__ */ new Map();
 	/** Natural cloth dye. The pixel keeps its shading relative to the region's average brightness
@@ -4961,7 +4983,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function wornColors() {
 		const look = LOOK_RGB[player.look] || LOOK_RGB.wool;
 		const chest = player.coatId || "";
-		const cover = chest === "coat-std" || chest === "coat-good" || chest === "quilt";
+		const cover = chest === "coat-std" || chest === "coat-good" || chest === "quilt" || chest === "canvas" || chest === "waxed";
 		const plate = chest === "plate" || chest === "rig" ? PIECE_RGB[chest] : null;
 		return {
 			shirt: cover ? PIECE_RGB[chest] : look,
@@ -4975,7 +4997,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function dyePlayerBody(img, name = "hero") {
 		const hair = player.hair || "black";
-		const key = `body:${name}:${player.look}:${hair}`;
+		const c = wornColors();
+		const opts = { shirt: c.shirt, pants: c.legs, hat: c.head };
+		const key = `body:${name}:${player.look}:${hair}:${player.coatId}:${player.headId}:${player.legsId}`;
 		const cached = tinted.get(key);
 		if (cached) return cached;
 		const stamp = document.createElement("canvas");
@@ -4985,7 +5009,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!g) return img;
 		g.drawImage(img, 0, 0);
 		const data = g.getImageData(0, 0, stamp.width, stamp.height);
-		dyeBodySheet(data, sheetCols(img), player.look, hair, 8);
+		dyeBodySheet(data, sheetCols(img), player.look, hair, 8, opts);
 		g.putImageData(data, 0, 0);
 		tinted.set(key, stamp);
 		return stamp;
@@ -5480,7 +5504,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				pushLog(inFarm(prop.tx, prop.ty) ? "Nothing left in the crate but cores." : "The crate is nailed shut.");
 				return;
 			}
-			if (!giveItem("apple")) {
+			if (!tryGive("apple")) {
 				pushLog("Your pack is full.");
 				return;
 			}
@@ -5530,7 +5554,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return;
 		}
 		let ok = false;
-		for (let i = 0; i < qty; i++) ok = giveItem(item) || ok;
+		for (let i = 0; i < qty; i++) ok = tryGive(item) || ok;
 		if (!ok) {
 			pushLog("Your pack is full.");
 			return;
@@ -5807,7 +5831,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function rotPiles() {
 		const kept = [];
 		for (const pile of piles) {
-			if (!hasLoot(pile) || clock - pile.at >= 720) {
+			// v13.1: a full-pack reward ("Dropped" / "Farm stash") waits for you; it doesn't rot away
+			const kept13 = pile.title === "Dropped" || pile.title === "Farm stash";
+			if (!hasLoot(pile) || (!kept13 && clock - pile.at >= 720)) {
 				if (lootId === pile.id) lootId = -1;
 				if (player && hasLoot(pile) && Math.hypot(pile.x - player.x, pile.y - player.y) < 420) pushLog(pile.folk || pile.body ? "The body is gone. A day has passed." : "What was left is gone.");
 				continue;
@@ -6021,7 +6047,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const moveStack = (stack) => {
 			if (!stack || stack.qty <= 0 || !GEAR[stack.id]) return 0;
-			if (!giveItem(stack.id, stack.qty)) return 0;
+			if (!tryGive(stack.id, stack.qty)) return 0;
 			const n = stack.qty;
 			stack.qty = 0;
 			return n;
@@ -9461,7 +9487,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.bag = player.bag.filter((s) => s.qty > 0);
 		let made = 0;
 		for (let i = 0; i < recipe.qty; i++) {
-			if (!giveItem(recipe.item)) break;
+			if (!tryGive(recipe.item)) break;
 			made += 1;
 		}
 		pushLog(made ? `Made ${made} ${out.name}.` : "Nothing made.");
@@ -10100,6 +10126,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		folk: () => (world?.npcs ?? []).map((n) => { const r = worldToScreen(n.x, n.y, camX, camY); const z = zoomPoint(r.sx, r.sy); return { role: n.role, name: n.name, dir: n.dir, frame: n.frame, sx: Math.round(z.sx ?? z.x ?? 0), sy: Math.round(z.sy ?? z.y ?? 0) }; }),
 		placeNpc: (role, x, y, dir = 0) => { const n = world?.npcs.find((m) => m.role === role); if (!n) return false; n.x = n.homeX = x; n.y = n.homeY = y; n.path = []; n.pause = 99; n.dir = dir; return true; },
+		npcPlace: (role, x, y) => { const n = world?.npcs.find((q) => q.role === role); if (!n) return false; n.x = x; n.y = y; for (const k of ["homeX", "hx", "tx0"]) if (k in n) n[k] = x; for (const k of ["homeY", "hy", "ty0"]) if (k in n) n[k] = y; return true; },
 		npcOf: (role) => {
 			const npc = world?.npcs.find((n) => n.role === role);
 			return npc ? {
@@ -10218,7 +10245,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		walkTo: (x, y) => { if (!world || !player) return false; const path = pathTo(world, player.x, player.y, x, y); intent = { kind: "walk", x, y, path: path ?? [] }; return !!path; },
 		blockedHere: () => world && player ? { r: pointBlocked(world, player.x, player.y, RADIUS), c: pointBlocked(world, player.x, player.y, 0), x: player.x, y: player.y, w: pointBlocked(world, player.x - 20, player.y, RADIUS), e: pointBlocked(world, player.x + 20, player.y, RADIUS), n: pointBlocked(world, player.x, player.y - 20, RADIUS), s: pointBlocked(world, player.x, player.y + 20, RADIUS) } : null,
 		doorDbg: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p) return null; const sp = PROP_SPEC[p.kind]; const pd = PAINTED_DOORS[sp.image]; const c = propCenter(p); return { c, off: pd && houseArtToWorld(p.kind, pd.g[0], pd.g[1]), door: doorPoint(p), foot: images.get(sp.image)?.foot, w: images.get(sp.image)?.width, h: images.get(sp.image)?.height, locked: !!p.locked, opening: OPEN_TIME }; },
-		giveItem: (id, qty = 1) => giveItem(id, qty),
+		giveItem: (id, qty = 1) => tryGive(id, qty),
+		giveReward: (id, qty = 1) => giveItem(id, qty),
+		fillPack: () => { let n = 0; for (const id of Object.keys(GEAR)) if (id !== "grokclaw" && !player.bag.some((b) => b.id === id) && tryGive(id, 1)) n++; return { n, full: !canFit(player, "grokclaw") }; },
+		pilesNow: () => piles.map((q) => ({ title: q.title, x: q.x, y: q.y, items: q.items.map((i) => `${i.id}x${i.qty}`) })),
 		encounters: () => {
 			const e = (id) => { const x = world?.enemies.find((q) => q.id === id); return x ? { x: x.x, y: x.y, hp: x.hp, dead: x.dead, aggro: x.aggro } : null; };
 			const w = wardenNpc();
