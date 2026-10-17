@@ -1,0 +1,1278 @@
+[
+ {
+  "kind": "tree-dead",
+  "image": "tree-dead",
+  "old_drawH": 340,
+  "new_drawH": 420,
+  "old_px": [
+   84,
+   338
+  ],
+  "new_px": [
+   104,
+   418
+  ],
+  "old_ft": 30.8,
+  "new_ft": 38.0,
+  "file": [
+   101,
+   400
+  ],
+  "file_new": 400,
+  "real": "dead pine snag, 38 ft"
+ },
+ {
+  "kind": "tree-scrub",
+  "image": "tree-scrub",
+  "old_drawH": 168,
+  "new_drawH": 67,
+  "old_px": [
+   289,
+   166
+  ],
+  "new_px": [
+   115,
+   66
+  ],
+  "old_ft": 15.1,
+  "new_ft": 6.0,
+  "file": [
+   452,
+   260
+  ],
+  "file_new": 134,
+  "real": "juniper/yew bush, 6 ft tall"
+ },
+ {
+  "kind": "tree-pine",
+  "image": "tree-pine",
+  "old_drawH": 393,
+  "new_drawH": 553,
+  "old_px": [
+   180,
+   391
+  ],
+  "new_px": [
+   253,
+   550
+  ],
+  "old_ft": 35.5,
+  "new_ft": 50.0,
+  "file": [
+   223,
+   480
+  ],
+  "file_new": 480,
+  "real": "white pine, 50 ft (mature 50-80 ft; capped for the screen)"
+ },
+ {
+  "kind": "tree-yellow",
+  "image": "tree-yellow",
+  "old_drawH": 339,
+  "new_drawH": 442,
+  "old_px": [
+   237,
+   337
+  ],
+  "new_px": [
+   309,
+   440
+  ],
+  "old_ft": 30.7,
+  "new_ft": 40.0,
+  "file": [
+   310,
+   440
+  ],
+  "file_new": 440,
+  "real": "yellow aspen/birch crown, 40 ft"
+ },
+ {
+  "kind": "tree-orange",
+  "image": "tree-orange",
+  "old_drawH": 339,
+  "new_drawH": 464,
+  "old_px": [
+   237,
+   337
+  ],
+  "new_px": [
+   325,
+   462
+  ],
+  "old_ft": 30.7,
+  "new_ft": 42.0,
+  "file": [
+   310,
+   440
+  ],
+  "file_new": 440,
+  "real": "sugar maple, 42 ft"
+ },
+ {
+  "kind": "tree-red",
+  "image": "tree-red",
+  "old_drawH": 347,
+  "new_drawH": 464,
+  "old_px": [
+   243,
+   345
+  ],
+  "new_px": [
+   325,
+   462
+  ],
+  "old_ft": 31.4,
+  "new_ft": 42.0,
+  "file": [
+   310,
+   440
+  ],
+  "file_new": 440,
+  "real": "red maple, 42 ft"
+ },
+ {
+  "kind": "tree-spruce",
+  "image": "tree-spruce",
+  "old_drawH": 410,
+  "new_drawH": 552,
+  "old_px": [
+   149,
+   408
+  ],
+  "new_px": [
+   201,
+   550
+  ],
+  "old_ft": 37.1,
+  "new_ft": 50.0,
+  "file": [
+   184,
+   500
+  ],
+  "file_new": 500,
+  "real": "red spruce, 50 ft"
+ },
+ {
+  "kind": "tree-fir",
+  "image": "tree-fir",
+  "old_drawH": 400,
+  "new_drawH": 531,
+  "old_px": [
+   203,
+   397
+  ],
+  "new_px": [
+   270,
+   528
+  ],
+  "old_ft": 36.1,
+  "new_ft": 48.0,
+  "file": [
+   242,
+   470
+  ],
+  "file_new": 470,
+  "real": "balsam fir, 48 ft"
+ },
+ {
+  "kind": "tree-birch",
+  "image": "tree-birch",
+  "old_drawH": 340,
+  "new_drawH": 444,
+  "old_px": [
+   141,
+   337
+  ],
+  "new_px": [
+   185,
+   440
+  ],
+  "old_ft": 30.6,
+  "new_ft": 40.0,
+  "file": [
+   186,
+   440
+  ],
+  "file_new": 440,
+  "real": "paper birch, 40 ft"
+ },
+ {
+  "kind": "tree-bare",
+  "image": "tree-bare",
+  "old_drawH": 320,
+  "new_drawH": 420,
+  "old_px": [
+   180,
+   318
+  ],
+  "new_px": [
+   236,
+   418
+  ],
+  "old_ft": 29.0,
+  "new_ft": 38.0,
+  "file": [
+   239,
+   420
+  ],
+  "file_new": 420,
+  "real": "leafless hardwood, 38 ft"
+ },
+ {
+  "kind": "car-sedan",
+  "image": "car-sedan",
+  "old_drawH": 155,
+  "new_drawH": 112,
+  "old_px": [
+   236,
+   148
+  ],
+  "new_px": [
+   170,
+   107
+  ],
+  "old_ft": 13.5,
+  "new_ft": 9.7,
+  "file": [
+   148,
+   94
+  ],
+  "file_new": 94,
+  "real": "drawn by the hot rod art (145x112 native)"
+ },
+ {
+  "kind": "car-truck",
+  "image": "car-truck",
+  "old_drawH": 163,
+  "new_drawH": 126,
+  "old_px": [
+   283,
+   154
+  ],
+  "new_px": [
+   219,
+   119
+  ],
+  "old_ft": 14.0,
+  "new_ft": 10.9,
+  "file": [
+   204,
+   114
+  ],
+  "file_new": 114,
+  "real": "drawn by the Chevy art (175x126 native)"
+ },
+ {
+  "kind": "rock",
+  "image": "rock",
+  "old_drawH": 85,
+  "new_drawH": 52,
+  "old_px": [
+   84,
+   81
+  ],
+  "new_px": [
+   51,
+   50
+  ],
+  "old_ft": 7.4,
+  "new_ft": 4.5,
+  "file": [
+   88,
+   84
+  ],
+  "file_new": 84,
+  "real": "field boulder, 4.5 ft"
+ },
+ {
+  "kind": "shack",
+  "image": "shack",
+  "old_drawH": 231,
+  "new_drawH": 245,
+  "old_px": [
+   249,
+   223
+  ],
+  "new_px": [
+   264,
+   237
+  ],
+  "old_ft": 20.3,
+  "new_ft": 21.5,
+  "file": [
+   204,
+   184
+  ],
+  "file_new": 184,
+  "real": "cabin: door 58 src px -> 77 px (7 ft), walls 8.5 ft"
+ },
+ {
+  "kind": "shelter",
+  "image": "shack",
+  "old_drawH": 231,
+  "new_drawH": 245,
+  "old_px": [
+   249,
+   223
+  ],
+  "new_px": [
+   264,
+   237
+  ],
+  "old_ft": 20.3,
+  "new_ft": 21.5,
+  "file": [
+   204,
+   184
+  ],
+  "file_new": 184,
+  "real": "same art as the cabin"
+ },
+ {
+  "kind": "ruin",
+  "image": "ruin",
+  "old_drawH": 440,
+  "new_drawH": 420,
+  "old_px": [
+   403,
+   423
+  ],
+  "new_px": [
+   385,
+   404
+  ],
+  "old_ft": 38.4,
+  "new_ft": 36.7,
+  "file": [
+   147,
+   154
+  ],
+  "file_new": 154,
+  "real": "brick mill ruin: arched door ~77 px (7 ft), 38 ft tall"
+ },
+ {
+  "kind": "wall",
+  "image": "wall",
+  "old_drawH": 234,
+  "new_drawH": 82,
+  "old_px": [
+   294,
+   219
+  ],
+  "new_px": [
+   103,
+   77
+  ],
+  "old_ft": 19.9,
+  "new_ft": 7.0,
+  "file": [
+   164,
+   124
+  ],
+  "file_new": 124,
+  "real": "log/picket palisade, 7 ft"
+ },
+ {
+  "kind": "workshop",
+  "image": "workshop",
+  "old_drawH": 230,
+  "new_drawH": 46,
+  "old_px": [
+   192,
+   222
+  ],
+  "new_px": [
+   38,
+   44
+  ],
+  "old_ft": 20.1,
+  "new_ft": 4.0,
+  "file": [
+   143,
+   164
+  ],
+  "file_new": 92,
+  "real": "stump forge: anvil on a stump with tongs, 4 ft"
+ },
+ {
+  "kind": "campfire",
+  "image": "campfire",
+  "old_drawH": 47,
+  "new_drawH": 30,
+  "old_px": [
+   50,
+   42
+  ],
+  "new_px": [
+   32,
+   27
+  ],
+  "old_ft": 3.9,
+  "new_ft": 2.5,
+  "file": [
+   59,
+   52
+  ],
+  "file_new": 52,
+  "real": "stone ring and flames, 2.5 ft"
+ },
+ {
+  "kind": "scrap",
+  "image": "scrap",
+  "old_drawH": 72,
+  "new_drawH": 43,
+  "old_px": [
+   67,
+   65
+  ],
+  "new_px": [
+   40,
+   39
+  ],
+  "old_ft": 5.9,
+  "new_ft": 3.5,
+  "file": [
+   62,
+   60
+  ],
+  "file_new": 60,
+  "real": "scrap pile, 3.5 ft"
+ },
+ {
+  "kind": "logs",
+  "image": "logs",
+  "old_drawH": 64,
+  "new_drawH": 36,
+  "old_px": [
+   73,
+   59
+  ],
+  "new_px": [
+   41,
+   33
+  ],
+  "old_ft": 5.3,
+  "new_ft": 3.0,
+  "file": [
+   90,
+   74
+  ],
+  "file_new": 74,
+  "real": "stacked firewood logs, 3 ft"
+ },
+ {
+  "kind": "farmhouse",
+  "image": "farmhouse",
+  "old_drawH": 600,
+  "new_drawH": 500,
+  "old_px": [
+   572,
+   561
+  ],
+  "new_px": [
+   477,
+   467
+  ],
+  "old_ft": 51.0,
+  "new_ft": 42.5,
+  "file": [
+   210,
+   214
+  ],
+  "file_new": 214,
+  "real": "2-storey farmhouse: door 32 src px -> 75 px (6.8 ft), walls ~21 ft, 43 ft to chimney"
+ },
+ {
+  "kind": "barn",
+  "image": "barn",
+  "old_drawH": 400,
+  "new_drawH": 450,
+  "old_px": [
+   392,
+   392
+  ],
+  "new_px": [
+   441,
+   441
+  ],
+  "old_ft": 35.7,
+  "new_ft": 40.1,
+  "file": [
+   204,
+   204
+  ],
+  "file_new": 204,
+  "real": "gambrel barn: side wall 15 ft, sliding door 8.4 ft, 41 ft to cupola"
+ },
+ {
+  "kind": "orchard",
+  "image": "orchard",
+  "old_drawH": 220,
+  "new_drawH": 204,
+  "old_px": [
+   178,
+   213
+  ],
+  "new_px": [
+   165,
+   198
+  ],
+  "old_ft": 19.4,
+  "new_ft": 18.0,
+  "file": [
+   163,
+   194
+  ],
+  "file_new": 194,
+  "real": "apple tree, 18 ft"
+ },
+ {
+  "kind": "maple",
+  "image": "maple",
+  "old_drawH": 390,
+  "new_drawH": 498,
+  "old_px": [
+   273,
+   387
+  ],
+  "new_px": [
+   349,
+   495
+  ],
+  "old_ft": 35.2,
+  "new_ft": 45.0,
+  "file": [
+   310,
+   440
+  ],
+  "file_new": 440,
+  "real": "sugar maple, 45 ft"
+ },
+ {
+  "kind": "press",
+  "image": "press",
+  "old_drawH": 80,
+  "new_drawH": 51,
+  "old_px": [
+   60,
+   77
+  ],
+  "new_px": [
+   38,
+   49
+  ],
+  "old_ft": 7.0,
+  "new_ft": 4.5,
+  "file": [
+   82,
+   104
+  ],
+  "file_new": 104,
+  "real": "cider press with screw, 4.5 ft"
+ },
+ {
+  "kind": "crates",
+  "image": "crates",
+  "old_drawH": 70,
+  "new_drawH": 30,
+  "old_px": [
+   56,
+   67
+  ],
+  "new_px": [
+   24,
+   29
+  ],
+  "old_ft": 6.1,
+  "new_ft": 2.6,
+  "file": [
+   71,
+   84
+  ],
+  "file_new": 60,
+  "real": "two stacked apple crates heaped with apples, 2.6 ft"
+ },
+ {
+  "kind": "cot",
+  "image": "cot",
+  "old_drawH": 92,
+  "new_drawH": 60,
+  "old_px": [
+   110,
+   87
+  ],
+  "new_px": [
+   71,
+   56
+  ],
+  "old_ft": 7.9,
+  "new_ft": 5.1,
+  "file": [
+   85,
+   68
+  ],
+  "file_new": 68,
+  "real": "camp cot, 6.5 ft long"
+ },
+ {
+  "kind": "hatch",
+  "image": "hatch",
+  "old_drawH": 128,
+  "new_drawH": 51,
+  "old_px": [
+   274,
+   120
+  ],
+  "new_px": [
+   109,
+   48
+  ],
+  "old_ft": 10.9,
+  "new_ft": 4.4,
+  "file": [
+   186,
+   84
+  ],
+  "file_new": 84,
+  "real": "bunker hatch (3 ft door) in a 10 ft patch of turf"
+ },
+ {
+  "kind": "stall",
+  "image": "stall",
+  "old_drawH": 100,
+  "new_drawH": 91,
+  "old_px": [
+   96,
+   96
+  ],
+  "new_px": [
+   87,
+   88
+  ],
+  "old_ft": 8.8,
+  "new_ft": 8.0,
+  "file": [
+   114,
+   114
+  ],
+  "file_new": 114,
+  "real": "market stall with canopy, 8 ft"
+ },
+ {
+  "kind": "cache",
+  "image": "cache",
+  "old_drawH": 168,
+  "new_drawH": 97,
+  "old_px": [
+   162,
+   162
+  ],
+  "new_px": [
+   93,
+   93
+  ],
+  "old_ft": 14.7,
+  "new_ft": 8.5,
+  "file": [
+   104,
+   104
+  ],
+  "file_new": 104,
+  "real": "supply table under a camo canopy, 8.5 ft"
+ },
+ {
+  "kind": "bike",
+  "image": "bike",
+  "old_drawH": 60,
+  "new_drawH": 32,
+  "old_px": [
+   126,
+   55
+  ],
+  "new_px": [
+   67,
+   29
+  ],
+  "old_ft": 5.0,
+  "new_ft": 2.7,
+  "file": [
+   161,
+   74
+  ],
+  "file_new": 64,
+  "real": "motor bicycle, 6 ft long (legacy art; the v2 bike is drawn 1:1)"
+ },
+ {
+  "kind": "stand",
+  "image": "stand",
+  "old_drawH": 150,
+  "new_drawH": 67,
+  "old_px": [
+   212,
+   148
+  ],
+  "new_px": [
+   94,
+   66
+  ],
+  "old_ft": 13.5,
+  "new_ft": 6.0,
+  "file": [
+   282,
+   200
+  ],
+  "file_new": 134,
+  "real": "rifle stand: 4 ft crate platform, sandbags and rifle, 6 ft"
+ },
+ {
+  "kind": "stand-up",
+  "image": "stand-up",
+  "old_drawH": 188,
+  "new_drawH": 111,
+  "old_px": [
+   148,
+   187
+  ],
+  "new_px": [
+   87,
+   110
+  ],
+  "old_ft": 17.0,
+  "new_ft": 10.0,
+  "file": [
+   157,
+   200
+  ],
+  "file_new": 200,
+  "real": "raised stand with a cedar roof, 10 ft"
+ },
+ {
+  "kind": "stand-3",
+  "image": "stand-3",
+  "old_drawH": 210,
+  "new_drawH": 132,
+  "old_px": [
+   165,
+   210
+  ],
+  "new_px": [
+   104,
+   132
+  ],
+  "old_ft": 19.1,
+  "new_ft": 12.0,
+  "file": [
+   157,
+   200
+  ],
+  "file_new": 200,
+  "real": "sandbagged tower stand, 12 ft"
+ },
+ {
+  "kind": "stand-x",
+  "image": "stand-x",
+  "old_drawH": 140,
+  "new_drawH": 66,
+  "old_px": [
+   145,
+   140
+  ],
+  "new_px": [
+   68,
+   66
+  ],
+  "old_ft": 12.7,
+  "new_ft": 6.0,
+  "file": [
+   207,
+   200
+  ],
+  "file_new": 132,
+  "real": "wrecked stand, 6 ft heap"
+ },
+ {
+  "kind": "blind",
+  "image": "blind",
+  "old_drawH": 168,
+  "new_drawH": 72,
+  "old_px": [
+   200,
+   167
+  ],
+  "new_px": [
+   86,
+   72
+  ],
+  "old_ft": 15.2,
+  "new_ft": 6.5,
+  "file": [
+   250,
+   210
+  ],
+  "file_new": 144,
+  "real": "brush hunting blind, 6.5 ft"
+ },
+ {
+  "kind": "blind-up",
+  "image": "blind-up",
+  "old_drawH": 196,
+  "new_drawH": 84,
+  "old_px": [
+   211,
+   193
+  ],
+  "new_px": [
+   90,
+   83
+  ],
+  "old_ft": 17.6,
+  "new_ft": 7.5,
+  "file": [
+   226,
+   210
+  ],
+  "file_new": 168,
+  "real": "cedar blind, 7.5 ft"
+ },
+ {
+  "kind": "blind-3",
+  "image": "blind-3",
+  "old_drawH": 210,
+  "new_drawH": 110,
+  "old_px": [
+   159,
+   210
+  ],
+  "new_px": [
+   83,
+   110
+  ],
+  "old_ft": 19.1,
+  "new_ft": 10.0,
+  "file": [
+   144,
+   190
+  ],
+  "file_new": 190,
+  "real": "two-tier cedar blind, 10 ft"
+ },
+ {
+  "kind": "blind-x",
+  "image": "blind-x",
+  "old_drawH": 130,
+  "new_drawH": 55,
+  "old_px": [
+   113,
+   130
+  ],
+  "new_px": [
+   48,
+   55
+  ],
+  "old_ft": 11.8,
+  "new_ft": 5.0,
+  "file": [
+   165,
+   190
+  ],
+  "file_new": 110,
+  "real": "collapsed blind, 5 ft"
+ },
+ {
+  "kind": "firepot",
+  "image": "firepot",
+  "old_drawH": 96,
+  "new_drawH": 37,
+  "old_px": [
+   70,
+   86
+  ],
+  "new_px": [
+   27,
+   33
+  ],
+  "old_ft": 7.9,
+  "new_ft": 3.0,
+  "file": [
+   117,
+   160
+  ],
+  "file_new": 74,
+  "real": "iron fire pot on legs with flame, 3 ft"
+ },
+ {
+  "kind": "firepot-up",
+  "image": "firepot-up",
+  "old_drawH": 118,
+  "new_drawH": 35,
+  "old_px": [
+   131,
+   117
+  ],
+  "new_px": [
+   39,
+   35
+  ],
+  "old_ft": 10.7,
+  "new_ft": 3.2,
+  "file": [
+   178,
+   160
+  ],
+  "file_new": 70,
+  "real": "stone-ringed fire pot with flame, 3.2 ft"
+ },
+ {
+  "kind": "firepot-3",
+  "image": "firepot-3",
+  "old_drawH": 136,
+  "new_drawH": 44,
+  "old_px": [
+   136,
+   136
+  ],
+  "new_px": [
+   44,
+   44
+  ],
+  "old_ft": 12.4,
+  "new_ft": 4.0,
+  "file": [
+   140,
+   140
+  ],
+  "file_new": 88,
+  "real": "big stone fire pit with flame, 4 ft"
+ },
+ {
+  "kind": "firepot-x",
+  "image": "firepot-x",
+  "old_drawH": 90,
+  "new_drawH": 24,
+  "old_px": [
+   135,
+   90
+  ],
+  "new_px": [
+   36,
+   24
+  ],
+  "old_ft": 8.2,
+  "new_ft": 2.2,
+  "file": [
+   210,
+   140
+  ],
+  "file_new": 48,
+  "real": "cold broken pot, 2.2 ft"
+ },
+ {
+  "kind": "nest",
+  "image": "nest",
+  "old_drawH": 160,
+  "new_drawH": 56,
+  "old_px": [
+   310,
+   158
+  ],
+  "new_px": [
+   109,
+   55
+  ],
+  "old_ft": 14.3,
+  "new_ft": 5.0,
+  "file": [
+   388,
+   200
+  ],
+  "file_new": 112,
+  "real": "log and sandbag gun nest, 4 ft wall plus gun, 5 ft"
+ },
+ {
+  "kind": "nest-up",
+  "image": "nest-up",
+  "old_drawH": 188,
+  "new_drawH": 66,
+  "old_px": [
+   215,
+   188
+  ],
+  "new_px": [
+   76,
+   66
+  ],
+  "old_ft": 17.1,
+  "new_ft": 6.0,
+  "file": [
+   229,
+   200
+  ],
+  "file_new": 132,
+  "real": "camp gun nest, 6 ft"
+ },
+ {
+  "kind": "nest-3",
+  "image": "nest-3",
+  "old_drawH": 210,
+  "new_drawH": 82,
+  "old_px": [
+   297,
+   210
+  ],
+  "new_px": [
+   116,
+   82
+  ],
+  "old_ft": 19.1,
+  "new_ft": 7.5,
+  "file": [
+   269,
+   190
+  ],
+  "file_new": 164,
+  "real": "round log bunker with mounted gun, 7.5 ft"
+ },
+ {
+  "kind": "nest-x",
+  "image": "nest-x",
+  "old_drawH": 140,
+  "new_drawH": 44,
+  "old_px": [
+   215,
+   140
+  ],
+  "new_px": [
+   68,
+   44
+  ],
+  "old_ft": 12.7,
+  "new_ft": 4.0,
+  "file": [
+   292,
+   190
+  ],
+  "file_new": 88,
+  "real": "wrecked nest, 4 ft"
+ },
+ {
+  "kind": "fence",
+  "image": "fence",
+  "old_drawH": 118,
+  "new_drawH": 66,
+  "old_px": [
+   111,
+   118
+  ],
+  "new_px": [
+   62,
+   66
+  ],
+  "old_ft": 10.7,
+  "new_ft": 6.0,
+  "file": [
+   141,
+   150
+  ],
+  "file_new": 132,
+  "real": "sharpened stake fence, 6 ft"
+ },
+ {
+  "kind": "fence-2",
+  "image": "fence-2",
+  "old_drawH": 132,
+  "new_drawH": 77,
+  "old_px": [
+   124,
+   132
+  ],
+  "new_px": [
+   72,
+   77
+  ],
+  "old_ft": 12.0,
+  "new_ft": 7.0,
+  "file": [
+   141,
+   150
+  ],
+  "file_new": 150,
+  "real": "taller stake fence, 7 ft"
+ },
+ {
+  "kind": "fence-3",
+  "image": "fence-3",
+  "old_drawH": 146,
+  "new_drawH": 88,
+  "old_px": [
+   163,
+   146
+  ],
+  "new_px": [
+   98,
+   88
+  ],
+  "old_ft": 13.3,
+  "new_ft": 8.0,
+  "file": [
+   167,
+   150
+  ],
+  "file_new": 150,
+  "real": "heavy plank stockade, 8 ft"
+ },
+ {
+  "kind": "fence-x",
+  "image": "fence-x",
+  "old_drawH": 96,
+  "new_drawH": 44,
+  "old_px": [
+   130,
+   96
+  ],
+  "new_px": [
+   60,
+   44
+  ],
+  "old_ft": 8.7,
+  "new_ft": 4.0,
+  "file": [
+   203,
+   150
+  ],
+  "file_new": 88,
+  "real": "broken fence, 4 ft"
+ },
+ {
+  "kind": "post-loft",
+  "image": "post-loft",
+  "old_drawH": 150,
+  "new_drawH": 99,
+  "old_px": [
+   147,
+   150
+  ],
+  "new_px": [
+   97,
+   99
+  ],
+  "old_ft": 13.6,
+  "new_ft": 9.0,
+  "file": [
+   157,
+   160
+  ],
+  "file_new": 160,
+  "real": "hayloft gun post (small loft shed), 9 ft"
+ },
+ {
+  "kind": "post-porch",
+  "image": "post-porch",
+  "old_drawH": 140,
+  "new_drawH": 58,
+  "old_px": [
+   242,
+   140
+  ],
+  "new_px": [
+   100,
+   58
+  ],
+  "old_ft": 12.7,
+  "new_ft": 5.3,
+  "file": [
+   276,
+   160
+  ],
+  "file_new": 116,
+  "real": "porch deck: chair back 3.5 ft (38 px), rifle 3.4 ft, deck ~9 ft wide"
+ },
+ {
+  "kind": "post-roof",
+  "image": "post-roof",
+  "old_drawH": 150,
+  "new_drawH": 77,
+  "old_px": [
+   189,
+   150
+  ],
+  "new_px": [
+   97,
+   77
+  ],
+  "old_ft": 13.6,
+  "new_ft": 7.0,
+  "file": [
+   202,
+   160
+  ],
+  "file_new": 160,
+  "real": "roof stand: plank table, sandbags and a brush roof, 7 ft"
+ },
+ {
+  "kind": "scarecrow",
+  "image": "scarecrow",
+  "old_drawH": 80,
+  "new_drawH": 66,
+  "old_px": [
+   61,
+   80
+  ],
+  "new_px": [
+   50,
+   66
+  ],
+  "old_ft": 7.3,
+  "new_ft": 6.0,
+  "file": [
+   130,
+   170
+  ],
+  "file_new": 132,
+  "real": "scarecrow on a post, 6 ft"
+ },
+ {
+  "kind": "bait",
+  "image": "bait",
+  "old_drawH": 100,
+  "new_drawH": 29,
+  "old_px": [
+   132,
+   100
+  ],
+  "new_px": [
+   38,
+   29
+  ],
+  "old_ft": 9.1,
+  "new_ft": 2.6,
+  "file": [
+   159,
+   120
+  ],
+  "file_new": 58,
+  "real": "bait crate with a ham and apples, 2.6 ft"
+ },
+ {
+  "kind": "tractor",
+  "image": "tractor",
+  "old_drawH": 140,
+  "new_drawH": 83,
+  "old_px": [
+   190,
+   140
+  ],
+  "new_px": [
+   113,
+   83
+  ],
+  "old_ft": 12.7,
+  "new_ft": 7.5,
+  "file": [
+   163,
+   120
+  ],
+  "file_new": 120,
+  "real": "old farm tractor: rear wheel 72 src px -> 50 px (4.5 ft), 10.3 ft long, wheel 5.8 ft up"
+ }
+]

@@ -5327,7 +5327,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mountBike(prop);
 	}
 	function paintRide(x, y, dir, dcx, dcy) {
-		if (images.get("v2/bike-ride")) { blit("v2/bike-ride", x, y, 92, true, Math.floor(performance.now() / 80) % 6, dir % 8, dcx, dcy); return; }
+		if (images.get("v2/bike-ride")) { blit("v2/bike-ride", x, y, 76, true, Math.floor(performance.now() / 80) % 6, dir % 8, dcx, dcy); return; }
 		const img = images.get("bike");
 		if (!img || !ctx) return;
 		const raw = worldToScreen(x, y, dcx, dcy);
@@ -7451,7 +7451,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Full visible height (top of head/antlers to hooves) in inches. v13.2: moose 92 puts the shoulder at ~66 px (the sheet's shoulder sits at 76% of its height). */
 	const BEAST_IN = {
 		holeb: 120, grok: 98, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
-		brute: 77, shield: 72, atv: 70, jumper: 69, scout: 68,
+		// v13.5: atv 91 in puts the quad at ~72 px long (6.5 ft) with the rider seated at ~5.5 ft
+		brute: 77, shield: 72, atv: 91, jumper: 69, scout: 68,
 		bear: 40, moose: 92, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
 	function beastH(enemy) {
@@ -7467,6 +7468,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function folkHeight(npc) {
 		return realH(folkSheet(npc), FOLK_IN[npc.role] ?? 69);
 	}
+	/** v13.5 real size: the parked tractor art is 83 px (rear wheel 50 px = 4.5 ft); the charge sheets match it. */
+	const TRACTOR_DRIVE_H = 110, TRACTOR_RUN_H = 110;
 	function tractorShift(charge) {
 		const t = Math.min(1, Math.max(0, charge || 0));
 		const along = t * 460;
@@ -8078,7 +8081,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const o = roomOrigin();
 		const d = roomDims();
 		const img = images.get("door");
-		const dh = d.farm ? 84 : 108;
+		const dh = d.farm ? 111 : 99; // v13.5: a 7 ft door at the room scale (farm 15.9 px/ft, others 14.1)
 		if (img) {
 			const dw = dh * (img.width / img.height);
 			ctx.drawImage(img, o.x + d.w / 2 - dw / 2, o.y + d.h - 4 - dh, dw, dh);
@@ -8115,7 +8118,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (FARM_PAINTED_PROPS) {
 			// the painted stove / cups / donuts over the flat v19 shapes, so the kitchen matches the game
-			paintProp("stove", o.x + 62, o.y + 188, 112);
+			paintProp("stove", o.x + 62, o.y + 188, 112); // v13.5: kept; it covers the flat stove baked into farm-room.png
 			if (!lootedChests.has(91001)) paintProp("cider-cups", o.x + 188, o.y + 117, 44);
 			if (!lootedChests.has(91002)) paintProp("donuts", o.x + 256, o.y + 115, 40);
 		}
@@ -8166,11 +8169,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillRect(o.x, o.y, 320, 240);
 		ctx.fillStyle = "#4a3828";
 		for (let i = 0; i < 6; i++) ctx.fillRect(o.x + 8, o.y + 20 + i * 34, 304, 3);
-		paintProp("logs", o.x + 78, o.y + 150, 90);
+		paintProp("logs", o.x + 78, o.y + 150, 56);
 		ctx.fillStyle = "#efe6d4";
 		ctx.font = "700 16px Source Sans 3, sans-serif";
 		ctx.fillText(lootedChests.has(92001) ? "Wood taken" : "Split wood", o.x + 36, o.y + 168);
-		paintProp("bench", o.x + 236, o.y + 156, 108);
+		paintProp("bench", o.x + 236, o.y + 156, 57);
 		ctx.fillStyle = "#efe6d4";
 		ctx.fillText("Bench", o.x + 210, o.y + 168);
 		paintProp("icon-bomb", o.x + 196, o.y + 78, 32);
@@ -8428,7 +8431,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (h < 4) return DEEP;
 		return DEEP * (1 - ease((h - 4) / 3));
 	}
-	const LIT_BUILDINGS = { farmhouse: [150, -70, .8], shack: [110, -50, .65], workshop: [120, -60, .65], stall: [120, -40, .7], barn: [120, -70, .55], "post-porch": [120, -60, .75], "post-loft": [100, -90, .6] };
+	// v13.5: glow heights follow the real-size art (farmhouse 500, barn 450, smithy 46, stall 91, porch deck 58, loft 99)
+	const LIT_BUILDINGS = { farmhouse: [150, -58, .8], shack: [110, -53, .65], workshop: [90, -18, .65], stall: [110, -36, .7], barn: [120, -79, .55], "post-porch": [90, -22, .75], "post-loft": [90, -55, .6] };
 	const FIRES = { campfire: 230, firepot: 170, "firepot-up": 180, "firepot-3": 190 };
 	let nightCv = null;
 	/** Darkness layer with holes cut around light sources, then a warm additive glow on top. */
@@ -8651,7 +8655,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("v2/tractor-drive")) {
 						// v12: the gw14 8-way tractor (4 frames x 8 facings), rolling along its charge line
 						const shift = tractorShift(prop.charge || 0);
-						blit("v2/tractor-drive", c.x + shift.x, c.y + shift.y, h * 1.25, true, Math.floor((prop.charge || 0) * 28) % 4, TRACTOR_ROW, drawCamX, drawCamY);
+						blit("v2/tractor-drive", c.x + shift.x, c.y + shift.y, TRACTOR_DRIVE_H, true, Math.floor((prop.charge || 0) * 28) % 4, TRACTOR_ROW, drawCamX, drawCamY);
 					} else if (prop.kind === "bike" && images.get("v2/bike-parked")) {
 						blit("v2/bike-parked", c.x, c.y, 76, true, 0, prop.id % 2 ? 2 : 6, drawCamX, drawCamY);
 					} else if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("tractor-run")) {
@@ -8663,8 +8667,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const f = Math.floor((prop.charge || 0) * 28) % frames;
 						const raw = worldToScreen(c.x + shift.x, c.y + shift.y, drawCamX, drawCamY);
 						const p = zoomPoint(raw.sx, raw.sy);
-						const dh = h * zoom;
+						const dh = TRACTOR_RUN_H * zoom;
 						const dw = dh * (sw / sh);
+						ctx.imageSmoothingEnabled = true;
+						ctx.imageSmoothingQuality = "high";
 						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
 					} else if ((prop.kind === "car-sedan" || prop.kind === "car-truck") && vehicleArt(prop)) {
 						const va = vehicleArt(prop);
@@ -8672,7 +8678,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					} else blit(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
-					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3" || (prop.burn || 0) > 1) && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 36, 70, false, 0, 0, drawCamX, drawCamY);
+					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3") && images.get("fx-fire")) blit("fx-fire", c.x, c.y - h * .35, h * .8, false, 0, 0, drawCamX, drawCamY);
+					else if ((prop.burn || 0) > 1 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - Math.min(36, h * .3), Math.min(70, Math.max(30, h * .6)), false, 0, 0, drawCamX, drawCamY);
 					if ((prop.burn || 0) > 0 && images.get("fx-smoke")) blit("fx-smoke", c.x + 8, c.y - 70, 64, false, 0, 0, drawCamX, drawCamY);
 					if (work && work.id === prop.id && bitten > 0 && fall < .55) {
 						if (work.mode === "chop") paintNotch(c.x, c.y, bitten, drawCamX, drawCamY);
@@ -8808,7 +8815,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						};
 						const h = Math.max(96, Math.round(beastH(dummy) * .95));
 						blit(beastSheet(dummy), pile.x, pile.y, h, true, 0, pile.dir, drawCamX, drawCamY, false, 0, tilt, .78);
-					} else blit("sack", pile.x, pile.y, 64, false, 0, 0, drawCamX, drawCamY);
+					} else blit("sack", pile.x, pile.y, 28, false, 0, 0, drawCamX, drawCamY); // v13.5: a 2.3 ft loot sack (tap box keeps its finger-size minimum)
 				}
 			});
 		}
