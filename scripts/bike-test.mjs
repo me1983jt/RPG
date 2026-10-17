@@ -65,8 +65,9 @@ check("loud", b.notice > walkNotice * 1.5, { walkNotice, n: b.notice });
 check("dismountButton", await page.getByRole("button", { name: "Dismount" }).isVisible());
 const p0 = await T("getPos");
 await T("clearNear", p0.x, p0.y, 900);
-await T("walkStraight", p0.x - 700, p0.y);
-let sp = 0; for (let i = 0; i < 8; i++) { await wait(120); sp = Math.max(sp, await T("getSpeed")); }
+// try each direction: a fence or building can block one heading
+let sp = 0;
+for (const [dx, dy] of [[-700, 0], [700, 0], [0, 700], [0, -700]]) { if (sp) break; const q = await T("getPos"); await T("clearNear", q.x, q.y, 900); await T("walkStraight", q.x + dx, q.y + dy); for (let i = 0; i < 8; i++) { await wait(120); sp = Math.max(sp, await T("getSpeed")); } }
 await wait(900);
 await shot("01-bike-riding.png");
 await wait(1500);

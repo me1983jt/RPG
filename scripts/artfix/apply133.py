@@ -62,8 +62,9 @@ def main(only=None):
                         y, d = j; a[r*ch:(r+1)*ch, c*cw:(c+1)*cw] = shift_below(cell, y, -d)
                         frames.append((f, r, c, f'lower body shifted {-d:+d}px at y{y} to sit under the torso')); note(f, 'frames realigned', 1)
         if f.startswith('boss-grok-atk'): a = close_vseam(a, 88, 124, f)
-        a, st = fix_gaps(a)
-        for k, v in st.items(): note(f, k, v)
+        for _ in range(2 if 'ride' in f or 'drive' in f else 1):
+            a, st = fix_gaps(a)
+            for k, v in st.items(): note(f, k, v)
         k = who(f)
         if k and k in R:
             cw, ch = g if g else (a.shape[1], a.shape[0])
