@@ -449,6 +449,7 @@ export interface HudSnapshot {
   canMount?: boolean;
   aim: AimPart;
   turnBased: boolean;
+  gfxHigh?: boolean;
   ap: number;
   maxAp: number;
   statsOpen: boolean;

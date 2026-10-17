@@ -48,6 +48,7 @@ export const useHud = create<HudSnapshot>(() => ({
   canMount: false,
   aim: "chest",
   turnBased: false,
+  gfxHigh: true,
   ap: 8,
   maxAp: 8,
   statsOpen: false,

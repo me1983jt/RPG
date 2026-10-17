@@ -1,0 +1,32 @@
+// v13.4: frame time on a phone-sized screen with the CPU slowed 4x (a mid Android phone), High vs Low graphics, plus the toggle.
+import { boot } from "./v4-lib.mjs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+const R = {}; const fail = [];
+const check = (n, ok, info) => { R[n] = ok ? "PASS" : "FAIL"; if (!ok) fail.push(n + " " + JSON.stringify(info ?? "")); };
+const { browser, page, T, begin, errs } = await boot(url, { vw: 390, vh: 844 });
+await begin();
+const cdp = await page.context().newCDPSession(page);
+await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+const wait = (ms) => page.waitForTimeout(ms);
+const sample = async (label) => { await wait(1500); await T("frameStats"); const a = await T("frameStats"); await wait(4000); const b = await T("frameStats"); return { label, ...b, frames: b.n - a.n }; };
+await T("setHour", 20.5); await T("giveItem", "lantern", 1); await T("v13Weather", "snow");
+const hi = await sample("high");
+// toggle through the pause menu
+await page.keyboard.press("Escape"); await wait(400);
+const btn = page.getByTestId("gfx-toggle");
+check("toggle-visible", await btn.isVisible());
+await btn.click(); await wait(200);
+check("toggle-low", (await btn.textContent()).includes("Low"));
+check("saved-low", (await page.evaluate(() => localStorage.getItem("maine-rpg-gfx"))) === "low");
+await page.getByRole("button", { name: "Resume" }).click();
+const lo = await sample("low");
+check("high-frame-ok", hi.p95 < 33, hi); check("low-frame-ok", lo.p95 < 33, lo); check("low-not-slower", lo.avg <= hi.avg * 1.15, { hi, lo });
+await page.keyboard.press("Escape"); await wait(300); await btn.click(); await page.getByRole("button", { name: "Resume" }).click();
+check("back-high", (await T("frameStats")).gfxHigh === true);
+await T("v13Weather", "clear"); await wait(800); const m1 = (await T("weatherMix")).snow; await wait(3500); const m2 = (await T("weatherMix")).snow;
+check("weather-fades", m1 > 0.05 && m1 < .99 && m2 < m1, { m1, m2 });
+await page.screenshot({ path: "/workspace/maine-rpg/beta27-shots/after-phone-dusk-snow.png" });
+check("no-errors", !errs.filter((e) => !/favicon/.test(e)).length, errs.slice(0, 4));
+console.log(JSON.stringify({ hi, lo })); console.log(JSON.stringify(R, null, 1)); console.log("fails:", JSON.stringify(fail, null, 1));
+console.log(`${Object.values(R).filter((v) => v === "PASS").length}/${Object.keys(R).length}`);
+await browser.close();

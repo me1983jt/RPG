@@ -1237,6 +1237,9 @@ export function RPG() {
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!hud.turnBased)}>
             {hud.turnBased ? "Switch to real time" : "Switch to turn-based"}
           </button>
+          <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
+            Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
+          </button>
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("menu")}>
             Main menu
           </button>

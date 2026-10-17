@@ -115,6 +115,7 @@ export interface GameApi {
   craft: (id: string) => void;
   setAim: (part: AimPart) => void;
   setTurnBased: (on: boolean) => void;
+  setGraphics: (high: boolean) => void;
   endTurn: () => void;
   takeLoot: (key: string) => void;
   /** Android back button: close the open panel, else open/close the pause menu. False on the main menu. */
@@ -376,6 +377,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let drawn = 0;
 	let aim = "chest";
 	let turnBased = false;
+	// v13.4 graphics: High adds smooth sprite scaling, soft shadows, daylight tint, vignette and blended weather
+	let gfxHigh = (() => { try { return localStorage.getItem("maine-rpg-gfx") !== "low"; } catch { return true; } })();
+	const frameMs = { avg: 16, n: 0, worst: 0, list: [] };
+	const weatherMix = {};
+	let weatherT = 0;
 	let ap = 8;
 	let apMax = 8;
 	let apWalk = 0;
@@ -642,6 +648,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			canMount: !!nearBike() && phase === "play",
 			aim,
 			turnBased,
+			gfxHigh,
 			ap,
 			maxAp: apMax,
 			statsOpen,
@@ -4165,32 +4172,70 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dialogue = null; talkNpc = null; phase = "play"; sync(true);
 		return true;
 	}
+	/** v13.4 High graphics: warm daylight tint that follows the hour, and a mild vignette. */
+	let vignetteCv = null;
+	function paintDaylight(dark) {
+		const h = (((clock % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC) / DAY_LENGTH_SEC * 24;
+		// golden near sunrise and sunset, a faint warm cast at noon
+		const gold = Math.max(0, 1 - Math.abs(h - 7) / 2.2) + Math.max(0, 1 - Math.abs(h - 17.5) / 2.6);
+		const a = Math.min(.16, .035 + gold * .11) * (1 - dark);
+		if (a > .004) {
+			ctx.save(); ctx.globalCompositeOperation = "soft-light";
+			ctx.fillStyle = `rgba(255, ${Math.round(196 - gold * 40)}, ${Math.round(120 - gold * 50)}, ${Math.min(.5, a * 3)})`;
+			ctx.fillRect(0, 0, viewW, viewH);
+			ctx.restore();
+		}
+		const w = Math.ceil(viewW / 4), hh = Math.ceil(viewH / 4);
+		if (!vignetteCv || vignetteCv.width !== w || vignetteCv.height !== hh) {
+			vignetteCv = document.createElement("canvas"); vignetteCv.width = w; vignetteCv.height = hh;
+			const g2 = vignetteCv.getContext("2d");
+			const g = g2.createRadialGradient(w / 2, hh / 2, Math.min(w, hh) * .38, w / 2, hh / 2, Math.hypot(w, hh) * .56);
+			g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(8,6,4,0.34)");
+			g2.fillStyle = g; g2.fillRect(0, 0, w, hh);
+		}
+		ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(vignetteCv, 0, 0, viewW, viewH); ctx.restore();
+	}
 	/** Weather overlay drawn in screen space: snow, nor'easter, fog, rain, black-ice sheen. */
 	function paintWeather13() {
-		const id = w13.weather.id;
-		if (id === "clear" || !ctx) return;
-		const t = performance.now() / 1000;
+		if (!ctx) return;
+		const now = performance.now() / 1000;
+		const dtw = Math.min(.25, Math.max(0, now - (weatherT || now))); weatherT = now;
+		const cur = w13.weather.id;
+		// v13.4: weather fades in and out over a few seconds instead of snapping (Low: snaps)
+		for (const k of ["fog", "blackice", "noreaster", "snow", "rain"]) {
+			const want = k === cur ? 1 : 0;
+			const m = weatherMix[k] ?? want;
+			weatherMix[k] = gfxHigh ? m + (want - m) * Math.min(1, dtw / 2.5) : want;
+		}
+		if (cur === "clear" && !Object.values(weatherMix).some((v) => v > .01)) return;
+		const t = now;
 		ctx.save();
-		if (id === "fog") {
+		const fogA = weatherMix.fog || 0;
+		if (fogA > .01) {
 			const hr = player ? worldToScreen(player.x, player.y, camX, camY) : { sx: viewW / 2, sy: viewH / 2 };
 			const hp = zoomPoint(hr.sx, hr.sy);
 			const g = ctx.createRadialGradient(hp.sx, hp.sy - 40, 60, hp.sx, hp.sy - 40, Math.max(viewW, viewH) * .55);
-			g.addColorStop(0, "rgba(206,210,212,0.05)"); g.addColorStop(.45, "rgba(206,210,212,0.55)"); g.addColorStop(1, "rgba(206,210,212,0.86)");
+			g.addColorStop(0, `rgba(206,210,212,${.05 * fogA})`); g.addColorStop(.45, `rgba(206,210,212,${.55 * fogA})`); g.addColorStop(1, `rgba(206,210,212,${.86 * fogA})`);
 			ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH);
 		}
-		if (id === "blackice") { ctx.fillStyle = "rgba(120,160,210,0.10)"; ctx.fillRect(0, 0, viewW, viewH); }
-		if (id === "noreaster") { ctx.fillStyle = "rgba(200,206,214,0.32)"; ctx.fillRect(0, 0, viewW, viewH); }
-		const n = id === "noreaster" ? 260 : id === "snow" ? 120 : id === "rain" ? 140 : 0;
-		const wind = id === "noreaster" ? 520 : id === "rain" ? 60 : 40;
-		const fall = id === "rain" ? 700 : id === "noreaster" ? 260 : 90;
-		ctx.strokeStyle = id === "rain" ? "rgba(170,190,215,0.55)" : "rgba(250,250,252,0.85)";
-		ctx.fillStyle = "rgba(250,250,252,0.9)";
-		ctx.lineWidth = id === "rain" ? 1 : 2;
-		for (let i = 0; i < n; i++) {
-			const sx = ((i * 97.13 + t * wind * (0.7 + (i % 5) * .1)) % (viewW + 80) + viewW + 80) % (viewW + 80) - 40;
-			const sy = ((i * 53.71 + t * fall * (0.8 + (i % 7) * .06)) % (viewH + 40) + viewH + 40) % (viewH + 40) - 20;
-			if (id === "rain" || id === "noreaster") { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - wind * .02, sy - (id === "rain" ? 14 : 4)); ctx.stroke(); }
-			else { ctx.beginPath(); ctx.arc(sx, sy, 1.2 + (i % 3) * .6, 0, Math.PI * 2); ctx.fill(); }
+		if ((weatherMix.blackice || 0) > .01) { ctx.fillStyle = `rgba(120,160,210,${.10 * weatherMix.blackice})`; ctx.fillRect(0, 0, viewW, viewH); }
+		if ((weatherMix.noreaster || 0) > .01) { ctx.fillStyle = `rgba(200,206,214,${.32 * weatherMix.noreaster})`; ctx.fillRect(0, 0, viewW, viewH); }
+		if (gfxHigh && (weatherMix.snow || 0) > .01) { ctx.fillStyle = `rgba(214,222,236,${.08 * weatherMix.snow})`; ctx.fillRect(0, 0, viewW, viewH); }
+		for (const id of ["noreaster", "snow", "rain"]) {
+			const mix = weatherMix[id] || 0;
+			if (mix < .02) continue;
+			const n = Math.round((id === "noreaster" ? 260 : id === "snow" ? 120 : 140) * mix * (gfxHigh ? 1 : .6));
+			const wind = id === "noreaster" ? 520 : id === "rain" ? 60 : 40;
+			const fall = id === "rain" ? 700 : id === "noreaster" ? 260 : 90;
+			ctx.strokeStyle = id === "rain" ? "rgba(170,190,215,0.55)" : "rgba(250,250,252,0.85)";
+			ctx.fillStyle = "rgba(250,250,252,0.9)";
+			ctx.lineWidth = id === "rain" ? 1 : 2;
+			for (let i = 0; i < n; i++) {
+				const sx = ((i * 97.13 + t * wind * (0.7 + (i % 5) * .1)) % (viewW + 80) + viewW + 80) % (viewW + 80) - 40;
+				const sy = ((i * 53.71 + t * fall * (0.8 + (i % 7) * .06)) % (viewH + 40) + viewH + 40) % (viewH + 40) - 20;
+				if (id === "rain" || id === "noreaster") { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - wind * .02, sy - (id === "rain" ? 14 : 4)); ctx.stroke(); }
+				else { ctx.beginPath(); ctx.arc(sx, sy, 1.2 + (i % 3) * .6, 0, Math.PI * 2); ctx.fill(); }
+			}
 		}
 		ctx.restore();
 	}
@@ -8374,7 +8419,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function nightDarkBase(total) {
 		const span = DAY_LENGTH_SEC;
 		const h = (((total % span) + span) % span) / span * 24;
-		const ease = (t) => t * t * (3 - 2 * t);
+		const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 		const DUSK = .64, DEEP = .82;
 		if (h >= 7 && h < 17) return 0;
 		if (h >= 17 && h < 21) return DUSK * ease((h - 17) / 4);
@@ -8431,15 +8476,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lg.setTransform(1, 0, 0, 1, 0, 0);
 		lg.globalCompositeOperation = "source-over";
 		lg.clearRect(0, 0, w, h);
-		lg.fillStyle = `rgba(4, 8, 22, ${dark})`;
+		if (gfxHigh) {
+			// v13.4: the dark layer drifts from a dusky violet to deep night blue
+			const u = Math.min(1, dark / .7);
+			lg.fillStyle = `rgba(${Math.round(30 - 26 * u)}, ${Math.round(18 - 10 * u)}, ${Math.round(40 - 18 * u)}, ${dark})`;
+		} else lg.fillStyle = `rgba(4, 8, 22, ${dark})`;
 		lg.fillRect(0, 0, w, h);
 		lg.globalCompositeOperation = "destination-out";
 		for (const L of lights) {
 			const x = L.x * scale, y = L.y * scale, r = Math.max(4, L.r * scale);
 			const g = lg.createRadialGradient(x, y, 0, x, y, r);
-			g.addColorStop(0, `rgba(0,0,0,${L.a})`);
-			g.addColorStop(.55, `rgba(0,0,0,${L.a * .6})`);
-			g.addColorStop(1, "rgba(0,0,0,0)");
+			if (gfxHigh) {
+				// smooth falloff (roughly inverse-square), no hard ring
+				for (const [st, k] of [[0, 1], [.2, .92], [.4, .72], [.6, .45], [.8, .18], [1, 0]]) g.addColorStop(st, `rgba(0,0,0,${L.a * k})`);
+			} else {
+				g.addColorStop(0, `rgba(0,0,0,${L.a})`);
+				g.addColorStop(.55, `rgba(0,0,0,${L.a * .6})`);
+				g.addColorStop(1, "rgba(0,0,0,0)");
+			}
 			lg.fillStyle = g;
 			lg.fillRect(x - r, y - r, r * 2, r * 2);
 		}
@@ -8449,8 +8503,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.globalCompositeOperation = "lighter";
 		for (const L of lights) {
 			const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, L.r * .8);
-			g.addColorStop(0, `rgba(255, 160, 70, ${L.warm * dark * .95})`);
-			g.addColorStop(1, "rgba(0,0,0,0)");
+			if (gfxHigh) {
+				const a = L.warm * dark * .95;
+				g.addColorStop(0, `rgba(255, 196, 120, ${a})`); g.addColorStop(.15, `rgba(255, 168, 80, ${a * .8})`);
+				g.addColorStop(.45, `rgba(240, 120, 50, ${a * .35})`); g.addColorStop(1, "rgba(200,80,30,0)");
+			} else {
+				g.addColorStop(0, `rgba(255, 160, 70, ${L.warm * dark * .95})`);
+				g.addColorStop(1, "rgba(0,0,0,0)");
+			}
 			ctx.fillStyle = g;
 			ctx.fillRect(L.x - L.r, L.y - L.r, L.r * 2, L.r * 2);
 		}
@@ -8840,6 +8900,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
+		if (gfxHigh && !inside) paintDaylight(dark);
 		if (!inside) paintWeather13();
 		paintSeason();
 		paintRipples(drawCamX, drawCamY);
@@ -8934,6 +8995,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		drawMini();
 	}
+	/** Soft contact shadow: a radial falloff ellipse, slightly to the lower right (sun from the upper left). */
+	const shadowCache = new Map();
+	function softShadow(x, y, rx, name) {
+		const flat = /^(ground|road|icon|fx|bait|scrap|sack|hatch|door)/.test(name);
+		if (flat || rx < 2) return;
+		let key = Math.round(rx);
+		let cv = shadowCache.get(key);
+		if (!cv) {
+			cv = document.createElement("canvas"); cv.width = key * 2 + 4; cv.height = Math.ceil(key * .84) + 4;
+			const g2 = cv.getContext("2d");
+			g2.scale(1, .42);
+			const cy = cv.height / 2 / .42;
+			const g = g2.createRadialGradient(cv.width / 2, cy, 0, cv.width / 2, cy, key);
+			g.addColorStop(0, "rgba(10,8,6,0.46)"); g.addColorStop(.55, "rgba(10,8,6,0.26)"); g.addColorStop(1, "rgba(10,8,6,0)");
+			g2.fillStyle = g; g2.fillRect(0, 0, cv.width, cv.height / .42);
+			if (shadowCache.size > 200) shadowCache.clear();
+			shadowCache.set(key, cv);
+		}
+		const day = 1 - nightDark(clock) * .7;
+		ctx.save(); ctx.globalAlpha = day; ctx.drawImage(cv, x - cv.width / 2, y - cv.height / 2); ctx.restore();
+	}
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		const img = images.get(name);
 		if (sheet && img && /^v2\/bandit-[a-z]+-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
@@ -8950,7 +9032,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		};
 		// armor overlays ride on the hero: no second shadow, and the hero sheet's planted-foot data
 		const layer = name.startsWith("overlay-");
-		if (!layer) {
+		if (!layer && !gfxHigh) {
 			ctx.fillStyle = "rgba(12,10,8,0.4)";
 			ctx.beginPath();
 			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 8 * zoom, 0, 0, Math.PI * 2);
@@ -8983,9 +9065,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dh = drawH * zoom;
 		const dw = dh * (sw / sh);
 		const spriteY = -dh * frac - lift * zoom;
+		if (!layer && gfxHigh) softShadow(foot.sx + 3 * zoom, foot.sy + 1 * zoom, Math.max(12 * zoom, Math.min(dw * .36, (sheet || strips ? 46 : 34) * zoom)), name);
 		const smooth = ctx.imageSmoothingEnabled;
-		ctx.imageSmoothingEnabled = dh < sh * 0.92;
-		ctx.imageSmoothingQuality = "high";
+		// v13.4: smooth when the sprite lands at a non-integer scale; whole-number upscales stay crisp
+		const ratio = dh / sh;
+		ctx.imageSmoothingEnabled = gfxHigh ? (ratio < .97 || Math.abs(ratio - Math.round(ratio)) > .06) : dh < sh * 0.92;
+		ctx.imageSmoothingQuality = gfxHigh ? "high" : "medium";
 		if (tilt || flatten !== 1 || flip) {
 			ctx.save();
 			ctx.translate(p.sx, p.sy);
@@ -9242,7 +9327,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			acc -= STEP;
 			guard++;
 		}
+		const t0 = performance.now();
 		render();
+		const ms = performance.now() - t0;
+		frameMs.avg = frameMs.avg * .95 + ms * .05; frameMs.n++; frameMs.worst = Math.max(frameMs.worst * .995, ms);
+		frameMs.list.push(ms); if (frameMs.list.length > 240) frameMs.list.shift();
 		requestAnimationFrame(frame);
 	}
 	function pick(x, y, sx, sy) {
@@ -10097,6 +10186,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		craft,
 		setAim,
 		setTurnBased,
+		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
 		takeLoot
 	};
@@ -10390,6 +10480,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10Dog: () => dogBody ? { x: Math.round(dogBody.x), y: Math.round(dogBody.y) } : null,
 		q10EndRaid: (won) => endRaid(!!won, "Test: the raid ends."),
 		dialogueNow: () => dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => ({ id: c.id, label: c.label })) } : null,
+		frameStats: () => ({ avg: +frameMs.avg.toFixed(2), worst: +frameMs.worst.toFixed(2), p95: +[...frameMs.list].sort((a, b) => a - b)[Math.floor(frameMs.list.length * .95)]?.toFixed(2), n: frameMs.n, gfxHigh }),
+		weatherMix: () => ({ ...weatherMix }),
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (h / 24) * span;
