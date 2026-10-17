@@ -8628,13 +8628,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					}
 					// see-through: a tall prop drawn in front of the hero fades so the hero never vanishes behind it
 					let seeThrough = false;
-					if (player && !inside && h > 140 && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
+					// vehicles: use the real art box (native size), not the old prop box
+					const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
+					if (player && !inside && (vArt ? vArt.h > 100 : h > 140) && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
 						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 						const ps = zoomPoint(pr.sx, pr.sy);
 						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
 						const hs = zoomPoint(hr.sx, hr.sy);
-						const ph = h * scale * zoom;
-						const pimg = images.get(spec.image);
+						const ph = (vArt ? vArt.h : h * scale) * zoom;
+						const pimg = images.get(vArt ? vArt.name : spec.image);
 						const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
 						const pw = ph * aspect * (tree ? .6 : .92);
 						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph;
@@ -9002,13 +9004,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * Any v2/vehicles/car-rod-<1-4>-<se|sw> or truck-chevy-<1-4>-<se|sw> listed in optional.json is mixed in.
 	 * Facing follows the road under the wreck (road along x runs NE-SW on screen: SW; along y: SE); off-road it is a coin toss.
 	 * Height is the sprite height in world px at 1 ft = 11 px: hot rod about 13 ft long, pickup about 16 ft. */
-	const VEH_H = { "car-rod": 142, "truck-chevy": 162 };
+	const VEH_H = { "car-rod": 112, "truck-chevy": 126 }; // native sprite height: drawn 1:1 (hot rod 145x112, pickup 175x126 at 11 px/ft)
 	const vehCache = new WeakMap();
 	function vehicleArt(prop) {
 		const hit = vehCache.get(prop);
 		if (hit) return hit;
 		const fam = prop.kind === "car-truck" ? "truck-chevy" : "car-rod";
 		const have = [1, 2, 3, 4].filter((i) => images.get(`v2/vehicles/${fam}-${i}-se`) || images.get(`v2/vehicles/${fam}-${i}-sw`));
+		const any = have.length ? images.get(`v2/vehicles/${fam}-${have[0]}-se`) || images.get(`v2/vehicles/${fam}-${have[0]}-sw`) : null;
 		if (!have.length) return null; // art not loaded yet: old prop for now, decide again next frame
 		const h = (((prop.tx * 73856093) ^ (prop.ty * 19349663)) >>> 0) / 4294967296;
 		const v = have[Math.floor(h * have.length) % have.length];
@@ -9016,7 +9019,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const alongX = road(prop.tx - 1, prop.ty) + road(prop.tx + 1, prop.ty), alongY = road(prop.tx, prop.ty - 1) + road(prop.tx, prop.ty + 1);
 		let face = alongX > alongY ? "sw" : alongY > alongX ? "se" : (h * 977) % 1 < .5 ? "se" : "sw";
 		if (!images.get(`v2/vehicles/${fam}-${v}-${face}`)) face = face === "se" ? "sw" : "se";
-		const art = { name: `v2/vehicles/${fam}-${v}-${face}`, h: VEH_H[fam] };
+		const art = { name: `v2/vehicles/${fam}-${v}-${face}`, h: images.get(`v2/vehicles/${fam}-${v}-${face}`)?.height || any?.height || VEH_H[fam] };
 		vehCache.set(prop, art);
 		return art;
 	}
