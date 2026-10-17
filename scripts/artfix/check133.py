@@ -15,7 +15,7 @@ for f in human_files():
         m = lab[sl] == i
         if m.sum() <= 14 or dist[sl][m].max() <= 1.6: bad.append((f, 'hole', sl[0].start, sl[1].start)); break
     deep = ndimage.distance_transform_edt(a[..., 3] >= 5) > 2.5
-    if f != 'v2/bike-ride.png' and ((a[..., 3] < 120) & deep).sum() > 2:  # bike-ride has a baked see-through ground shadow bad.append((f, 'semi-alpha'))
+    if f != 'v2/bike-ride.png' and ((a[..., 3] < 120) & deep).sum() > 2: bad.append((f, 'semi-alpha'))  # bike-ride has a baked see-through ground shadow
     g = grid(f, a)
     if g:
         cw, ch = g
