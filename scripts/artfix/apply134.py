@@ -7,7 +7,7 @@ from gaps133 import fix_gaps
 from audit import human_files, grid
 from apply133 import who
 from lut134 import build, apply as lut_apply
-from polish134 import cells, bbox, skin_mask, warm_skin, shade, smooth_edges
+from polish134 import cells, bbox, skin_mask, warm_skin, shade, smooth_edges, close_small_holes
 O2 = '/workspace/maine-rpg/art-backup-v13.2/game/'; O3 = '/workspace/maine-rpg/art-backup-v13.3/game/'; B = '/workspace/maine-rpg/v11/public/game/'
 log = {}
 def note(f, k, n):
@@ -132,6 +132,7 @@ def main():
         sk = skin_mask(a); a = warm_skin(a, sk); note(f, 'skin warmed', sk.sum())
         a = shade(a, cw, ch); note(f, 'shading', 1)
         a, n = smooth_edges(a); note(f, 'edge smoothing', n)
+        a, n = close_small_holes(a); note(f, 'holes closed after smoothing', n)
         save(a, B + f)
     # animals and overlays: edges only
     for p in sorted(glob.glob(O3 + '*.png')) + sorted(glob.glob(O3 + 'overlay/**/*.png', recursive=True)):

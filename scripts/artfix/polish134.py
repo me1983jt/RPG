@@ -50,5 +50,19 @@ def smooth_edges(a, dark_soften=.35):
     out[soft, 3] = np.minimum(al[soft], 255 * np.clip(cov[soft] + .25, .55, 1))
     # outside pixels in an inner corner get a faint fill in the neighbour colour
     corner = (al < 20) & (cov >= .55)
-    out[corner, :3] = rgbn[corner]; out[corner, 3] = 255 * (cov[corner] - .35)
+    lr = np.roll(O, 1, 1) & np.roll(O, -1, 1); ud = np.roll(O, 1, 0) & np.roll(O, -1, 0)
+    sand = (lr | ud)
+    out[corner, :3] = rgbn[corner]; out[corner, 3] = np.where((cov[corner] >= .7) | sand[corner], 255, 255 * (cov[corner] - .35))
     return out, int(soft.sum() + corner.sum() + dk.sum())
+def close_small_holes(a):
+    from gaps133 import grow_fill
+    O = a[..., 3] >= 200; holes = ~O
+    lab, k = ndimage.label(holes)
+    if not k: return a, 0
+    border = set(np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    dist = ndimage.distance_transform_edt(holes); fill = np.zeros_like(O)
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        if i in border or sl is None: continue
+        m = lab[sl] == i
+        if m.sum() <= 14 or dist[sl][m].max() <= 1.6: fill[sl] |= m
+    return (grow_fill(a, fill) if fill.any() else a), int(fill.sum())
