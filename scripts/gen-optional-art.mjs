@@ -22,6 +22,8 @@ const want = [
   ...["walk", "idle", "run", "gun", "gun-atk", "axe", "hit", "down", "crouch", "death"].map((a) => `v2/player-${a}`),
   ...["walk", "atk", "death", "idle"].map((a) => `v2/boss-collector-${a}`),
   ...["store", "school", "clinic"].map((a) => `v2/harmony-${a}`),
+  // v13.4 vehicle hooks: Grok Build drops car-rod-<1-4>-<se|sw> and truck-chevy-<1-4>-<se|sw> in v2/vehicles
+  ...["car-rod", "truck-chevy"].flatMap((k) => [1, 2, 3, 4].flatMap((i) => ["se", "sw"].map((f) => `v2/vehicles/${k}-${i}-${f}`))),
   ...(existsSync(`${root}v2/armor`) ? readdirSync(`${root}v2/armor`).filter((f) => f.endsWith(".png")).map((f) => `v2/armor/${f.slice(0, -4)}`) : []),
 ];
 const have = want.filter((n) => existsSync(`${root}${n}.png`));

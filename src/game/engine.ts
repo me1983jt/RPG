@@ -8664,6 +8664,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const dh = h * zoom;
 						const dw = dh * (sw / sh);
 						ctx.drawImage(img, f * sw, 0, sw, sh, p.sx - dw / 2, p.sy - dh * .92, dw, dh);
+					} else if ((prop.kind === "car-sedan" || prop.kind === "car-truck") && vehicleArt(prop)) {
+						const va = vehicleArt(prop);
+						blit(va.name, c.x, c.y, va.h, false, 0, 0, drawCamX, drawCamY);
 					} else blit(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
@@ -8994,6 +8997,28 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.fillText(f.text, p.sx, p.sy);
 		}
 		drawMini();
+	}
+	/** v13.4 vehicles: rusted hot rods replace the cars, rusted '50 Chevy pickups replace the trucks.
+	 * Any v2/vehicles/car-rod-<1-4>-<se|sw> or truck-chevy-<1-4>-<se|sw> listed in optional.json is mixed in.
+	 * Facing follows the road under the wreck (road along x runs NE-SW on screen: SW; along y: SE); off-road it is a coin toss.
+	 * Height is the sprite height in world px at 1 ft = 11 px: hot rod about 13 ft long, pickup about 16 ft. */
+	const VEH_H = { "car-rod": 142, "truck-chevy": 162 };
+	const vehCache = new WeakMap();
+	function vehicleArt(prop) {
+		const hit = vehCache.get(prop);
+		if (hit) return hit;
+		const fam = prop.kind === "car-truck" ? "truck-chevy" : "car-rod";
+		const have = [1, 2, 3, 4].filter((i) => images.get(`v2/vehicles/${fam}-${i}-se`) || images.get(`v2/vehicles/${fam}-${i}-sw`));
+		if (!have.length) return null; // art not loaded yet: old prop for now, decide again next frame
+		const h = (((prop.tx * 73856093) ^ (prop.ty * 19349663)) >>> 0) / 4294967296;
+		const v = have[Math.floor(h * have.length) % have.length];
+		const road = (tx, ty) => { const t = world.tiles[ty * MAP_W + tx]; return t === 2 || t === 5; };
+		const alongX = road(prop.tx - 1, prop.ty) + road(prop.tx + 1, prop.ty), alongY = road(prop.tx, prop.ty - 1) + road(prop.tx, prop.ty + 1);
+		let face = alongX > alongY ? "sw" : alongY > alongX ? "se" : (h * 977) % 1 < .5 ? "se" : "sw";
+		if (!images.get(`v2/vehicles/${fam}-${v}-${face}`)) face = face === "se" ? "sw" : "se";
+		const art = { name: `v2/vehicles/${fam}-${v}-${face}`, h: VEH_H[fam] };
+		vehCache.set(prop, art);
+		return art;
 	}
 	/** Soft contact shadow: a radial falloff ellipse, slightly to the lower right (sun from the upper left). */
 	const shadowCache = new Map();
@@ -10482,6 +10507,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dialogueNow: () => dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => ({ id: c.id, label: c.label })) } : null,
 		frameStats: () => ({ avg: +frameMs.avg.toFixed(2), worst: +frameMs.worst.toFixed(2), p95: +[...frameMs.list].sort((a, b) => a - b)[Math.floor(frameMs.list.length * .95)]?.toFixed(2), n: frameMs.n, gfxHigh }),
 		weatherMix: () => ({ ...weatherMix }),
+		vehicles: () => world ? world.props.filter((p) => p.kind === "car-sedan" || p.kind === "car-truck").map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, ...propCenter(p), art: vehicleArt(p) })) : [],
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (h / 24) * span;
