@@ -14,6 +14,7 @@ export interface V14State {
   placed: { k: string; tx: number; ty: number; hp: number; f?: boolean }[];
   defendWave: number;
   tries: number;
+  map?: any;
   report: { night: number; items: { name: string; hp: number; max: number }[]; cost: Cost } | null;
 }
 export function freshV14(): V14State {

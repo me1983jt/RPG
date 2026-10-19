@@ -154,6 +154,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   const mouths = (mapId === 0 ? homeSides : homeSides.map((side) => (side + 3) % 6)).filter((side, i, all) => all.indexOf(side) === i);
   if (mapId === 1) return createReach(seed, homeSides, mouths);
   if (mapId === 2) return createSkowhegan(seed, homeSides);
+  if (mapId >= 3) return createArea(seed, mapId, homeSides);
   shapingHome = true;
   const tiles = new Uint8Array(MAP_W * MAP_H);
   const blocked = new Uint8Array(MAP_W * MAP_H);
@@ -1243,4 +1244,47 @@ export function asResource(kind: PropKind, loose?: boolean): Resource | null {
   if (kind === "logs") return "wood";
   if (kind === "rock" && loose) return "stone";
   return null;
+}
+
+/** v14 world-map areas. 3 Lowelltown woods, 4 the Kennebec, 5 raider country, 6 the bunker, 9 a roadside encounter. */
+export const AREA_NAME: Record<number, string> = { 3: "Lowelltown Woods", 4: "The Kennebec", 5: "Raider Country", 6: "The Bunker", 9: "Roadside" };
+function createArea(seed: number, mapId: number, homeSides: number[]): World {
+  shapingHome = false;
+  const tiles = new Uint8Array(MAP_W * MAP_H);
+  const blocked = new Uint8Array(MAP_W * MAP_H);
+  fillLand(tiles, blocked, 1);
+  const world: World = {
+    tiles, blocked, props: [], npcs: [], enemies: [],
+    startX: HEX_CX * TILE + TILE / 2, startY: HEX_CY * TILE + TILE / 2,
+    nextPropId: 1, nextEnemyId: 1, id: mapId, name: AREA_NAME[mapId] ?? "The Woods", seed, exits: homeSides, gates: [], questBandits: 0,
+  };
+  // a road through the middle, east to west, so every edge band has a way in
+  for (let tx = 4; tx < MAP_W - 4; tx++) for (const dy of [-1, 0, 1]) { const ty = HEX_CY + dy + Math.round(Math.sin(tx * 0.06 + mapId) * 6); if (inMap(tx, ty) && inHex(tx, ty)) { tiles[idx(tx, ty)] = ROAD; blocked[idx(tx, ty)] = 0; } }
+  if (mapId === 4) {
+    // the Kennebec: a wide river band north-south with one bridge on the road
+    for (let ty = 0; ty < MAP_H; ty++) for (let tx = HEX_CX - 4; tx <= HEX_CX + 4; tx++) {
+      const x = tx + Math.round(Math.sin(ty * 0.08) * 5);
+      if (!inMap(x, ty) || !inHex(x, ty)) continue;
+      if (tiles[idx(x, ty)] === ROAD) continue;
+      tiles[idx(x, ty)] = VOID; blocked[idx(x, ty)] = 1;
+    }
+  }
+  world.gates = layExits(world, [0, 1, 2, 3, 4, 5], { tx: HEX_CX, ty: HEX_CY });
+  scatter(world);
+  clearPad(world, HEX_CX, HEX_CY, 4);
+  const poi = (dx: number, dy: number, kind: PropKind, extra?: Partial<Prop>) => { const [x, y] = pullIn(HEX_CX + dx, HEX_CY + dy); clearPad(world, x, y, 2); return addProp(world, kind, x, y, extra); };
+  // small points of interest (more can be added to LOOT_SPOTS in worldmap.ts)
+  poi(-14, -10, "ruin");
+  poi(16, 12, "car-truck");
+  poi(10, -16, "scrap", { resource: "scrap", amount: 4 });
+  poi(-18, 14, "logs", { resource: "wood", amount: 5 });
+  poi(4, 18, "campfire");
+  if (mapId === 6) poi(0, -4, "hatch");
+  let pack = 1;
+  const dens: [number, number, "wolf" | "deer" | "coyote" | "moose" | "rabbit", number][] = mapId === 9 ? [[10, -8, "deer", 2]] : [[20, -14, "deer", 3], [-22, 10, "rabbit", 3], [14, 24, "coyote", 3], [-12, -24, mapId === 3 ? "moose" : "wolf", mapId === 3 ? 1 : 3]];
+  for (const [dx, dy, kind, count] of dens) { const spot = pullIn(HEX_CX + dx, HEX_CY + dy); addPack(world, kind, spot[0], spot[1], count, pack++); }
+  const bandits = mapId === 5 ? [[18, 6], [20, 9], [-16, 8], [-18, 4], [6, -20], [9, -22], [-4, 22]] : mapId === 9 ? [] : [[24, 4]];
+  for (const [dx, dy] of bandits) addEnemy(world, HEX_CX + dx!, HEX_CY + dy!, false, mapId === 5 && dx! > 0);
+  shapingHome = true;
+  return world;
 }

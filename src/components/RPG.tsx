@@ -1,3 +1,4 @@
+import { WM_COLS, WM_HEX, WM_H, WM_LOCS, WM_ROWS, WM_W, hexAt, hexCenter } from "@/game/worldmap";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
@@ -78,6 +79,45 @@ function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { l
   return <canvas ref={ref} aria-label="Character preview" className="h-36 w-auto short:h-24" />;
 }
 
+function WorldMap14({ wm, go }: { wm: any; go: (q: number, r: number) => void }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const img = useRef<HTMLImageElement | null>(null);
+  const [, setLoaded] = useState(0);
+  useEffect(() => { const i = new Image(); i.onload = () => setLoaded((n) => n + 1); i.src = "/game/v14/worldmap.jpg"; img.current = i; }, []);
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const g = c.getContext("2d"); if (!g) return;
+    c.width = WM_W * 2; c.height = WM_H * 2; g.setTransform(2, 0, 0, 2, 0, 0);
+    g.fillStyle = "#1c1814"; g.fillRect(0, 0, WM_W, WM_H);
+    if (img.current?.complete && img.current.naturalWidth) g.drawImage(img.current, 0, 0, WM_W, WM_H);
+    const fog = new Set<string>(wm.fog);
+    const hexPathD = (x: number, y: number, s: number) => { g.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); g.lineTo(x + s * Math.cos(a), y + s * Math.sin(a)); } g.closePath(); };
+    for (let r = 0; r < WM_ROWS; r++) for (let q = 0; q < WM_COLS; q++) {
+      const { x, y } = hexCenter(q, r);
+      hexPathD(x, y, WM_HEX);
+      if (!fog.has(`${q},${r}`)) { g.fillStyle = "rgba(24,20,16,0.88)"; g.fill(); }
+      g.strokeStyle = "rgba(240,220,170,0.35)"; g.lineWidth = 1; g.stroke();
+    }
+    g.strokeStyle = "#f0d090"; g.lineWidth = 3; g.setLineDash([6, 6]); g.beginPath();
+    const st = hexCenter(wm.q, wm.r); g.moveTo(st.x, st.y);
+    for (const [q, r] of wm.path) { const p = hexCenter(q, r); g.lineTo(p.x, p.y); }
+    g.stroke(); g.setLineDash([]);
+    g.font = "bold 13px sans-serif"; g.textAlign = "center";
+    for (const l of WM_LOCS) {
+      if (!fog.has(`${l.q},${l.r}`)) continue;
+      const { x, y } = hexCenter(l.q, l.r);
+      g.fillStyle = "rgba(20,16,12,0.8)"; const w = g.measureText(l.name).width + 10; g.fillRect(x - w / 2, y + 14, w, 18);
+      g.fillStyle = "#f0e2c0"; g.fillText(l.name, x, y + 28);
+    }
+    g.fillStyle = "#d0644a"; g.strokeStyle = "#1c1814"; g.lineWidth = 3;
+    g.beginPath(); g.arc(st.x, st.y - 4, 9, 0, Math.PI * 2); g.fill(); g.stroke();
+  });
+  return (
+    <canvas ref={ref} data-testid="hex-map" className="mx-auto block max-h-full max-w-full plank border border-border" style={{ aspectRatio: `${WM_W} / ${WM_H}`, touchAction: "manipulation" }}
+      onClick={(e) => { const b = (e.target as HTMLCanvasElement).getBoundingClientRect(); const h = hexAt((e.clientX - b.left) / b.width * WM_W, (e.clientY - b.top) / b.height * WM_H); if (h) go(h[0], h[1]); }} />
+  );
+}
+
 export function RPG() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
@@ -116,7 +156,28 @@ export function RPG() {
     const t = window.setTimeout(() => setToastN(-toast.n), 3800);
     return () => window.clearTimeout(t);
   }, [toast?.n]);
-  const [trackerOpen, setTrackerOpen] = useState(() => typeof window === "undefined" || window.innerHeight >= 500);
+  const [trackerOpen, setTrackerOpen0] = useState(() => { try { const v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); if (typeof v.track === "boolean") return !v.track; } catch { /* none */ } return typeof window === "undefined" || window.innerHeight >= 500; });
+  // v14 collapsible HUD: quest, track, health, aim, mini. true = collapsed. Kept in localStorage.
+  const [hc, setHc] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); } catch { return {}; } });
+  const saveHc = (next: Record<string, boolean>) => { setHc(next); try { localStorage.setItem("maine-rpg-hud", JSON.stringify(next)); } catch { /* private mode */ } };
+  const flipHc = (k: string) => saveHc({ ...hc, [k]: !hc[k] });
+  const setTrackerOpen = (f: (o: boolean) => boolean) => { setTrackerOpen0((o) => { const n = f(o); saveHc({ ...hc, track: !n }); return n; }); };
+  const [flash, setFlash] = useState<Record<string, number>>({});
+  const lastQ = useRef("");
+  const lastHp = useRef(0);
+  useEffect(() => {
+    if (lastQ.current && hud.questText !== lastQ.current && hc.quest) setFlash((f) => ({ ...f, quest: Date.now() }));
+    lastQ.current = hud.questText;
+  }, [hud.questText]);
+  useEffect(() => {
+    if (hc.health && hud.hp < lastHp.current - 0.5) setFlash((f) => ({ ...f, health: Date.now() }));
+    lastHp.current = hud.hp;
+  }, [hud.hp]);
+  useEffect(() => { const t = window.setInterval(() => setFlash((f) => { const n = { ...f }; let ch = false; for (const k in n) if (Date.now() - n[k] > 2400) { delete n[k]; ch = true; } return ch ? n : f; }), 600); return () => window.clearInterval(t); }, []);
+  const fl = (k: string) => (flash[k] ? "animate-pulse ring-2 ring-primary" : "");
+  const MinBtn = ({ k, label }: { k: string; label: string }) => (
+    <button type="button" data-hud-min={k} aria-label={`${hc[k] ? "Expand" : "Minimize"} ${label}`} className="-my-1 min-h-8 min-w-8 shrink-0 px-1 text-sm font-bold text-primary" onClick={() => flipHc(k)}>{hc[k] ? "+" : "–"}</button>
+  );
   const mapRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (!mapOpen) return;
@@ -294,10 +355,18 @@ export function RPG() {
               <p className="text-xs text-muted">{toast.text}</p>
             </div>
           ) : null}
-          <section className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
+          {hc.quest ? (
+            <section data-hud="quest-min" className={`pointer-events-auto mr-24 flex max-w-xs items-center gap-1 self-start plank border border-border bg-surface/95 px-2 py-1 ${fl("quest")}`}>
+              <ScrollText className="size-4 shrink-0 text-primary" aria-hidden />
+              <p className="min-w-0 flex-1 truncate text-xs font-semibold">{hud.questText}</p>
+              <MinBtn k="quest" label="quest panel" />
+            </section>
+          ) : (
+          <section data-hud="quest" className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
-              {hud.region}
+              <span className="flex-1">{hud.region}</span>
+              <MinBtn k="quest" label="quest panel" />
             </p>
             <p className="mt-1 line-clamp-2 text-base font-semibold leading-snug short:mt-0 short:line-clamp-1 short:text-sm">{hud.questText}</p>
             <p className="mt-1 text-sm font-semibold text-primary short:mt-0.5">{hud.clock}</p>
@@ -344,7 +413,8 @@ export function RPG() {
                 {hud.party.name} with you · {hud.party.hp}/{hud.party.maxHp}
               </p>
             ) : null}
-          </section>
+            </section>
+          )}
 
           <div className="mt-auto flex min-h-0 flex-col gap-2 overflow-y-auto">
             {hud.riding ? (
@@ -800,7 +870,8 @@ export function RPG() {
 
             <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
               <span className="px-1 text-[10px] uppercase tracking-wide text-muted">Aim</span>
-              {(["head", "chest", "arm", "leg"] as const).map((part) => (
+              <button type="button" data-hud-min="aim" aria-label={hc.aim ? "Expand aim" : "Minimize aim"} className="min-h-8 min-w-8 plank border border-border bg-surface px-1 text-xs font-bold text-primary" onClick={() => flipHc("aim")}>{hc.aim ? `${hud.aim} +` : "–"}</button>
+              {(hc.aim ? [] : (["head", "chest", "arm", "leg"] as const)).map((part) => (
                 <button
                   key={part}
                   type="button"
@@ -820,15 +891,29 @@ export function RPG() {
 
             <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
               <div className={`flex min-w-0 flex-1 items-stretch gap-2 ${journalOpen || hud.statsOpen ? "hidden" : ""}`}>
-                <section className="pointer-events-auto min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
+                {hc.health ? (
+                  <section data-hud="health-min" className={`pointer-events-auto flex min-w-0 flex-1 items-center gap-2 self-end plank border border-border bg-surface/95 px-2 py-1 ${fl("health")}`}>
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      {([["HP", hud.hp / Math.max(1, hud.maxHp) * 100, "#c4543a"], ["Food", hud.v13?.needs.hunger ?? 100, "#c98a4a"], ["Water", hud.v13?.needs.thirst ?? 100, "#5a8ac0"], ["Sleep", hud.v13?.needs.sleep ?? 100, "#9a8ac0"]] as const).map(([l, v, c]) => (
+                        <div key={l} className="h-1 bg-bg" title={`${l} ${Math.round(v)}`} aria-label={l}><div className="h-full" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: c }} /></div>
+                      ))}
+                    </div>
+                    <button type="button" className="min-h-8 px-1 text-xs text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
+                    <MinBtn k="health" label="health panel" />
+                  </section>
+                ) : (
+                <section data-hud="health" className="pointer-events-auto min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
                       <p className="mt-1 text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
                     </div>
-                    <button type="button" className="-my-2 -mr-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
+                    <div className="flex shrink-0 items-start">
+                    <button type="button" className="-my-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
                       Pause
                     </button>
+                    <MinBtn k="health" label="health panel" />
+                    </div>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden bg-bg scar short:mt-1" aria-label="Health">
                     <div className="h-full bg-accent scar" style={{ width: `${Math.max(0, Math.min(100, (hud.hp / hud.maxHp) * 100))}%` }} />
@@ -845,6 +930,7 @@ export function RPG() {
                     {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
                   </p>
                 </section>
+                )}
                 <div className="pointer-events-auto flex shrink-0 flex-col gap-2 short:flex-row short:gap-1">
                   <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}>
                     <Minus className="size-5 short:size-4" aria-hidden />
@@ -925,9 +1011,12 @@ export function RPG() {
         width={132}
         height={132}
         aria-label="Minimap"
-        className={playing ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
+        className={playing && !hc.mini ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
       />
 
+      {playing ? (
+        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Expand minimap" : "Minimize minimap"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] h-9 w-9" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+4.6rem)] right-[max(0.5rem,env(safe-area-inset-right))] h-6 w-6"}`} onClick={() => flipHc("mini")}>{hc.mini ? "Map" : "–"}</button>
+      ) : null}
       {hud.phase === "menu" ? (
         <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
           <div className="mx-auto flex min-h-full w-full max-w-lg items-center py-4 short:max-w-3xl short:py-1">
@@ -1263,6 +1352,17 @@ export function RPG() {
         </Overlay>
       ) : null}
 
+      {hud.phase === "worldmap" && hud.wmap ? (
+        <div data-testid="worldmap" className="absolute inset-0 z-50 flex flex-col gap-2 bg-bg p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-display text-lg leading-none">Northwestern Maine · {hud.wmap.clock}</h2>
+            <span className="text-xs text-muted">{hud.wmap.bike ? "Bike: roads go quick" : "On foot"}</span>
+          </div>
+          {hud.wmap.warn ? <p data-testid="wm-warn" className="animate-pulse plank border border-[#d0644a] bg-surface px-2 py-1 text-sm font-semibold text-[#e88a6a]">{hud.wmap.warn}</p> : null}
+          <div className="min-h-0 flex-1 overflow-auto"><WorldMap14 wm={hud.wmap} go={(q, r) => apiRef.current?.v14("wmGo", [q, r])} /></div>
+          <p className="text-sm">{hud.wmap.path.length ? `Traveling… ${hud.wmap.path.length} hex${hud.wmap.path.length > 1 ? "es" : ""} to go.` : hud.wmap.here ? `${hud.wmap.here}. Tap it again to go in.` : "Tap a hex to travel. Roads are quick; woods and the river are slow."}</p>
+        </div>
+      ) : null}
       {hud.phase === "pause" ? (
         <Overlay title="Paused">
           <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.tap("resume")}>
@@ -1276,6 +1376,10 @@ export function RPG() {
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("save")}>
             Save
           </button>
+          <div className="flex gap-2">
+            <button type="button" data-testid="hud-collapse-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: true, track: true, health: true, aim: true, mini: true }); setTrackerOpen0(false); }}>Collapse HUD</button>
+            <button type="button" data-testid="hud-expand-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: false, track: false, health: false, aim: false, mini: false }); setTrackerOpen0(true); }}>Expand HUD</button>
+          </div>
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!hud.turnBased)}>
             {hud.turnBased ? "Switch to real time" : "Switch to turn-based"}
           </button>

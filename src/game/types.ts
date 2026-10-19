@@ -367,7 +367,7 @@ export interface Player {
   respawnY: number;
 }
 
-export type Phase = "menu" | "play" | "pause" | "dialogue" | "dead";
+export type Phase = "worldmap" | "menu" | "play" | "pause" | "dialogue" | "dead";
 
 export interface Choice {
   label: string;
@@ -442,6 +442,7 @@ export interface V113Hud {
 }
 export interface HudSnapshot {
   v14?: any;
+  wmap?: any;
   v113?: V113Hud;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   v13?: any;

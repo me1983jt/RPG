@@ -29,10 +29,12 @@ import {
   type PerkId,
   type SkillId,
 } from "@/game/progress";
+import { facing8Hys } from "@/game/iso";
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
-import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost } from "@/game/v14";
+import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
+import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
@@ -539,6 +541,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let lastSpeed = 0;
 	let lastYaw = 0;
 	let acc = 0;
+	let renderNow = 0, lastCamT = 0, camPX = null, camPY = null, lookX = 0, lookY = 0;
+	const lerpBodies = [];
 	let last = performance.now();
 	let running = true;
 	const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -590,7 +594,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
 			return `Defend the farm: ${raid.phase === "wave" ? `wave ${raid.wave} of ${raid.waves}` : `wave ${raid.wave + 1} of ${raid.waves} coming`}. Farmhouse ${pct}%.`;
 		}
-		if (mapId === 0 && v14.st < 3 && !mode11) return `Cold road: ${STAGE_TEXT[v14.st]}`;
+		if (mapId === 0 && v14.st < 3 && !mode11) { const c = v14.camp ?? { tx: 0, ty: 0 }; const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(Math.atan2(FARM.ty - c.ty, FARM.tx - c.tx) / (Math.PI / 4)) % 8) + 8) % 8]; return `Cold road: ${STAGE_TEXT[v14.st].replace("east", dir)}`; }
 		if (raid) {
 			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
 			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} soon`;
@@ -635,6 +639,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v113: v3Hud(),
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
+			wmap: wmHud(),
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
@@ -1749,7 +1754,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			kitchenDay = Math.floor(clock / DAY_LENGTH_SEC);
 			shiftRep("ponds", 2, 6);
 			grantXp(30);
-			pushLog("First Snow on Cambridge Road: done. The farm is your base now. You wake on the cot if you fall.");
+			pushLog(v14.st === 3 ? "First Snow on Cambridge Road: done. Sarah says you can have the cot, if the farm's still standing tomorrow." : "First Snow on Cambridge Road: done. The farm is your base now. You wake on the cot if you fall.");
 			pushLog("Hot cider and cider donuts heal. Use them from the pack.");
 			sfx("level");
 			if (v14.st === 3) { dialogue = null; phase = "play"; startDefend14(); return; }
@@ -3714,6 +3719,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { map: mapId, tx: tileOf(player.x, player.y).tx - WORLD_OX, ty: tileOf(player.x, player.y).ty - WORLD_OY };
 	}
 	function fastTravel(id) {
+		if (!legacyTravel()) { openWorldMap(); return; }
 		const t = TOWNS13.find((x) => x.id === id);
 		if (!t || !player) return;
 		if (!w13.seen[id]) { pushLog("You haven't been there yet."); return; }
@@ -3958,7 +3964,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const key = `${o.tx},${o.ty}`;
 			const saved = v14.fort[key];
 			const k = saved ? saved.k : o.k;
-			const p = o.k === "workbench" ? placeAround14(k, o.tx, o.ty, { f14: key }) : add14(k, o.tx, o.ty, { f14: key, flip14: !!o.f });
+			const p = (o.k === "workbench" || o.k.startsWith("lookout") || o.k.startsWith("sandbags")) ? placeAround14(k, o.tx, o.ty, { f14: key }) : add14(k, o.tx, o.ty, { f14: key, flip14: !!o.f });
 			if (p) p.hp = saved ? saved.hp : o.hp;
 		}
 		for (const pc of v14.placed) { const p = add14(pc.k, pc.tx, pc.ty, { p14: true, flip14: !!pc.f }); if (p) p.hp = pc.hp; }
@@ -4041,7 +4047,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return PIECE_HP[prop.kind] ?? DEF_HP[prop.kind] ?? 30;
 	}
 	function fixKind14(prop) { return prop.kind === "wall-x" ? (prop.was14 ?? "wall-wood") : prop.kind === "sandbags-x" ? "sandbags" : prop.kind === "lookout-x" ? "lookout" : prop.kind; }
-	function repairCost14(prop) { return repairCost(fixKind14(prop) === "lookout" ? "wall-wood" : fixKind14(prop), prop.hp ?? 0, maxHp14(prop)); }
+	function repairCost14(prop) { return v14RepairCost(fixKind14(prop) === "lookout" ? "wall-wood" : fixKind14(prop), prop.hp ?? 0, maxHp14(prop)); }
 	function repairOne14(prop, quiet = false) {
 		const max = maxHp14(prop);
 		if ((prop.hp ?? max) >= max && !prop.kind.endsWith("-x")) { if (!quiet) pushLog("That piece is sound."); return false; }
@@ -4223,6 +4229,113 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function v14Choice(id) {
 		if (id === "v14-repair-all") { dialogue = null; phase = "play"; repairAll14(); return true; }
 		return false;
+	}
+	// ======== v14 world map (hex travel between local areas) ========
+	const legacyTravel = () => typeof window !== "undefined" && !!window.__v14Skip;
+	let wmAcc = 0;
+	function wmState() {
+		if (!v14.map) { const l = locOfMap(mapId); v14.map = { q: l.q, r: l.r, fog: [], path: [], from: null, warn: "", lastNight: -1, enc: null }; }
+		return v14.map;
+	}
+	function wmReveal(q, r) { const m = wmState(); for (const [a, b] of [[q, r], ...hexNeighbors(q, r)]) { const k = hexKey(a, b); if (!m.fog.includes(k)) m.fog.push(k); } }
+	function openWorldMap() {
+		if (!player || !world) return;
+		parkBike(false);
+		const m = wmState();
+		if (mapId !== 9) { const l = locOfMap(mapId); m.q = l.q; m.r = l.r; }
+		wmReveal(m.q, m.r);
+		regions.set(mapId, captureRegion());
+		m.path = [];
+		phase = "worldmap"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
+		pushLog("The world map. Tap a hex to travel; tap a named place to go in.");
+		saveGame(); sync(true);
+	}
+	function wmGo(q, r) {
+		const m = wmState();
+		if (phase !== "worldmap") return;
+		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); return; }
+		m.path = hexPath([m.q, m.r], [q, r], bikeBuilt());
+		sync(true);
+	}
+	function wmTick(dt) {
+		const m = wmState();
+		if (!m.path.length) return;
+		wmAcc += dt;
+		if (wmAcc < .32) return;
+		wmAcc = 0;
+		const [q, r] = m.path.shift();
+		m.from = [m.q, m.r];
+		m.q = q; m.r = r;
+		const hrs = hexHours(q, r, bikeBuilt());
+		clock += hrs / 24 * DAY_LENGTH_SEC;
+		needsTick(hrs);
+		wmReveal(q, r);
+		wmAwayRaid();
+		const rc = WM_LOCS.find((l) => l.id === "raiders");
+		const near = Math.abs(q - rc.q) + Math.abs(r - rc.r) <= 3;
+		const roll = typeof window !== "undefined" && window.__wmEnc != null ? window.__wmEnc : Math.random();
+		if (!locAt(q, r) && roll < (near ? .22 : .07)) { m.path = []; wmEncounter(near); return; }
+		if (!m.path.length) { const l = locAt(q, r); pushLog(l ? `${l.name}. Tap it again to go in.` : "You stop and look around."); }
+		sync(true);
+	}
+	/** A raid night hits the farm while you're out: dents the walls in the save, and the world map warns you. */
+	function wmAwayRaid() {
+		const m = wmState();
+		if (!ok14() || mapId === 0 && phase !== "worldmap") return;
+		const day = curDay();
+		if (nightShade(clock) < .22 || m.lastNight === day) return;
+		m.lastNight = day;
+		if (Math.random() > .45 && !(typeof window !== "undefined" && window.__wmRaid)) return;
+		const keys = Object.keys(v14.fort).length ? Object.keys(v14.fort) : [];
+		let hit = 0;
+		for (const k of keys) if (Math.random() < .25 && /^(wall|gate)-/.test(v14.fort[k].k)) { v14.fort[k].hp = Math.max(1, v14.fort[k].hp - 25); hit++; }
+		for (const p of v14.placed) if (Math.random() < .25) { p.hp = Math.max(1, p.hp - 20); hit++; }
+		m.warn = `Raid on the farm tonight! Lanterns on Cambridge Road. ${hit} piece${hit === 1 ? "" : "s"} of wall hit. Justin and Sarah held the house.`;
+		pushLog(m.warn);
+	}
+	function wmArrive(target, from) {
+		travelTo(target, () => {
+			if (!from || !world.gates.length) return null;
+			const c = hexCenter(wmState().q, wmState().r), f = hexCenter(from[0], from[1]);
+			const want = Math.atan2(f.y - c.y, f.x - c.x);
+			let best = null, bd = 9;
+			for (const g of world.gates) {
+				const a = Math.atan2(g.arriveTy - HEX_CY, g.arriveTx - HEX_CX);
+				let d = Math.abs(a - want); if (d > Math.PI) d = Math.PI * 2 - d;
+				if (d < bd) { bd = d; best = g; }
+			}
+			return best ? { x: best.arriveTx * 64 + 32, y: best.arriveTy * 64 + 32 } : null;
+		});
+		phase = "play";
+		travelLock = 2;
+	}
+	function wmEnter(l) {
+		const m = wmState();
+		m.warn = "";
+		wmArrive(l.map, m.from);
+		w13.seen[l.id] = true;
+		saveGame(); sync(true);
+	}
+	function wmEncounter(raiders) {
+		const m = wmState();
+		const kinds = raiders ? ["raiders", "raiders", "wildlife", "road"] : ["wildlife", "road", "caravan", "migration", "raiders"];
+		const pick = typeof window !== "undefined" && window.__wmKind ? window.__wmKind : kinds[Math.floor(Math.random() * kinds.length)];
+		regions.delete(9);
+		m.enc = pick;
+		wmArrive(9, m.from);
+		const at = (dx, dy) => ({ x: player.x + dx, y: player.y + dy });
+		if (pick === "raiders") { for (let i = 0; i < 3; i++) { spawnRaider("scout", at(260 + i * 50, -120 + i * 70)); const e = world.enemies[world.enemies.length - 1]; e.raid = false; } pushLog("Raiders on the road ahead. They've seen you."); }
+		else if (pick === "wildlife") { for (let i = 0; i < 3; i++) q10Spawn("wolf", "", "Wolf", at(240 + i * 40, 90 - i * 60), [18, 5, 9], "enc", true); pushLog("Wolves come out of the alders."); }
+		else if (pick === "migration") { for (let i = 0; i < 5; i++) q10Spawn("deer", "", "Deer", at(-200 + i * 70, 220), [16, 2, 6], "enc", false); pushLog("A line of deer crossing the road, heading south for the yards."); }
+		else if (pick === "caravan") { openD13("Caravan", "A sledge caravan out of Skowhegan, two horses and a dog. They'll trade a little for iron.", [{ label: "Six shells — 8 iron", id: "q10-buy-shells" }, { label: "Wave them by", id: "close" }]); }
+		else startRoadEvent(pickRoadEvent(Math.random()));
+		pushLog("Walk to the tinted edge to get back on the world map.");
+		saveGame(); sync(true);
+	}
+	function wmHud() {
+		if (phase !== "worldmap" || !v14.map) return null;
+		const m = v14.map;
+		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? null, clock: clockLabel(clock), bike: bikeBuilt() };
 	}
 	// ---- workbench: repair, patch, dye
 	function benchMenu() {
@@ -6794,6 +6907,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (mag < .01) return false;
 		const ux = mx / mag;
 		const uy = my / mag;
+		if (body === player) {
+			// v14: a short ease into the walk (about 0.14 s), smoothstepped
+			player.ease = Math.min(1, (player.ease ?? 1) + dt / .14);
+			const e = player.ease; speed *= .35 + .65 * e * e * (3 - 2 * e);
+			player.easeT = performance.now();
+		}
 		const { vx, vy } = screenDirToWorld(ux * speed * dt, uy * speed * dt);
 		return slide(body, vx, vy);
 	}
@@ -6825,10 +6944,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!path.length) return path;
 		const wp = path[0];
 		const screen = worldVelToScreen(wp.x - body.x, wp.y - body.y);
-		if (Math.hypot(screen.dsx, screen.dsy) < 8) return path.slice(1);
-		moveBody(body, screen.dsx, screen.dsy, speed, dt);
-		const vel = screenDirToWorld(screen.dsx, screen.dsy);
-		body.dir = eight ? facing8(vel.vx, vel.vy) : facingFromWorld(vel.vx, vel.vy);
+		const sd = Math.hypot(screen.dsx, screen.dsy);
+		if (sd < 8) return path.slice(1);
+		// v14: round the corner. Inside 30 px of a middle node, steer at a blend of this node and the next so the walker doesn't stop-start
+		let aimX = screen.dsx, aimY = screen.dsy;
+		if (path.length > 1 && sd < 30) {
+			const n2 = worldVelToScreen(path[1].x - body.x, path[1].y - body.y);
+			const t = 1 - sd / 30, m2 = Math.hypot(n2.dsx, n2.dsy) || 1;
+			aimX = screen.dsx / sd * (1 - t) + n2.dsx / m2 * t; aimY = screen.dsy / sd * (1 - t) + n2.dsy / m2 * t;
+			if (sd < 14) return path.slice(1);
+		}
+		moveBody(body, aimX, aimY, speed, dt);
+		const vel = screenDirToWorld(aimX, aimY);
+		body.dir = eight ? facing8Hys(body.dir, vel.vx, vel.vy) : facingFromWorld(vel.vx, vel.vy);
 		return path;
 	}
 	function nearestFight(maxDist) {
@@ -6994,6 +7122,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const here = tileOf(player.x, player.y);
 		const gate = world.gates.find((g) => Math.abs(g.tx - here.tx) <= 1 && Math.abs(g.ty - here.ty) <= 1);
 		if (!gate) return false;
+		if (!legacyTravel() || mapId >= 3) { openWorldMap(); return true; }
 		if (mapId === 2) { travelTo(0, () => { const s = skowSign(); return { x: s.x + 90, y: s.y + 60 }; }); return true; }
 		parkBike(false);
 		const leaving = world.name;
@@ -7067,6 +7196,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog(world.props.some((p) => p.built && (p.kind === "shelter" || p.kind === "shack")) ? "You wake at the lean-to, sore but breathing." : "You wake on the cot at Cambridge Road. The stove is still warm.");
 			saveGame();
 		}
+		if (phase === "worldmap") { wmTick(dt); prevHeld = currentHeld(); clearEdges(); return; }
 		if (!world || !player || phase !== "play") {
 			prevHeld = currentHeld();
 			clearEdges();
@@ -7301,8 +7431,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (deal > 0) deal = Math.max(0, deal - dt);
 		const swinging = work && work.swing > 0;
 		const stepDist = Math.hypot(player.x - fromX, player.y - fromY);
+		if (stepDist <= .45 && performance.now() - (player.easeT ?? 0) > 60) player.ease = 0;
 		if (stepDist > .45 && !swinging) {
-			player.dir = facing8(player.x - fromX, player.y - fromY);
+			player.dir = facing8Hys(player.dir, player.x - fromX, player.y - fromY);
 			// leg cycle follows on-screen distance (one 4-frame cycle per ~72 px), so feet don't skate
 			// on sideways walks (screen moves 1.41 px per world unit there, 0.71 up/down)
 			const mdx = player.x - fromX, mdy = player.y - fromY;
@@ -8025,7 +8156,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			raid.t -= dt;
 			if (raid.t < 4 && !raid.warned) {
 				raid.warned = true;
-				const dir = COMPASS[((Math.round(raid.ang / (Math.PI / 4)) % 8) + 8) % 8];
+				const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(raid.ang / (Math.PI / 4)) % 8) + 8) % 8];
 				if (world.npcs.some((m) => m.role === "cyndal")) pushLog(`Cyndal, from the loft: "Dad! Lanterns to the ${dir}! Here they come!"`);
 				else pushLog(`Lanterns to the ${dir}.`);
 				sfx("click");
@@ -9001,9 +9132,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const focus = worldToScreen(player.x, player.y, 0, 0);
 		if (!freeCam) {
-			const destX = focus.sx - viewW / 2;
-			const destY = focus.sy - viewH / 2;
-			const k = 1 - Math.exp(-10 * STEP);
+			// v14: critically-damped follow with a small lookahead along the walk, frame-rate independent
+			const rdt = Math.min(.05, Math.max(.001, (renderNow - (lastCamT || renderNow)) / 1e3 || STEP));
+			lastCamT = renderNow;
+			const vx = player.x - (camPX ?? player.x), vy = player.y - (camPY ?? player.y);
+			camPX = player.x; camPY = player.y;
+			const v = worldVelToScreen(vx, vy);
+			const sp = Math.hypot(v.dsx, v.dsy) / rdt;
+			const la = Math.min(1, sp / 220);
+			lookX += ((sp > 1 ? v.dsx / (Math.hypot(v.dsx, v.dsy) || 1) * 46 * la : 0) - lookX) * (1 - Math.exp(-3 * rdt));
+			lookY += ((sp > 1 ? v.dsy / (Math.hypot(v.dsx, v.dsy) || 1) * 30 * la : 0) - lookY) * (1 - Math.exp(-3 * rdt));
+			const destX = focus.sx - viewW / 2 + lookX;
+			const destY = focus.sy - viewH / 2 + lookY;
+			const k = 1 - Math.exp(-9 * rdt);
+			if (Math.abs(destX - camX) > 900 || Math.abs(destY - camY) > 900) { camX = destX; camY = destY; }
 			camX += (destX - camX) * k;
 			camY += (destY - camY) * k;
 		} else {
@@ -9018,13 +9160,33 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else shake = 0;
 		const sxOff = (Math.random() - .5) * shake;
 		const syOff = (Math.random() - .5) * shake;
-		const drawCamX = camX + sxOff;
-		const drawCamY = camY + syOff;
+		const pxs = (window.devicePixelRatio || 1) * zoom;
+		const drawCamX = Math.round((camX + sxOff) * pxs) / pxs;
+		const drawCamY = Math.round((camY + syOff) * pxs) / pxs;
 		const bounds = viewTiles(drawCamX, drawCamY);
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		drawGround(drawCamX, drawCamY);
 		q10DrawGround(drawCamX, drawCamY, dpr);
+		if (world.gates.length && !mode11) {
+			// v14 exit grid: a tinted band at each edge road; walking in opens the world map
+			ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
+			const pulse = .28 + Math.sin(performance.now() / 400) * .08;
+			ctx.fillStyle = `rgba(224,176,80,${pulse})`;
+			for (const g of world.gates) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) ctx.fillRect((g.tx + dx) * 64 + 3, (g.ty + dy) * 64 + 3, 58, 58);
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			for (const g of world.gates) {
+				const raw = worldToScreen(g.tx * 64 + 32, g.ty * 64 + 32, drawCamX, drawCamY);
+				const pt = zoomPoint(raw.sx, raw.sy);
+				const out = worldToScreen(g.tx * 64 + 32 - (g.arriveTx - g.tx) * 64, g.ty * 64 + 32 - (g.arriveTy - g.ty) * 64, drawCamX, drawCamY);
+				const po = zoomPoint(out.sx, out.sy);
+				const ang = Math.atan2(po.sy - pt.sy, po.sx - pt.sx);
+				ctx.save(); ctx.translate(pt.sx, pt.sy - 30 * zoom); ctx.fillStyle = "rgba(20,16,12,.8)"; ctx.fillRect(-46 * zoom, -30 * zoom, 92 * zoom, 18 * zoom);
+				ctx.fillStyle = "#f0d090"; ctx.font = `${Math.round(11 * zoom)}px sans-serif`; ctx.textAlign = "center"; ctx.fillText("WORLD MAP", 0, -17 * zoom);
+				ctx.rotate(ang); ctx.fillStyle = "#f0d090"; ctx.beginPath(); ctx.moveTo(22 * zoom, 0); ctx.lineTo(4 * zoom, -10 * zoom); ctx.lineTo(4 * zoom, 10 * zoom); ctx.fill(); ctx.fillRect(-18 * zoom, -3 * zoom, 24 * zoom, 6 * zoom);
+				ctx.restore();
+			}
+		}
 		if (buildOpen) {
 			ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
 			const tile = hoverTile();
@@ -9825,6 +9987,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function onKeyUp(e) {
 		keys.delete(e.code);
 	}
+	function snapPrev() {
+		if (!world || !player) return;
+		player.px = player.x; player.py = player.y;
+		if (party) { party.px = party.x; party.py = party.y; }
+		for (const e of world.enemies) { e.px = e.x; e.py = e.y; }
+		for (const n of world.npcs) { n.px = n.x; n.py = n.y; }
+	}
 	function frame(now) {
 		if (!running) return;
 		const dt = Math.min(.1, (now - last) / 1e3);
@@ -9832,12 +10001,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		acc += dt;
 		let guard = 0;
 		while (acc >= STEP && guard < 5) {
+			snapPrev();
 			step(STEP);
 			acc -= STEP;
 			guard++;
 		}
 		const t0 = performance.now();
+		renderNow = now;
+		// v14 render interpolation: draw every body between its last two sim positions (alpha = leftover / step)
+		const alpha = Math.min(1, acc / STEP);
+		let nl = 0;
+		if (world && player && phase === "play" && !inside) {
+			const put = (b) => { if (b && b.px != null && Math.abs(b.x - b.px) < 40 && Math.abs(b.y - b.py) < 40) { lerpBodies[nl++] = b; b.sx0 = b.x; b.sy0 = b.y; b.x = b.px + (b.x - b.px) * alpha; b.y = b.py + (b.y - b.py) * alpha; } };
+			put(player); put(party);
+			for (const e of world.enemies) if (!e.dead) put(e);
+			for (const n of world.npcs) put(n);
+		}
 		render();
+		for (let i = 0; i < nl; i++) { const b = lerpBodies[i]; b.x = b.sx0; b.y = b.sy0; }
 		const ms = performance.now() - t0;
 		frameMs.avg = frameMs.avg * .95 + ms * .05; frameMs.n++; frameMs.worst = Math.max(frameMs.worst * .995, ms);
 		frameMs.list.push(ms); if (frameMs.list.length > 240) frameMs.list.shift();
@@ -10225,6 +10406,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (cmd === "rotate") { buildFlip = !buildFlip; sync(true); }
 			else if (cmd === "tool") { buildTool = arg; sync(true); }
 			else if (cmd === "repairAll") repairAll14();
+			else if (cmd === "wmGo") wmGo(arg[0], arg[1]);
+			else if (cmd === "wmOpen") openWorldMap();
 			return hud14();
 		},
 		selectRecipe(index) {
@@ -10719,6 +10902,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v14Build: (index, tx, ty) => { recipe = index; buildOpen = true; hoverX = (tx + .5) * 64; hoverY = (ty + .5) * 64; tryBuild(); },
 		v14Report: () => { report14(raidNight); },
 		v14Defend: () => startDefend14(),
+		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
+		wmOpen: () => openWorldMap(),
+		wmGo: (q, r) => wmGo(q, r),
+		gates: () => world ? world.gates.map((g) => ({ tx: g.tx, ty: g.ty, side: g.side })) : [],
+		gatesFull: () => world ? world.gates.map((g) => ({ ...g })) : [],
 		hurtPlayer: (n) => { if (player) { player.invuln = 0; hurtPlayer(n, player.x + 10, player.y); } },
 		recipes: () => RECIPES.map((r) => ({ kind: r.kind, label: r.label, v14: !!r.v14 })),
 		freeFarmTile: () => { if (!world) return null; const f = tileOf(farmCenter().x, farmCenter().y); for (let r = 3; r < 9; r++) for (let y = f.ty - r; y <= f.ty + r; y++) for (let x = f.tx - r; x <= f.tx + r; x++) if (inFarm(x, y) && footprintFree(world, x, y, 1, 1) && world.tiles[y * MAP_W + x] !== 2) return { tx: x, ty: y }; return null; },

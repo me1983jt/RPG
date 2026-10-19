@@ -47,3 +47,15 @@ export function assertIso(): void {
   if (up.dsy > -0.99 || Math.abs(up.dsx) > 0.02) throw new Error("W is not screen-up");
   if (down.dsy < 0.99 || Math.abs(down.dsx) > 0.02) throw new Error("S is not screen-down");
 }
+
+/** v14: 8-way facing with hysteresis. Keeps the current facing until the heading is clearly past the sector edge, so diagonals don't flicker. */
+export function facing8Hys(cur: number, vx: number, vy: number, slack = 0.18): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 {
+  const { dsx, dsy } = worldVelToScreen(vx, vy);
+  const next = facing8Screen(dsx, dsy);
+  if (cur == null || cur === next) return next;
+  const angle = Math.atan2(dsy, dsx) - Math.PI / 2;
+  const center = cur * (Math.PI / 4);
+  let d = Math.abs(angle - center) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d < Math.PI / 8 + slack ? (cur as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7) : next;
+}
