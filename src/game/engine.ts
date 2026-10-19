@@ -140,6 +140,7 @@ var NPC_H = ADULT;
 var RADIUS = 14;
 var STEP = 1 / 60;
 var IMAGES = [
+	"v2/tracks/wolf-left", "v2/tracks/wolf-right",
 	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
 	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x"].map((n) => `v14/${n}`),
 	"hero",
@@ -2364,6 +2365,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					ctx.fillStyle = "#2a1c10";
 					const side = i % 2 ? 7 : -7;
 					if (hoof) { ctx.beginPath(); ctx.ellipse(p.x + side, p.y - 3, 4, 6, .6, 0, Math.PI * 2); ctx.ellipse(p.x + side + 5, p.y + 1, 4, 6, .6, 0, Math.PI * 2); ctx.fill(); }
+					else if (images.get(i % 2 ? "v2/tracks/wolf-right" : "v2/tracks/wolf-left")) ctx.drawImage(images.get(i % 2 ? "v2/tracks/wolf-right" : "v2/tracks/wolf-left"), p.x + side - 9, p.y - 9, 18, 18);
 					else { ctx.beginPath(); ctx.ellipse(p.x + side, p.y, 6, 5, 0, 0, Math.PI * 2); ctx.fill(); for (let c = -1; c <= 1; c++) { ctx.beginPath(); ctx.arc(p.x + side + c * 4, p.y - 7, 2.2, 0, Math.PI * 2); ctx.fill(); } }
 				}
 			}
@@ -3213,12 +3215,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || !player) return;
 		for (const e of world.enemies) {
 			if (!isGame(e)) continue;
-			// v14: only moose and deer leave prints, a third as many as before
-			if (e.kind !== "moose" && e.kind !== "deer") { if (e.trail) e.trail = null; continue; }
+			// v14: only moose, deer and wolves leave prints; deer and moose a third as many as before, wolves half that again
+			const wolf = e.kind === "wolf";
+			if (e.kind !== "moose" && e.kind !== "deer" && !wolf) { if (e.trail) e.trail = null; continue; }
 			const last = e.trail?.[e.trail.length - 1];
-			if (!last || Math.hypot(e.x - last.x, e.y - last.y) > 138) {
+			if (!last || Math.hypot(e.x - last.x, e.y - last.y) > (wolf ? 276 : 138)) {
 				(e.trail ??= []).push({ x: e.x, y: e.y, dir: e.dir || 0, t: clock });
-				if (e.trail.length > 5) e.trail.shift();
+				if (e.trail.length > (wolf ? 3 : 5)) e.trail.shift();
 			}
 		}
 		// standing on fresh sign: remember whose

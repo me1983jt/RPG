@@ -6,9 +6,9 @@ let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); i
 await begin();
 await page.waitForTimeout(6000);
 const tr = await T("v3Tracks");
-ok(tr.every((t) => t.kind === "moose" || t.kind === "deer"), `only moose and deer leave tracks (${[...new Set(tr.map((t) => t.kind))].join(",") || "none yet"})`);
-ok(tr.every((t) => t.n <= 5), "at most 5 prints per animal");
-const src = await page.evaluate(async () => { const r = await fetch("/game/v2/wolf-walk.png"); return r.ok; });
+ok(tr.every((t) => t.kind === "moose" || t.kind === "deer" || t.kind === "wolf"), `only moose, deer and wolves leave tracks (${[...new Set(tr.map((t) => t.kind))].join(",") || "none yet"})`);
+ok(tr.every((t) => t.n <= (t.kind === "wolf" ? 3 : 5)), "at most 5 prints for deer/moose, 3 for wolves");
+const src = await page.evaluate(async () => (await fetch("/game/v2/wolf-walk.png")).ok && (await fetch("/game/v2/tracks/wolf-left.png")).ok);
 ok(src, "wolf stand-in art at /game/v2/wolf-walk.png");
 await page.evaluate(() => { window.__controlsTest.v14Set({ st: 5 }); window.__v14Skip = false; });
 await page.evaluate(() => { window.__wmEnc = 0; window.__wmKind = "wildlife"; });
