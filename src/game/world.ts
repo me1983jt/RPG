@@ -360,7 +360,8 @@ function createReach(seed: number, homeSides: number[], mouths: number[]): World
   placeOrchard(world);
   let pack = 1;
   const dens: [number, number, "wolf" | "deer" | "coyote" | "moose" | "rabbit", number][] = [
-    [18, -12, "wolf", 3],
+    [18, -12, "wolf", 4],
+    [-26, -6, "wolf", 5],
     [-20, 14, "deer", 3],
     [12, 22, "coyote", 5],
     [-16, -18, "moose", 1],
@@ -1281,7 +1282,7 @@ function createArea(seed: number, mapId: number, homeSides: number[]): World {
   poi(4, 18, "campfire");
   if (mapId === 6) poi(0, -4, "hatch");
   let pack = 1;
-  const dens: [number, number, "wolf" | "deer" | "coyote" | "moose" | "rabbit", number][] = mapId === 9 ? [[10, -8, "deer", 2]] : [[20, -14, "deer", 3], [-22, 10, "rabbit", 3], [14, 24, "coyote", 3], [-12, -24, mapId === 3 ? "moose" : "wolf", mapId === 3 ? 1 : 3]];
+  const dens: [number, number, "wolf" | "deer" | "coyote" | "moose" | "rabbit", number][] = mapId === 9 ? [[10, -8, "deer", 2]] : [[20, -14, "deer", 3], [-22, 10, "rabbit", 3], [14, 24, "coyote", 3], [-12, -24, mapId === 3 ? "moose" : "wolf", mapId === 3 ? 1 : 4], [26, -4, "wolf", 3 + (mapId % 3)]];
   for (const [dx, dy, kind, count] of dens) { const spot = pullIn(HEX_CX + dx, HEX_CY + dy); addPack(world, kind, spot[0], spot[1], count, pack++); }
   const bandits = mapId === 5 ? [[18, 6], [20, 9], [-16, 8], [-18, 4], [6, -20], [9, -22], [-4, 22]] : mapId === 9 ? [] : [[24, 4]];
   for (const [dx, dy] of bandits) addEnemy(world, HEX_CX + dx!, HEX_CY + dy!, false, mapId === 5 && dx! > 0);

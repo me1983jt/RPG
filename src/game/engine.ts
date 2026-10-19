@@ -2358,7 +2358,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				for (let i = 0; i < e.trail.length; i++) {
 					const p = e.trail[i];
 					if (Math.hypot(p.x - player.x, p.y - player.y) > reach) continue;
-					const age = Math.max(0, Math.min(1, (clock - p.t) / 90));
+					const age = Math.max(0, Math.min(1, (clock - p.t) / 45));
+					if (age >= 1) continue;
 					ctx.globalAlpha = .75 * (1 - age) + .1;
 					ctx.fillStyle = "#2a1c10";
 					const side = i % 2 ? 7 : -7;
@@ -3192,7 +3193,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		spawnCrows();
 		const land = tileOf(player.x, player.y);
 		reveal(land.tx, land.ty, sightRadius(), true);
-		pushLog(target === 2 ? `Two hours down the old road from ${leaving}. Skowhegan: dead streetlights, the Kennebec loud in the gorge, and one bridge.` : `The road climbs out of the river valley. You come back into ${world.name}.`);
+		pushLog(target >= 3 ? (target === 9 ? "You stop on the road." : `You come into ${world.name}.`) : target === 2 ? `Two hours down the old road from ${leaving}. Skowhegan: dead streetlights, the Kennebec loud in the gorge, and one bridge.` : `The road climbs out of the river valley. You come back into ${world.name}.`);
 		if (target === 2) achieve("skow");
 		camX = player.x - player.y - viewW / 2;
 		camY = (player.x + player.y) / 2 - viewH / 2;
@@ -3212,10 +3213,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || !player) return;
 		for (const e of world.enemies) {
 			if (!isGame(e)) continue;
+			// v14: only moose and deer leave prints, a third as many as before
+			if (e.kind !== "moose" && e.kind !== "deer") { if (e.trail) e.trail = null; continue; }
 			const last = e.trail?.[e.trail.length - 1];
-			if (!last || Math.hypot(e.x - last.x, e.y - last.y) > 46) {
+			if (!last || Math.hypot(e.x - last.x, e.y - last.y) > 138) {
 				(e.trail ??= []).push({ x: e.x, y: e.y, dir: e.dir || 0, t: clock });
-				if (e.trail.length > 14) e.trail.shift();
+				if (e.trail.length > 5) e.trail.shift();
 			}
 		}
 		// standing on fresh sign: remember whose
@@ -4325,7 +4328,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmArrive(9, m.from);
 		const at = (dx, dy) => ({ x: player.x + dx, y: player.y + dy });
 		if (pick === "raiders") { for (let i = 0; i < 3; i++) { spawnRaider("scout", at(260 + i * 50, -120 + i * 70)); const e = world.enemies[world.enemies.length - 1]; e.raid = false; } pushLog("Raiders on the road ahead. They've seen you."); }
-		else if (pick === "wildlife") { for (let i = 0; i < 3; i++) q10Spawn("wolf", "", "Wolf", at(240 + i * 40, 90 - i * 60), [18, 5, 9], "enc", true); pushLog("Wolves come out of the alders."); }
+		else if (pick === "wildlife") { const n = 3 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) q10Spawn("wolf", "", "Timber wolf", at(240 + i * 40, 90 - i * 50), [22, 5, 10], "enc", true); pushLog(`A pack of ${n} timber wolves comes out of the alders.`); }
 		else if (pick === "migration") { for (let i = 0; i < 5; i++) q10Spawn("deer", "", "Deer", at(-200 + i * 70, 220), [16, 2, 6], "enc", false); pushLog("A line of deer crossing the road, heading south for the yards."); }
 		else if (pick === "caravan") { openD13("Caravan", "A sledge caravan out of Skowhegan, two horses and a dog. They'll trade a little for iron.", [{ label: "Six shells — 8 iron", id: "q10-buy-shells" }, { label: "Wave them by", id: "close" }]); }
 		else startRoadEvent(pickRoadEvent(Math.random()));
@@ -7561,7 +7564,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				continue;
 			}
 			if (enemy.aggro && homeDist > 520 && !isRaider(enemy)) enemy.aggro = false;
-			const sight = enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 : 190;
+			const sight = enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 * (nightShade(clock) > .22 ? 1.5 : 1) * (seasonNow() === 3 ? 1.25 : 1) : 190;
 			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight)) {
 				enemy.aggro = true;
 				alertPack(enemy);
@@ -8019,7 +8022,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		holeb: 120, grok: 98, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
 		// v13.5: atv 91 in puts the quad at ~72 px long (6.5 ft) with the rider seated at ~5.5 ft
 		brute: 77, shield: 72, atv: 91, jumper: 69, scout: 68,
-		bear: 40, moose: 92, deer: 62, wolf: 37, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
+		bear: 40, moose: 92, deer: 62, wolf: 34, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
 	};
 	function beastH(enemy) {
 		const key = enemy.variant && BEAST_IN[enemy.variant] ? enemy.variant : enemy.kind;
@@ -11247,7 +11250,8 @@ const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2
 /** v12: gw14 people (88x124 cells, 8 facing rows). */
 const V2_FOLK = /^v2\/(holt|jack|mira|nora|sarah|cyndal|loki|marcel|justin|player|boss-collector|bandit-[a-z]+)-/;
 /** v12: raider attack / death come from the gw14 action sheets under the legacy -atk / -dead names. */
-const ART_ALIAS = {};
+// v14: timber wolf stand-ins (tinted coyote sheets) until Grok Build art lands at v2/wolf-<action>.png
+const ART_ALIAS = { wolf: "v2/wolf-walk", "wolf-dead": "v2/wolf-dead" };
 for (const k of ["scout", "armor", "brute", "torch", "gray", "blue"]) {
 	ART_ALIAS[`v2/bandit-${k}-walk-atk`] = k === "brute" || k === "torch" ? `v2/bandit-${k}-axe` : `v2/bandit-${k}-gun-atk`;
 	ART_ALIAS[`v2/bandit-${k}-walk-dead`] = `v2/bandit-${k}-death`;
