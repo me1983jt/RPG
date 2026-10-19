@@ -86,9 +86,9 @@ check("ach-dress", !!v.ach.dress && (!!v.ach.trap || !!v.ach.snare), v.ach);
 
 // ---- tracks and wind
 await wait(2500);
-let tr = (await T("v3Tracks")).filter((t) => !t.aggro);
+let tr = (await T("v3Tracks")).filter((t) => !t.aggro && t.n > 0); // v14: only deer, moose and wolves leave prints
 check("animals-leave-tracks", tr.length > 0, tr.length);
-const game = tr.find((t) => t.kind === "deer" || t.kind === "moose" || t.kind === "rabbit") ?? tr[0];
+const game = tr.find((t) => t.kind === "deer" || t.kind === "moose") ?? tr[0];
 if (game) {
   await T("setPos", game.last.x + 4, game.last.y + 4); await wait(300);
   const cur = (await T("v3Tracks")).find((t) => t.id === game.id);

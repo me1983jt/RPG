@@ -175,8 +175,8 @@ export function RPG() {
   }, [hud.hp]);
   useEffect(() => { const t = window.setInterval(() => setFlash((f) => { const n = { ...f }; let ch = false; for (const k in n) if (Date.now() - n[k] > 2400) { delete n[k]; ch = true; } return ch ? n : f; }), 600); return () => window.clearInterval(t); }, []);
   const fl = (k: string) => (flash[k] ? "animate-pulse ring-2 ring-primary" : "");
-  const MinBtn = ({ k, label }: { k: string; label: string }) => (
-    <button type="button" data-hud-min={k} aria-label={`${hc[k] ? "Expand" : "Minimize"} ${label}`} className="-my-1 min-h-8 min-w-8 shrink-0 px-1 text-sm font-bold text-primary" onClick={() => flipHc(k)}>{hc[k] ? "+" : "–"}</button>
+  const MinBtn = ({ k, label, tight }: { k: string; label: string; tight?: boolean }) => (
+    <button type="button" data-hud-min={k} aria-label={`${hc[k] ? "Expand" : "Minimize"} ${label}`} className={`${tight ? "" : "-my-2"} min-h-10 min-w-10 shrink-0 px-1 text-sm font-bold text-primary`} onClick={() => flipHc(k)}>{hc[k] ? "+" : "–"}</button>
   );
   const mapRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
@@ -870,7 +870,7 @@ export function RPG() {
 
             <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
               <span className="px-1 text-[10px] uppercase tracking-wide text-muted">Aim</span>
-              <button type="button" data-hud-min="aim" aria-label={hc.aim ? "Expand aim" : "Minimize aim"} className="min-h-8 min-w-8 plank border border-border bg-surface px-1 text-xs font-bold text-primary" onClick={() => flipHc("aim")}>{hc.aim ? `${hud.aim} +` : "–"}</button>
+              <button type="button" data-hud-min="aim" aria-label={hc.aim ? "Expand aim" : "Minimize aim"} className="min-h-10 min-w-10 plank border border-border bg-surface px-1 text-xs font-bold text-primary" onClick={() => flipHc("aim")}>{hc.aim ? `${hud.aim} +` : "–"}</button>
               {(hc.aim ? [] : (["head", "chest", "arm", "leg"] as const)).map((part) => (
                 <button
                   key={part}
@@ -890,7 +890,7 @@ export function RPG() {
             </div>
 
             <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
-              <div className={`flex min-w-0 flex-1 items-stretch gap-2 ${journalOpen || hud.statsOpen ? "hidden" : ""}`}>
+              <div className={`flex min-w-0 flex-1 items-stretch gap-2 ${journalOpen || hud.statsOpen ? "hidden" : ""} ${hud.dialogue ? "short:hidden" : ""}`}>
                 {hc.health ? (
                   <section data-hud="health-min" className={`pointer-events-auto flex min-w-0 flex-1 items-center gap-2 self-end plank border border-border bg-surface/95 px-2 py-1 ${fl("health")}`}>
                     <div className="min-w-0 flex-1 space-y-0.5">
@@ -898,7 +898,7 @@ export function RPG() {
                         <div key={l} className="h-1 bg-bg" title={`${l} ${Math.round(v)}`} aria-label={l}><div className="h-full" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: c }} /></div>
                       ))}
                     </div>
-                    <button type="button" className="min-h-8 px-1 text-xs text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
+                    <button type="button" className="min-h-10 px-1 text-xs text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
                     <MinBtn k="health" label="health panel" />
                   </section>
                 ) : (
@@ -912,7 +912,7 @@ export function RPG() {
                     <button type="button" className="-my-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
                       Pause
                     </button>
-                    <MinBtn k="health" label="health panel" />
+                    <MinBtn k="health" label="health panel" tight />
                     </div>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden bg-bg scar short:mt-1" aria-label="Health">
@@ -1015,7 +1015,7 @@ export function RPG() {
       />
 
       {playing ? (
-        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Expand minimap" : "Minimize minimap"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] h-9 w-9" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+4.6rem)] right-[max(0.5rem,env(safe-area-inset-right))] h-6 w-6"}`} onClick={() => flipHc("mini")}>{hc.mini ? "Map" : "–"}</button>
+        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
         <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">

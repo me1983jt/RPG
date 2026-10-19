@@ -3955,7 +3955,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return out;
 	}
 	function placeAround14(kind, tx, ty, extra) {
-		for (let r = 0; r < 3; r++) for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) {
+		for (let r = 0; r < 7; r++) for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) {
 			if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== r) continue;
 			const p = add14(kind, x, y, extra);
 			if (p) return p;
@@ -4086,6 +4086,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const p of list) for (const [m, n] of Object.entries(repairCost14(p))) cost[m] = (cost[m] ?? 0) + n;
 		v14.report = { night, items: list.map((p) => ({ name: PIECES.find((x) => x.kind === fixKind14(p))?.name ?? (fixKind14(p) === "lookout" ? "Lookout" : fixKind14(p)), hp: Math.round(p.hp ?? 0), max: maxHp14(p) })), cost };
 		const lines = v14.report.items.slice(0, 6).map((i) => `${i.name} ${i.hp}/${i.max}`).join(" · ");
+		if (legacyTravel()) { pushLog(list.length ? `Repairs: ${list.length} pieces hurt. Fixing all of it: ${costText(cost)}. (Build → Fix all)` : "Every wall came through whole."); return; }
 		openD13("Repairs", list.length ? `Walls after ${night ? `raid night ${night}` : "the fight"}: ${list.length} piece${list.length > 1 ? "s" : ""} hurt. ${lines}${list.length > 6 ? " …" : ""}. Fixing all of it: ${costText(cost)}.` : "Every wall and gate came through whole.", list.length ? [{ label: `Repair all (${costText(cost)})`, id: "v14-repair-all" }, { label: "Later", id: "close" }] : [{ label: "Good", id: "close" }]);
 	}
 	/** Raiders who can't path in go for the nearest wall or gate. */
@@ -11184,7 +11185,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v3Build: (id) => buildUpgrade(id),
 		v3Daily: () => { clock += DAY_LENGTH_SEC; q11.farm.lastDay = curDay() - 1; q11Daily(); },
 		v3Travel: (n) => travelTo(n, n === 0 ? () => { const s = skowSign(); return { x: s.x + 90, y: s.y + 60 }; } : null),
-		v3Tracks: () => world ? world.enemies.filter((e) => isGame(e) && e.trail?.length).map((e) => ({ id: e.id, kind: e.kind, temper: e.temper, n: e.trail.length, last: e.trail[e.trail.length - 1], x: e.x, y: e.y, aggro: e.aggro, tracked: !!e.tracked })) : [],
+		v3Tracks: () => world ? world.enemies.filter((e) => isGame(e)).map((e) => ({ id: e.id, kind: e.kind, temper: e.temper, n: e.trail?.length ?? 0, last: e.trail?.[e.trail.length - 1] ?? { x: e.x, y: e.y }, x: e.x, y: e.y, aggro: e.aggro, tracked: !!e.tracked })) : [],
 		v3Sight: () => sightRadius(),
 		v3Dog: () => ({ mode: v3.dog.mode, hp: v3.dog.hp, down: v3.dog.down, body: dogBody ? { x: dogBody.x, y: dogBody.y } : null }),
 		dogHurt: (n) => dogHurt(n),

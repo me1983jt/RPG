@@ -5,7 +5,7 @@ const { browser, page, errs, T, begin } = await boot(url, { vw: 412, vh: 860 });
 let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
 await begin();
 await page.waitForTimeout(6000);
-const tr = await T("v3Tracks");
+const tr = (await T("v3Tracks")).filter((t) => t.n > 0);
 ok(tr.every((t) => t.kind === "moose" || t.kind === "deer" || t.kind === "wolf"), `only moose, deer and wolves leave tracks (${[...new Set(tr.map((t) => t.kind))].join(",") || "none yet"})`);
 ok(tr.every((t) => t.n <= (t.kind === "wolf" ? 3 : 5)), "at most 5 prints for deer/moose, 3 for wolves");
 const src = await page.evaluate(async () => (await fetch("/game/v2/wolf-walk.png")).ok && (await fetch("/game/v2/tracks/wolf-left.png")).ok);
