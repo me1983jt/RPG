@@ -505,7 +505,7 @@ export function vacate(world: World, prop: Prop): void {
 
 export function addProp(world: World, kind: PropKind, tx: number, ty: number, extra?: Partial<Prop>): Prop | null {
   const spec = PROP_SPEC[kind];
-  const allowRoad = kind === "car-sedan" || kind === "car-truck" || kind === "bike";
+  const allowRoad = kind === "car-sedan" || kind === "car-truck" || kind === "bike" || kind.startsWith("gate-") || kind === "wreck" || kind === "wall-x";
   if (!fits(world, tx, ty, spec.w, spec.h, allowRoad)) return null;
   const prop: Prop = { id: world.nextPropId++, kind, tx, ty, ...extra };
   if ((kind === "shack" || kind === "ruin") && prop.locked !== false) prop.locked = true;

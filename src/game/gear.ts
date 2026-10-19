@@ -70,6 +70,7 @@ export const GEAR: Record<string, GearDef> = {
   "bandage-std": { id: "bandage-std", name: "Field bandage", kind: "supply", family: "bandage", quality: "standard", atk: 0, def: 0, heal: 22, note: "Cleaner wrap. Use it from the pack." },
   "bandage-good": { id: "bandage-good", name: "Clean bandage", kind: "supply", family: "bandage", quality: "good", atk: 0, def: 0, heal: 34, note: "Boiled cloth. Use it from the pack." },
   shells: { id: "shells", name: "Loose shells", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "One shot each. A gun will not fire without them." },
+  junk: { id: "junk", name: "Scrap parts", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Bolts, springs and sheet tin off a wreck. Workbench stock." },
   wire: { id: "wire", name: "Twist of wire", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "For a latch." },
   lockpick: { id: "lockpick", name: "Bent pick", kind: "supply", family: "lockpick", quality: "poor", atk: 0, def: 0, heal: 0, note: "A poor pick. It may slip." },
   "lockpick-std": { id: "lockpick-std", name: "Lockpick", kind: "supply", family: "lockpick", quality: "standard", atk: 0, def: 0, heal: 0, note: "A proper pick." },

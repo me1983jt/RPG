@@ -1,3 +1,4 @@
+import { PIECES } from "./v14";
 import type { BagStack, LookId, Quality, RoleId, TraitId } from "@/game/gear";
 
 export const TILE = 64;
@@ -75,7 +76,26 @@ export type PropKind =
   | "post-roof"
   | "scarecrow"
   | "bait"
-  | "tractor";
+  | "tractor"
+  | "wall-wood"
+  | "wall-stone"
+  | "wall-metal"
+  | "gate-wood"
+  | "gate-stone"
+  | "gate-metal"
+  | "wall-x"
+  | "spikes"
+  | "chest"
+  | "rainbarrel"
+  | "sandbags"
+  | "sandbags-x"
+  | "workbench"
+  | "wreck"
+  | "firering"
+  | "stash"
+  | "sign-farm"
+  | "lookout"
+  | "lookout-x";
 
 export type Resource = "scrap" | "wood" | "stone";
 
@@ -146,9 +166,30 @@ export const PROP_SPEC: Record<PropKind, PropSpec> = {
   scarecrow: { w: 1, h: 1, blocks: false, drawH: 66, image: "scarecrow" },
   bait: { w: 1, h: 1, blocks: false, drawH: 29, image: "bait" },
   tractor: { w: 1, h: 1, blocks: false, drawH: 83, image: "tractor" },
+  "wall-wood": { w: 1, h: 1, blocks: true, drawH: 125, image: "v14/wall-wood" },
+  "wall-stone": { w: 1, h: 1, blocks: true, drawH: 125, image: "v14/wall-stone" },
+  "wall-metal": { w: 1, h: 1, blocks: true, drawH: 125, image: "v14/wall-metal" },
+  "gate-wood": { w: 1, h: 1, blocks: true, drawH: 129, image: "v14/gate-wood" },
+  "gate-stone": { w: 1, h: 1, blocks: true, drawH: 129, image: "v14/gate-stone" },
+  "gate-metal": { w: 1, h: 1, blocks: true, drawH: 129, image: "v14/gate-metal" },
+  "wall-x": { w: 1, h: 1, blocks: false, drawH: 78, image: "v14/wall-x" },
+  "spikes": { w: 1, h: 1, blocks: false, drawH: 26, image: "v14/spikes" },
+  "chest": { w: 1, h: 1, blocks: true, drawH: 30, image: "v14/chest" },
+  "rainbarrel": { w: 1, h: 1, blocks: true, drawH: 42, image: "v14/rainbarrel" },
+  "sandbags": { w: 1, h: 1, blocks: true, drawH: 34, image: "v14/sandbags" },
+  "sandbags-x": { w: 1, h: 1, blocks: false, drawH: 18, image: "v14/sandbags-x" },
+  "workbench": { w: 1, h: 1, blocks: true, drawH: 46, image: "v14/workbench" },
+  "wreck": { w: 1, h: 1, blocks: true, drawH: 62, image: "v14/wreck" },
+  "firering": { w: 1, h: 1, blocks: false, drawH: 24, image: "v14/firering" },
+  "stash": { w: 1, h: 1, blocks: false, drawH: 20, image: "v14/stash" },
+  "sign-farm": { w: 1, h: 1, blocks: false, drawH: 66, image: "v14/sign-farm" },
+  "lookout": { w: 1, h: 1, blocks: false, drawH: 154, image: "v14/lookout" },
+  "lookout-x": { w: 1, h: 1, blocks: false, drawH: 154, image: "v14/lookout-x" },
 };
 
 export interface Recipe {
+  v14?: boolean;
+  need14?: Partial<Record<string, number>>;
   kind: PropKind;
   wood: number;
   stone: number;
@@ -176,6 +217,7 @@ export const RECIPES: Recipe[] = [
   { kind: "post-loft", wood: 4, stone: 0, scrap: 2, label: "Hayloft", blurb: "A rifle slit for the barn loft. It fires on a raid." },
   { kind: "post-porch", wood: 3, stone: 0, scrap: 1, label: "Porch post", blurb: "A chair and a lantern on the farmhouse porch." },
   { kind: "post-roof", wood: 4, stone: 1, scrap: 2, label: "Roof stand", blurb: "Planks and a sandbag on a shack roof." },
+  ...PIECES.filter((p) => p.kind !== "campfire").map((p) => ({ kind: p.kind as PropKind, wood: p.cost.wood ?? 0, stone: p.cost.stone ?? 0, scrap: p.cost.iron ?? 0, label: p.name, blurb: p.blurb, v14: true, need14: p.cost })),
 ];
 
 export interface Prop {
@@ -399,6 +441,7 @@ export interface V113Hud {
   toast: { id: string; name: string; text: string; n: number } | null;
 }
 export interface HudSnapshot {
+  v14?: any;
   v113?: V113Hud;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   v13?: any;

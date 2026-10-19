@@ -729,11 +729,53 @@ export function RPG() {
               </section>
             ) : null}
 
+            {hud.v14?.craft ? (
+              <section data-v14="craft" className="pointer-events-auto fixed inset-x-2 top-2 bottom-2 z-50 mx-auto flex max-w-lg flex-col plank border border-border bg-surface/97 p-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-display text-lg leading-none">Workbench · tier {hud.v14.craft.tier}</h2>
+                  <button type="button" className="min-h-10 min-w-12 plank border border-border px-3 text-sm" onClick={() => apiRef.current?.v14("closeCraft")}>Close</button>
+                </div>
+                <p className="mt-1 text-xs text-muted">{hud.v14.craft.mats.map((m: any) => `${m.m} ${m.have}`).join(" · ")}</p>
+                <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+                  {["Weapons", "Tools", "Armor", "Traps", "Ammo", "Meds"].map((g) => (
+                    <div key={g} className="mb-2">
+                      <h3 className="text-xs uppercase tracking-wide text-primary">{g}</h3>
+                      {hud.v14.craft.list.filter((r: any) => r.group === g).map((r: any) => (
+                        <button key={r.id} type="button" data-craft={r.id} disabled={!r.can} className={`mt-1 flex w-full items-center justify-between gap-2 plank border px-2 py-2 text-left ${r.can ? "border-primary bg-surface-2" : "border-border bg-surface opacity-75"}`} onClick={() => apiRef.current?.v14("craft", r.id)}>
+                          <span className="min-w-0">
+                            <span className="block font-semibold">{r.name}{r.qty > 1 ? ` ×${r.qty}` : ""} <span className="text-xs text-muted">T{r.tier}{r.def ? ` · def ${r.def}` : ""}{r.atk ? ` · atk ${r.atk}` : ""}</span></span>
+                            <span className="block text-xs">{r.locked ? `Needs a tier ${r.tier} bench` : r.need.map((n: any, i: number) => <span key={i} className={n.have >= n.n ? "text-primary" : "text-[#d0644a]"}>{i ? " · " : ""}{n.m} {Math.min(n.have, n.n)}/{n.n}</span>)}</span>
+                          </span>
+                          <span className="shrink-0 text-xs font-semibold">{r.can ? "Make" : r.locked ? "Locked" : "Short"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                {hud.v14.craft.up ? (
+                  <button type="button" disabled={!hud.v14.craft.canUp} className={`mt-1 plank border px-2 py-2 text-left text-xs ${hud.v14.craft.canUp ? "border-primary bg-surface-2" : "border-border opacity-75"}`} onClick={() => apiRef.current?.v14("benchUp")}>
+                    Upgrade the bench to tier {hud.v14.craft.tier + 1}: {hud.v14.craft.up.map((n: any, i: number) => <span key={i} className={n.have >= n.n ? "text-primary" : "text-[#d0644a]"}>{i ? " · " : ""}{n.m} {Math.min(n.have, n.n)}/{n.n}</span>)}
+                  </button>
+                ) : null}
+              </section>
+            ) : null}
             {hud.buildOpen ? (
-              <section className="pointer-events-auto mx-auto grid w-full max-w-lg grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="pointer-events-auto mx-auto flex w-full max-w-lg gap-1" data-v14="buildtools">
+                {(["place", "pickup", "repair"] as const).map((t) => (
+                  <button key={t} type="button" className={`plank flex-1 border px-2 py-1 text-xs font-semibold ${hud.v14?.tool === t ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v14("tool", t)}>
+                    {t === "place" ? "Place" : t === "pickup" ? "Pick up" : "Repair"}
+                  </button>
+                ))}
+                <button type="button" className={`plank flex-1 border px-2 py-1 text-xs font-semibold ${hud.v14?.flip ? "border-primary bg-surface-2" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v14("rotate")}>Rotate</button>
+                {hud.v14?.damaged ? <button type="button" className="plank flex-1 border border-border bg-surface px-2 py-1 text-xs font-semibold" onClick={() => apiRef.current?.v14("repairAll")}>Fix all ({hud.v14.damaged})</button> : null}
+              </div>
+            ) : null}
+            {hud.buildOpen ? (
+              <section className="pointer-events-auto mx-auto grid max-h-[38vh] w-full max-w-lg grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-4">
                 {RECIPES.map((item, index) => {
                   const Icon = RECIPE_ICON[index] ?? House;
                   const afford = hud.wood >= item.wood && hud.stone >= item.stone && hud.scrap >= item.scrap;
+                  if (item.v14 && !hud.v14?.secured) return null;
                   const selected = hud.recipe === index;
                   return (
                     <button
@@ -747,7 +789,7 @@ export function RPG() {
                         {item.label}
                       </span>
                       <span className="mt-1 block text-xs text-muted">
-                        {item.wood} timber · {item.stone} ledge · {item.scrap} iron
+                        {item.need14 ? Object.entries(item.need14).map(([m, n]) => `${n} ${m === "junk" ? "scrap" : m}`).join(" · ") : `${item.wood} timber · ${item.stone} ledge · ${item.scrap} iron`}
                       </span>
                     </button>
                   );

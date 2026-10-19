@@ -32,6 +32,7 @@ import {
 import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
+import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
@@ -47,6 +48,7 @@ import {
   WORLD_OX,
   WORLD_OY,
   inFarm,
+  FARM,
   type AimPart,
   type BeastKind,
   type Dialogue,
@@ -68,6 +70,7 @@ import {
   addProp,
   tryPlace,
   vacate,
+  occupy,
   HOLEB_ID,
   PELLETIER_ID,
   WARDEN_ENEMY_ID,
@@ -86,6 +89,7 @@ export interface GameApi {
   tap: (action: "attack" | "interact" | "build" | "pause" | "resume" | "menu" | "respawn" | "save") => void;
   choose: (id: string) => void;
   selectRecipe: (index: number) => void;
+  v14: (cmd: string, arg?: any) => any;
   pointer: (x: number, y: number, type: "move" | "down" | "up") => void;
   nudgeZoom: (factor: number) => void;
   pan: (dx: number, dy: number) => void;
@@ -134,6 +138,8 @@ var NPC_H = ADULT;
 var RADIUS = 14;
 var STEP = 1 / 60;
 var IMAGES = [
+	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
+	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x"].map((n) => `v14/${n}`),
 	"hero",
 	"hero-axe",
 	"hero-pick",
@@ -470,6 +476,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		nest: "nest-up",
 		"nest-up": "nest-3"
 	};
+	Object.assign(BROKEN, PIECE_BROKEN);
+	Object.assign(DEF_HP, PIECE_HP);
+	Object.assign(NEXT_TIER, PIECE_UP);
+	DEFENSE.lookout = { range: 260, dmg: 4, every: .8 };
 	const LURE = new Set(["scarecrow", "bait"]);
 	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
 	/** A night raider. The Chopping's named bosses (quest enemies) use the same boss art but stay home. */
@@ -576,6 +586,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0, raidReady: raidCanStart(), raidOn: !!raid, raidNext: raidNight + 1 };
 	}
 	function hudQuestText() {
+		if (raid?.defend) {
+			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
+			return `Defend the farm: ${raid.phase === "wave" ? `wave ${raid.wave} of ${raid.waves}` : `wave ${raid.wave + 1} of ${raid.waves} coming`}. Farmhouse ${pct}%.`;
+		}
+		if (mapId === 0 && v14.st < 3 && !mode11) return `Cold road: ${STAGE_TEXT[v14.st]}`;
 		if (raid) {
 			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
 			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} soon`;
@@ -619,6 +634,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			questText: hudQuestText(),
 			v113: v3Hud(),
 			v13: player ? v13Hud() : null,
+			v14: hud14(),
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
@@ -1093,6 +1109,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11 = freshQ11();
 		v3 = freshV3();
 		w13 = freshW13();
+		v14 = freshV14();
+		if (typeof window !== "undefined" && window.__v14Skip) v14.st = 5;
+		craftOpen = false;
 		if (pendingBackstory) { applyBackstory(pendingBackstory); pendingBackstory = ""; }
 		if (pendingHard) { w13.hard = true; pendingHard = false; }
 		q10World();
@@ -1111,10 +1130,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mounted = false;
 		mountId = -1;
 		opening = null;
-		setLog("You wake on the cot under the eave. Cambridge Road. The stove in the farmhouse is warm.");
+		if (v14.st === 0) v14Start();
+		if (v14.st === 0) setLog("You come to in the cab of a wrecked pickup on the Harmony road. Cold. Your head hurts. The fire ring by the ditch is dead.");
+		else setLog("You wake on the cot under the eave. Cambridge Road. The stove in the farmhouse is warm.");
 		const tagged = SKILLS.filter((s) => player.tags.includes(s.id)).map((s) => s.name).join(", ");
 		pushLog(`Tagged skills: ${tagged}. They rise twice as fast.`);
-		pushLog("Justin is out by the farmhouse. First snow is coming.");
+		pushLog(v14.st === 0 ? "Search the truck. First snow is coming." : "Justin is out by the farmhouse. First snow is coming.");
 		dialogue = null;
 		piles = [];
 		nextPile = 1;
@@ -1274,6 +1295,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11 = loadQ11(data.q11);
 		v3 = loadV3(data.v113);
 		w13 = loadW13(data.v13);
+		v14 = loadV14(data.v14);
+		craftOpen = false;
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
 			const dead = world.enemies.filter((e) => e.quest && e.dead).length;
@@ -1373,6 +1396,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.kitchenDay = kitchenDay;
 		data.q10 = q10;
 		data.q11 = q11;
+		if (world && mapId === 0) { v14.placed = world.props.filter((p) => p.p14).map((p) => ({ k: p.kind, tx: p.tx, ty: p.ty, hp: Math.round(p.hp ?? 0), f: !!p.flip14 })); for (const p of world.props) if (p.f14) note14(p); }
+		data.v14 = v14;
 		data.v113 = v3;
 		data.v13 = w13;
 		data.regions = [...regions.values()];
@@ -1556,8 +1581,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function canPlaceAt(tile) {
 		if (!world || !player || !buildOpen) return false;
 		const spec = PROP_SPEC[RECIPES[recipe].kind];
+		if (buildTool !== "place") return true;
 		if (!footprintFree(world, tile.tx, tile.ty, spec.w, spec.h)) return false;
 		const cost = RECIPES[recipe];
+		if (cost.v14) return mapId === 0 && ok14() && inFarm(tile.tx, tile.ty) && canPay14(cost.need14);
 		return player.wood >= cost.wood && player.stone >= cost.stone && player.scrap >= cost.scrap;
 	}
 	function tryBuild() {
@@ -1565,6 +1592,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cost = RECIPES[recipe];
 		const tile = hoverTile();
 		const spec = PROP_SPEC[cost.kind];
+		if (buildTap14(tile)) return;
+		if (cost.v14) {
+			if (mapId !== 0 || !ok14()) { pushLog("Hold the farm first. Then Justin lets you build."); return; }
+			if (!inFarm(tile.tx, tile.ty)) { pushLog("Keep it inside the farm ring."); return; }
+			if (!canPay14(cost.need14)) { pushLog(`That wants ${costText(cost.need14)}.`); return; }
+			const pr = add14(cost.kind, tile.tx, tile.ty, { p14: true, flip14: buildFlip });
+			if (!pr) { pushLog("That ground will not take it."); return; }
+			pay14(cost.need14);
+			pr.hp = PIECE_HP[cost.kind];
+			v14.placed.push({ k: cost.kind, tx: tile.tx, ty: tile.ty, hp: pr.hp, f: buildFlip });
+			pushLog(`${cost.label} up.`);
+			sfx("build"); burst(propCenter(pr).x, propCenter(pr).y, "#d4a24a", 10); saveGame(); sync(true);
+			return;
+		}
 		if (!footprintFree(world, tile.tx, tile.ty, spec.w, spec.h)) {
 			pushLog("That ground will not take it.");
 			return;
@@ -1630,6 +1671,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
 		if (id.startsWith("v13-") && v13Choice(id)) return;
+		if (id.startsWith("v14-") && v14Choice(id)) { sync(true); return; }
 		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id.startsWith("q113-") && v3Choice(id)) return;
 		if (id === "raid-ask") {
@@ -1710,6 +1752,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("First Snow on Cambridge Road: done. The farm is your base now. You wake on the cot if you fall.");
 			pushLog("Hot cider and cider donuts heal. Use them from the pack.");
 			sfx("level");
+			if (v14.st === 3) { dialogue = null; phase = "play"; startDefend14(); return; }
 			startDeal();
 		} else if (id === "jack-bye") {
 			pushLog(JACK_SIGNOFF);
@@ -1778,7 +1821,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function upgradeDefense() {
 		if (!player || !world) return;
-		const prop = world.props.find((p) => NEXT_TIER[p.kind]);
+		const t14 = hoverTile();
+		const p14 = buildOpen && world.props.find((p) => p.tx === t14.tx && p.ty === t14.ty && PIECE_UP[p.kind]);
+		if (p14) {
+			const nx = PIECES.find((x) => x.kind === PIECE_UP[p14.kind]);
+			if (!canPay14(nx.cost)) { pushLog(`${nx.name} wants ${costText(nx.cost)}.`); return; }
+			pay14(nx.cost); vacate(world, p14); p14.kind = nx.kind; occupy(world, p14); p14.hp = nx.hp; note14(p14);
+			const pl = v14.placed.find((q) => q.tx === p14.tx && q.ty === p14.ty); if (pl) { pl.k = nx.kind; pl.hp = nx.hp; }
+			pushLog(`Up to ${nx.name}.`); sfx("build"); saveGame(); return;
+		}
+		const prop = world.props.find((p) => NEXT_TIER[p.kind] && !PIECE_UP[p.kind]);
 		if (!prop) {
 			pushLog("Nothing on the ground will take another nail.");
 			return;
@@ -1995,6 +2047,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** After any home-map world build (new game, load, crossing back): find the sites and put live quest bodies back. */
 	function q10World() {
 		q11World();
+		v14World();
 		q10Spots = new Map();
 		q10Latch.clear();
 		dogBody = null;
@@ -3807,6 +3860,370 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		n.thirst = Math.max(0, n.thirst - 12);
 		if (w13.ail.cold) w13.ail.cold -= 1;
 	}
+	// ======== v14: roadside start, farm fortifications, defend the farm, workbench, base pieces ========
+	let v14 = freshV14();
+	let craftOpen = false;
+	let buildFlip = false;
+	let buildTool = "place";
+	const V14_ID = 800000;
+	const ok14 = () => v14.st >= 5;
+	const mat14 = (m) => m === "wood" ? player.wood : m === "stone" ? player.stone : m === "iron" ? player.scrap : countOf(m);
+	const canPay14 = (cost) => Object.entries(cost).every(([m, n]) => mat14(m) >= n);
+	function pay14(cost) {
+		for (const [m, n] of Object.entries(cost)) {
+			if (m === "wood") player.wood -= n; else if (m === "stone") player.stone -= n; else if (m === "iron") player.scrap -= n; else takeItem(m, n);
+		}
+	}
+	function give14(cost, f = 1) {
+		for (const [m, n0] of Object.entries(cost)) {
+			const n = Math.floor(n0 * f); if (n <= 0) continue;
+			if (m === "wood") player.wood += n; else if (m === "stone") player.stone += n; else if (m === "iron") player.scrap += n; else giveItem(m, n);
+		}
+	}
+	const costText = (cost) => Object.entries(cost).map(([m, n]) => `${n} ${MAT_NAME[m].toLowerCase()}`).join(", ") || "nothing";
+	function add14(kind, tx, ty, extra) {
+		const keep = world.nextPropId;
+		world.nextPropId = V14_ID + world.props.filter((p) => p.id >= V14_ID).length + 1;
+		while (world.props.some((p) => p.id === world.nextPropId)) world.nextPropId++;
+		const p = addProp(world, kind, tx, ty, extra);
+		world.nextPropId = keep;
+		return p;
+	}
+	/** The roadside camp: a road tile 26-38 tiles out from the farm, down the longest road. */
+	function campSpot14() {
+		const fx = FARM.tx, fy = FARM.ty;
+		let best = null, bestD = 0;
+		const seen = new Set();
+		const q = [];
+		for (let y = fy - FARM.r - 2; y <= fy + FARM.r + 2; y++) for (let x = fx - FARM.r - 2; x <= fx + FARM.r + 2; x++) if (world.tiles[y * MAP_W + x] === 2) { q.push([x, y, 0]); seen.add(y * MAP_W + x); }
+		while (q.length) {
+			const [x, y] = q.shift();
+			const d = Math.hypot(x - fx, y - fy);
+			if (d <= 38 && d > bestD && x > 4 && y > 4 && x < MAP_W - 5 && y < MAP_H - 5) { bestD = d; best = { tx: x, ty: y }; }
+			if (d > 38) continue;
+			for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+				const k = ay * MAP_W + ax;
+				if (seen.has(k) || world.tiles[k] !== 2) continue;
+				seen.add(k); q.push([ax, ay, 0]);
+			}
+		}
+		return best ?? { tx: fx - 24, ty: fy + 4 };
+	}
+	/** The farm's rough ring: stakes on about 2/3 of the ring, a barricaded gate where the road crosses, a lookout and sandbags. */
+	function fortPlan14() {
+		const out = [];
+		const fc = { tx: FARM.tx, ty: FARM.ty };
+		const R = FARM.r - 1.5;
+		const ring = new Set();
+		for (let a = 0; a < 360; a += 3) {
+			const tx = Math.round(fc.tx + Math.cos(a * Math.PI / 180) * R), ty = Math.round(fc.ty + Math.sin(a * Math.PI / 180) * R);
+			const k = `${tx},${ty}`;
+			if (ring.has(k)) continue;
+			ring.add(k);
+			const road = world.tiles[ty * MAP_W + tx] === 2;
+			const n = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+			if (road) {
+				const at = (r) => world.tiles[Math.round(fc.ty + Math.sin(a * Math.PI / 180) * r) * MAP_W + Math.round(fc.tx + Math.cos(a * Math.PI / 180) * r)] === 2;
+				if (at(R + 2) && at(R - 2)) out.push({ k: "gate-wood", tx, ty, hp: 30, f: Math.abs(Math.cos(a * Math.PI / 180)) > .7 });
+				continue;
+			}
+			if (n % 3 === 0) continue;
+			const flip = Math.abs(Math.cos(a * Math.PI / 180)) > .7;
+			out.push(n % 7 === 0 ? { k: "wall-x", tx, ty, hp: 0, f: flip } : { k: "wall-wood", tx, ty, hp: n % 5 === 0 ? 24 : 60, f: flip });
+		}
+		const gate = out.find((o) => o.k === "gate-wood");
+		const g = gate ?? { tx: fc.tx + 10, ty: fc.ty };
+		const ix = Math.sign(fc.tx - g.tx), iy = Math.sign(fc.ty - g.ty);
+		out.push({ k: "lookout", tx: g.tx + ix * 2 + (iy ? 2 : 0), ty: g.ty + iy * 2 + (ix ? 2 : 0), hp: 35 });
+		out.push({ k: "sandbags", tx: g.tx + ix * 2 - (iy ? 1 : 0), ty: g.ty + iy * 2 - (ix ? 1 : 0), hp: 50 });
+		out.push({ k: "sandbags-x", tx: g.tx + ix * 2 + (iy ? 1 : 0), ty: g.ty + iy * 2 + (ix ? 1 : 0), hp: 0 });
+		const bc = farmCenter();
+		const bt = tileOf(bc.x, bc.y);
+		out.push({ k: "workbench", tx: bt.tx + 3, ty: bt.ty + 2, hp: 99 });
+		return out;
+	}
+	function placeAround14(kind, tx, ty, extra) {
+		for (let r = 0; r < 3; r++) for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) {
+			if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== r) continue;
+			const p = add14(kind, x, y, extra);
+			if (p) return p;
+		}
+		return null;
+	}
+	function v14World() {
+		if (!world || mapId !== 0 || mode11) return;
+		world.props = world.props.filter((p) => { if (p.id < V14_ID) return true; vacate(world, p); return false; });
+		if (!v14.camp) v14.camp = campSpot14();
+		for (const o of fortPlan14()) {
+			const key = `${o.tx},${o.ty}`;
+			const saved = v14.fort[key];
+			const k = saved ? saved.k : o.k;
+			const p = o.k === "workbench" ? placeAround14(k, o.tx, o.ty, { f14: key }) : add14(k, o.tx, o.ty, { f14: key, flip14: !!o.f });
+			if (p) p.hp = saved ? saved.hp : o.hp;
+		}
+		for (const pc of v14.placed) { const p = add14(pc.k, pc.tx, pc.ty, { p14: true, flip14: !!pc.f }); if (p) p.hp = pc.hp; }
+		const c = v14.camp;
+		placeAround14("wreck", c.tx, c.ty - 1, { camp14: "wreck" });
+		placeAround14(v14.st >= 2 ? "firering" : "firering", c.tx + 1, c.ty + 1, { camp14: "fire", lit14: v14.st >= 2 });
+		if (v14.st < 1) placeAround14("stash", c.tx - 1, c.ty + 1, { camp14: "stash" });
+		if (v14.st >= 2) { const m = { tx: Math.round((c.tx + FARM.tx) / 2), ty: Math.round((c.ty + FARM.ty) / 2) }; placeAround14("sign-farm", m.tx, m.ty, { label: "FARM →", camp14: "sign" }); }
+		// spread out: no raider camp or wild bandit within 34 tiles of the farm
+		for (const e of world.enemies) {
+			if (e.dead || e.quest || e.kind !== "bandit" || e.q10 || e.q11) continue;
+			const tx = e.homeX / TILE, ty = e.homeY / TILE;
+			const d = Math.hypot(tx - FARM.tx, ty - FARM.ty);
+			if (d >= 34) continue;
+			const k = 34 / Math.max(1, d);
+			const nx = Math.round(FARM.tx + (tx - FARM.tx) * k), ny = Math.round(FARM.ty + (ty - FARM.ty) * k);
+			if (nx < 3 || ny < 3 || nx > MAP_W - 4 || ny > MAP_H - 4 || cellBlocked(world, nx, ny)) { e.dead = true; e.death = 0; continue; }
+			e.x = e.homeX = (nx + .5) * TILE; e.y = e.homeY = (ny + .5) * TILE; e.aggro = false; e.path = null;
+		}
+	}
+	/** New game: wake at the camp with little more than the clothes you wear. */
+	function v14Start() {
+		if (v14.st !== 0 || !v14.camp || mapId !== 0) return;
+		const c = v14.camp;
+		const spot = nearestRespawn(c.tx, c.ty, 1, 1);
+		player.x = spot.x; player.y = spot.y;
+		player.respawnX = spot.x; player.respawnY = spot.y;
+		const worn = new Set([player.weaponId, player.coatId, player.headId, player.legsId, player.handsId, player.feetId, player.backId].filter(Boolean));
+		player.bag = player.bag.filter((s) => worn.has(s.id)).map((s) => ({ id: s.id, qty: 1 }));
+		if (isGun(GEAR[player.weaponId]?.family)) player.bag.push({ id: "shells", qty: 4 });
+		player.bag.push({ id: "bandage", qty: 1 });
+		player.wood = 0; player.stone = 0; player.scrap = 0;
+		player.gridPos = {};
+		refreshGear(player);
+	}
+	function v14Use(prop) {
+		if (prop.kind === "wreck") {
+			if (v14.st > 0) return pushLog("The truck's picked clean. Somebody's luck ran out here.");
+			v14.st = 1;
+			giveItem("matches"); giveItem("junk", 3); giveItem("cloth", 2); giveItem("water");
+			const st = world.props.find((p) => p.camp14 === "stash"); if (st) { vacate(world, st); world.props = world.props.filter((p) => p !== st); }
+			pushLog("Under the seat: a match tin, a twist of cloth, a jug of water and a fistful of bolts.");
+			pushLog("It'll be dark and cold soon. Get 3 wood off the spruce and light the fire ring.");
+			sfx("gather"); saveGame(); sync(true); return;
+		}
+		if (prop.kind === "stash") return v14Use(world.props.find((p) => p.kind === "wreck") ?? prop);
+		if (prop.kind === "firering") {
+			if (prop.lit14) return pushLog("The fire's going. Off to the east there's chimney smoke over the trees.");
+			if (v14.st < 1) return pushLog("No matches. Check the truck.");
+			if (player.wood < 3) return pushLog(`The ring wants 3 wood. You have ${player.wood}. The spruce along the road will do.`);
+			player.wood -= 3; prop.lit14 = true; v14.st = 2; prop.burn = 0;
+			const c = v14.camp; const m = { tx: Math.round((c.tx + FARM.tx) / 2), ty: Math.round((c.ty + FARM.ty) / 2) };
+			placeAround14("sign-farm", m.tx, m.ty, { label: "FARM →", camp14: "sign" });
+			pushLog("The fire takes. While you warm your hands you see it: a thread of chimney smoke over the trees, and a hand sign nailed to a post down the road.");
+			grantXp(10); sfx("build"); saveGame(); sync(true); return;
+		}
+		if (prop.kind === "sign-farm") return pushLog("Hand-painted: FARM. KEEP TO THE ROAD. Somebody added: WE SHOOT.");
+		if (prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Justin: \"That's my bench. Earn it first.\"" : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
+		if (isGate14(prop.kind)) return toggleGate14(prop);
+		if (prop.kind === "chest") return pushLog("The chest. Stash things here from the pack (drop them by it)."), void 0;
+		if (prop.kind === "rainbarrel") { if (tryGive("water")) pushLog("You fill a jug from the rain barrel."); else pushLog("No room for a jug."); sync(true); return; }
+		if (PIECE_HP[prop.kind] || prop.kind === "wall-x" || prop.kind === "sandbags-x" || prop.kind === "lookout-x") return repairOne14(prop);
+	}
+	function toggleGate14(prop) {
+		if (raid && !prop.open) return pushLog("Not with them out there.");
+		prop.open = !prop.open;
+		if (prop.open) vacate(world, prop);
+		else {
+			const c = propCenter(prop);
+			if (Math.hypot(player.x - c.x, player.y - c.y) < 40) { prop.open = true; return pushLog("Step clear of the gate first."); }
+			occupy(world, prop);
+		}
+		pushLog(prop.open ? "You swing the gate open." : "You drop the bar across the gate.");
+		sfx("click"); sync(true);
+	}
+	function maxHp14(prop) {
+		if (prop.kind === "wall-x") return PIECE_HP[prop.was14 ?? "wall-wood"];
+		if (prop.kind === "sandbags-x") return PIECE_HP.sandbags;
+		if (prop.kind === "lookout-x") return PIECE_HP.lookout;
+		return PIECE_HP[prop.kind] ?? DEF_HP[prop.kind] ?? 30;
+	}
+	function fixKind14(prop) { return prop.kind === "wall-x" ? (prop.was14 ?? "wall-wood") : prop.kind === "sandbags-x" ? "sandbags" : prop.kind === "lookout-x" ? "lookout" : prop.kind; }
+	function repairCost14(prop) { return repairCost(fixKind14(prop) === "lookout" ? "wall-wood" : fixKind14(prop), prop.hp ?? 0, maxHp14(prop)); }
+	function repairOne14(prop, quiet = false) {
+		const max = maxHp14(prop);
+		if ((prop.hp ?? max) >= max && !prop.kind.endsWith("-x")) { if (!quiet) pushLog("That piece is sound."); return false; }
+		const cost = repairCost14(prop);
+		if (!canPay14(cost)) { if (!quiet) pushLog(`Fixing it wants ${costText(cost)}.`); return false; }
+		pay14(cost);
+		const k = fixKind14(prop);
+		if (k !== prop.kind) { vacate(world, prop); prop.kind = k; occupy(world, prop); }
+		prop.hp = max;
+		note14(prop);
+		if (!quiet) { pushLog(`Patched: ${costText(cost)}.`); sfx("build"); burst(propCenter(prop).x, propCenter(prop).y, "#d4a24a", 8); saveGame(); sync(true); }
+		return true;
+	}
+	function note14(prop) {
+		if (prop.f14) v14.fort[prop.f14] = { k: prop.kind, hp: Math.round(prop.hp ?? 0) };
+	}
+	function damaged14() {
+		return world.props.filter((p) => (p.f14 || p.p14) && p.kind !== "workbench" && ((p.hp ?? 0) < maxHp14(p) || p.kind.endsWith("-x")));
+	}
+	function repairAll14() {
+		let n = 0;
+		for (const p of damaged14()) if (repairOne14(p, true)) n++;
+		pushLog(n ? `You patch ${n} piece${n > 1 ? "s" : ""} of the walls.` : "Not enough stock to patch anything.");
+		if (n) sfx("build");
+		saveGame(); sync(true);
+	}
+	function report14(night) {
+		const list = damaged14();
+		const cost = {};
+		for (const p of list) for (const [m, n] of Object.entries(repairCost14(p))) cost[m] = (cost[m] ?? 0) + n;
+		v14.report = { night, items: list.map((p) => ({ name: PIECES.find((x) => x.kind === fixKind14(p))?.name ?? (fixKind14(p) === "lookout" ? "Lookout" : fixKind14(p)), hp: Math.round(p.hp ?? 0), max: maxHp14(p) })), cost };
+		const lines = v14.report.items.slice(0, 6).map((i) => `${i.name} ${i.hp}/${i.max}`).join(" · ");
+		openD13("Repairs", list.length ? `Walls after ${night ? `raid night ${night}` : "the fight"}: ${list.length} piece${list.length > 1 ? "s" : ""} hurt. ${lines}${list.length > 6 ? " …" : ""}. Fixing all of it: ${costText(cost)}.` : "Every wall and gate came through whole.", list.length ? [{ label: `Repair all (${costText(cost)})`, id: "v14-repair-all" }, { label: "Later", id: "close" }] : [{ label: "Good", id: "close" }]);
+	}
+	/** Raiders who can't path in go for the nearest wall or gate. */
+	function siegeGoal14(enemy) {
+		let best = null, bd = 1e9;
+		for (const p of world.props) {
+			if (!(isWall14(p.kind) || p.kind === "sandbags" || String(p.kind).startsWith("fence") && p.kind !== "fence-x")) continue;
+			const c = propCenter(p);
+			const d = Math.hypot(c.x - enemy.x, c.y - enemy.y);
+			if (d < bd) { bd = d; best = p; }
+		}
+		if (!best) return null;
+		const t = { tx: best.tx, ty: best.ty };
+		let spot = null, sd = 1e9;
+		for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+			if (cellBlocked(world, t.tx + dx, t.ty + dy)) continue;
+			const x = (t.tx + dx + .5) * TILE, y = (t.ty + dy + .5) * TILE;
+			const d = Math.hypot(x - enemy.x, y - enemy.y);
+			if (d < sd) { sd = d; spot = { x, y }; }
+		}
+		return spot;
+	}
+	function spikesTick14(dt, raiders) {
+		for (const p of world.props) {
+			if (p.kind !== "spikes") continue;
+			const c = propCenter(p);
+			for (const e of raiders) {
+				if (Math.hypot(e.x - c.x, e.y - c.y) > 34) continue;
+				e.hp -= 7 * dt; e.hurt = .1; e.slow = .4;
+				p.hp = (p.hp ?? PIECE_HP.spikes) - 3 * dt;
+				if (e.hp <= 0) markDead(e, e.xp);
+			}
+			if ((p.hp ?? 1) <= 0) { pushLog("A spike trap is ground flat."); v14.placed = v14.placed.filter((q) => !(q.tx === p.tx && q.ty === p.ty)); world.props = world.props.filter((q) => q !== p); break; }
+		}
+	}
+	// ---- defend the farm (the first raid, right after Justin takes you in)
+	let defendSnap = null;
+	function startDefend14() {
+		if (!world || !player || raid) return;
+		v14.st = 4;
+		for (const e of world.enemies) if (!e.dead && isRaider(e)) { e.dead = true; e.death = 0; }
+		for (const p of world.props) if (isGate14(p.kind) && p.open) { p.open = false; occupy(world, p); }
+		const fh = raidHouse();
+		const c = v14.camp ?? { tx: FARM.tx - 20, ty: FARM.ty };
+		const ang = fh ? Math.atan2((c.ty + .5) * TILE - fh.y, (c.tx + .5) * TILE - fh.x) : 0;
+		raid = { night: 1, wave: Math.max(0, v14.defendWave), waves: 3, phase: "lull", t: 10, left: 0, spawnT: 0, ang, house: 140, houseMax: 140, warned: false, kills: 0, defend: true };
+		defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp }));
+		raidHudPct = 20;
+		pushLog("Justin: \"Lanterns on the road. They've been back every night this week. Take the gate. Sarah's on the lookout.\"");
+		saveGame(); sync(true);
+	}
+	function defendLost14(why) {
+		v14.tries += 1;
+		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
+		for (const s of defendSnap ?? []) { if (s.p.kind !== s.k) { vacate(world, s.p); s.p.kind = s.k; occupy(world, s.p); } s.p.hp = s.hp; note14(s.p); }
+		guardPost.clear();
+		raid.wave = Math.max(0, raid.wave - 1); raid.phase = "lull"; raid.t = 9; raid.left = 0; raid.house = raid.houseMax; raid.warned = false;
+		v14.defendWave = raid.wave;
+		player.hp = player.maxHp; player.invuln = 2;
+		const spot = raidHouse(); if (spot) { const r = nearestRespawn(tileOf(spot.x, spot.y).tx, tileOf(spot.x, spot.y).ty + 2, 1, 1); player.x = r.x; player.y = r.y; }
+		openD13("Defend the farm", `${why} Justin hauls you up by the coat. "Again. They'll come the same way." The wave starts over.`, [{ label: "Back to the gate", id: "close" }]);
+	}
+	function defendWon14() {
+		v14.st = 5; v14.defendWave = 0; defendSnap = null;
+		guardPost.clear();
+		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
+		raid = null;
+		achieve("raid1");
+		raidsHeld += 1;
+		player.scrap += 8; grantXp(40);
+		pushLog("The last of them breaks for the road. The farm is secured. +8 iron, +40 XP.");
+		pushLog("Justin: \"You can use my bench. Build what you like inside the ring.\" The workbench and Build are open.");
+		sfx("level");
+		report14(0);
+		saveGame();
+	}
+	function v14Tick() {
+		if (!world || !player || mapId !== 0 || mode11 || inside) return;
+		if (v14.st === 2) {
+			const t = tileOf(player.x, player.y);
+			if (inFarm(t.tx, t.ty)) {
+				v14.st = 3;
+				pushLog("A man with a carbine steps out from the stakes. \"That's far enough.\"");
+				const j = world.npcs.find((n) => n.role === "justin");
+				if (j) openTalk(j);
+				saveGame(); sync(true);
+			}
+		}
+	}
+	function v14Talk(role) {
+		if (role !== "justin" || ok14()) return null;
+		if (v14.st === 4) return { speaker: "Justin", text: "Get on the gate! Shoot what comes over the stakes.", choices: [{ label: "Going", id: "close" }] };
+		if (v14.st >= 3 && snow <= 0) return { speaker: "Justin", text: "Justin. My wife Sarah, my kids in the house. We lost hens and a gas can to the road last week, so you'll forgive the rifle. You saw the stakes. Half of them are down. First snow tonight and the stove's down to kindling. Bring three armloads of wood off the pile by the barn and we'll talk about you staying.", choices: [{ label: "I'll bring the wood", id: "snow-accept" }, { label: "I'll go", id: "close" }] };
+		return null;
+	}
+	function hud14() {
+		if (!player) return null;
+		const t = mapId === 0 ? (v14.st < 3 ? STAGE_TEXT[v14.st] : v14.st === 4 ? STAGE_TEXT[4] : "") : "";
+		let craft = null;
+		if (craftOpen) {
+			const tier = v14.bench;
+			craft = { tier, up: BENCH_UP[tier] ? Object.entries(BENCH_UP[tier]).map(([m, n]) => ({ m: MAT_NAME[m], n, have: mat14(m) })) : null, canUp: !!BENCH_UP[tier] && canPay14(BENCH_UP[tier]),
+				mats: Object.keys(MAT_NAME).map((m) => ({ m: MAT_NAME[m], have: mat14(m) })),
+				list: CRAFT14.map((r) => ({ id: r.id, name: GEAR[r.makes]?.name ?? r.makes, qty: r.qty, tier: r.tier, group: r.group, locked: r.tier > tier, can: r.tier <= tier && canPay14(r.cost), need: Object.entries(r.cost).map(([m, n]) => ({ m: MAT_NAME[m], n, have: mat14(m) })), def: GEAR[r.makes]?.def ?? 0, atk: GEAR[r.makes]?.atk ?? 0 })) };
+		}
+		return { st: v14.st, text: t, secured: ok14(), craft, flip: buildFlip, tool: buildTool, damaged: world && mapId === 0 ? damaged14().length : 0 };
+	}
+	function craft14(id) {
+		const r = CRAFT14.find((x) => x.id === id);
+		if (!r || !player) return;
+		if (r.tier > v14.bench) { pushLog(`That wants a tier ${r.tier} bench.`); sync(true); return; }
+		if (!canPay14(r.cost)) { pushLog(`Short: needs ${costText(r.cost)}.`); sfx("click"); sync(true); return; }
+		pay14(r.cost);
+		giveItem(r.makes, r.qty);
+		train("mechanics", 3);
+		pushLog(`You make ${r.qty > 1 ? `${r.qty} × ` : ""}${GEAR[r.makes].name}.`);
+		sfx("build"); saveGame(); sync(true);
+	}
+	function benchUp14() {
+		const cost = BENCH_UP[v14.bench];
+		if (!cost) return;
+		if (!canPay14(cost)) { pushLog(`The next bench wants ${costText(cost)}.`); sync(true); return; }
+		pay14(cost); v14.bench += 1;
+		pushLog(v14.bench === 2 ? "You bolt a vise and a grinder to the bench. Tier 2." : "A forge pot and a drill press. Tier 3.");
+		sfx("level"); saveGame(); sync(true);
+	}
+	/** Build tool on a tile: pick up or repair a piece you placed. Returns true when it used the tap. */
+	function buildTap14(tile) {
+		if (buildTool === "place") return false;
+		const p = world.props.find((q) => q.tx === tile.tx && q.ty === tile.ty && (q.p14 || q.f14) && q.kind !== "workbench");
+		if (!p) { pushLog("Nothing of yours there."); return true; }
+		if (buildTool === "repair") { repairOne14(p); return true; }
+		if (!p.p14) { pushLog("That's part of Justin's ring. Repair it instead."); return true; }
+		const piece = PIECES.find((x) => x.kind === p.kind);
+		if (piece) give14(piece.cost, .5);
+		vacate(world, p); world.props = world.props.filter((q) => q !== p);
+		v14.placed = v14.placed.filter((q) => !(q.tx === p.tx && q.ty === p.ty));
+		pushLog(`Picked up. Half the stock back.`);
+		sfx("gather"); saveGame(); sync(true);
+		return true;
+	}
+	function paintHp14(pt, H, f) {
+		const w = 34 * zoom, y = pt.sy - H * .9;
+		ctx.fillStyle = "rgba(20,16,12,.75)"; ctx.fillRect(pt.sx - w / 2, y, w, 5 * zoom);
+		ctx.fillStyle = f > .5 ? "#8fbf6a" : f > .2 ? "#e0b050" : "#d0644a"; ctx.fillRect(pt.sx - w / 2, y, w * Math.max(0, f), 5 * zoom);
+	}
+	function v14Choice(id) {
+		if (id === "v14-repair-all") { dialogue = null; phase = "play"; repairAll14(); return true; }
+		return false;
+	}
 	// ---- workbench: repair, patch, dye
 	function benchMenu() {
 		const pieces = armorPieces();
@@ -4314,6 +4731,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (npc.role === "cal") jackMet = true;
 			if (npc.role === "sarah") restockKitchen();
 			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002), talkState());
+			const v14x = v14Talk(npc.role);
+			if (v14x) { dialogue = v14x; phase = "dialogue"; sync(true); return; }
 			const q10x = q10Talk(npc.role, q10, snow >= 3, !!raid);
 			if (q10x?.replace) Object.assign(line, q10x.replace);
 			else if (q10x?.add) line.choices = [...line.choices.slice(0, -1), ...q10x.add, ...line.choices.slice(-1)];
@@ -5536,6 +5955,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function useFarm(prop) {
 		if (!player) return;
+		if (ART14.has(prop.kind)) return v14Use(prop);
 		if (prop.kind === "press") {
 			pushLog("The press still smells of apples.");
 			return;
@@ -5966,8 +6386,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (prop.hp == null) prop.hp = DEF_HP[prop.kind] ?? 30;
 		prop.hp -= dmg;
 		prop.flash = .12;
+		if (prop.f14) note14(prop);
 		if (prop.hp > 0) return;
+		if (prop.kind === broken || prop.kind === "chest" || prop.kind === "rainbarrel" || prop.kind === "spikes") {
+			vacate(world, prop); world.props = world.props.filter((q) => q !== prop);
+			v14.placed = v14.placed.filter((q) => !(q.tx === prop.tx && q.ty === prop.ty));
+			pushLog("A piece of the camp is smashed flat.");
+			return;
+		}
+		if (isWall14(prop.kind)) prop.was14 = prop.kind;
+		vacate(world, prop);
+		prop.open = false;
 		prop.kind = broken;
+		occupy(world, prop);
+		if (prop.f14) note14(prop);
 		prop.hp = 0;
 		prop.burn = 0;
 		pushLog("A defense gives way.");
@@ -6328,6 +6760,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dy = player.y - fromY;
 		const m = Math.hypot(dx, dy) || 1;
 		nudge(player, dx / m * 16, dy / m * 16);
+		if (player.hp <= 0 && raid?.defend) { defendLost14("You go down at the gate."); sync(true); return; }
 		if (player.hp <= 0 && raid) {
 			player.hp = Math.max(1, Math.ceil(player.maxHp * .5));
 			player.invuln = 2;
@@ -6662,6 +7095,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.hurt = Math.max(0, player.hurt - dt);
 		reach = Math.max(0, reach - dt);
 		swingAnim = Math.max(0, swingAnim - dt);
+		v14Tick();
 		if (edges.build) {
 			buildOpen = !buildOpen;
 			if (buildOpen) {
@@ -7083,7 +7517,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					for (const p of world.props) {
 						if (!BROKEN[p.kind] || String(p.kind).endsWith("-x")) continue;
 						const c = propCenter(p);
-						if (Math.hypot(c.x - enemy.x, c.y - enemy.y) > 54) continue;
+						if (Math.hypot(c.x - enemy.x, c.y - enemy.y) > (isWall14(p.kind) || p.kind === "sandbags" ? 96 : 54)) continue;
 						const ram = enemy.variant === "armor" || enemy.variant === "brute" || enemy.variant === "atv" ? 9 : 4;
 						hurtProp(p, ram);
 						enemy.cooldown = .75;
@@ -7093,6 +7527,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 				if (enemy.pathT <= 0 || !enemy.path) {
 					enemy.path = pathTo(world, enemy.x, enemy.y, goalX, goalY);
+					if (!enemy.path && enemy.raid) { const sg = siegeGoal14(enemy); if (sg) enemy.path = pathTo(world, enemy.x, enemy.y, sg.x, sg.y); }
 					enemy.pathT = .45;
 				}
 				if (enemy.path) {
@@ -7502,7 +7937,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return Math.min(6, 3 + Math.floor((n - 1) / 3) + moon13().waves);
 	}
 	function raidCanStart() {
-		if (!player || !world || raid || inside || snow < 3 || mapId !== 0) return false;
+		if (!player || !world || raid || inside || snow < 3 || mapId !== 0 || !ok14()) return false;
 		return nightShade(clock) > .22;
 	}
 	let raidHudPct = 100;
@@ -7575,10 +8010,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const fh = raidHouse();
 		if (!fh) { endRaid(false, "The raid breaks off."); return; }
 		// v13.2 fix: the siege of Harmony runs till it's decided; dawn used to end it early and count as a loss
-		if (nightShade(clock) < .12 && !raid.siege) {
+		if (nightShade(clock) < .12 && !raid.siege && !raid.defend) {
 			endRaid(!inside, inside ? "Dawn. You sat it out behind the door. The raiders drift off with what they could carry." : "Dawn comes up grey over the orchard. They pull back to the road.");
 			return;
 		}
+		if (raid.house <= 0 && raid.defend) { defendLost14("They break the farmhouse door."); return; }
 		if (raid.house <= 0) {
 			endRaid(false, "The farmhouse door splinters. Justin fires the last shells and they scatter with the woodpile and a sack of apples.");
 			return;
@@ -7598,6 +8034,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				raid.wave += 1;
 				raid.phase = "wave";
 				raid.left = 2 + raid.wave + Math.floor(raid.night / 2);
+				if (raid.defend) { v14.defendWave = raid.wave - 1; defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp })); }
 				raid.spawnT = 0;
 				pushLog(`Wave ${raid.wave} of ${raid.waves}.`);
 				sync(true);
@@ -7626,6 +8063,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				// v13.2 fix: on siege night the Collector must walk in before the night can be won
 				if (raid.siege && !raid.collector) { v13SiegeTick(0); return; }
 				if (raid.siege && !w13.main.collectorDown && world.enemies.some((e) => !e.dead && e.variant === "collector")) return;
+				if (raid.defend) { defendWon14(); return; }
 				endRaid(true, "The last of them breaks for the road.");
 				return;
 			}
@@ -7688,6 +8126,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("level");
 		} else pushLog(`The farm still stands. You keep what you took off them. Try again tomorrow night.`);
 		q10AfterRaid();
+		if (!wasSiege) report14(n);
 		// morning comes
 		const span = DAY_LENGTH_SEC;
 		const into = ((clock % span) + span) % span;
@@ -7728,7 +8167,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const night = (dark && onFarm && !!raid) || (!!raid && !inside);
 		const raiders = world.enemies.filter((e) => !e.dead && isRaider(e));
 		// (v29 fix) this ran before `raiders` existed: a TDZ crash that froze the game on raid night
-		if (raid) stepRaidNight(dt, raiders);
+		if (raid) { spikesTick14(dt, raiders); stepRaidNight(dt, raiders); }
 		if (!world || !player) return;
 		if (night && tractorReady) {
 			const tractor = world.props.find((p) => p.kind === "tractor");
@@ -7786,7 +8225,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				variant: boss.variant, name: boss.name, slow: 0, death: 0
 			});
 		}
-		if (!raid && raidClock <= 0 && raiders.length < cap) {
+		if (!raid && raidClock <= 0 && raiders.length < cap && !(mapId === 0 && v14.st < 99)) {
 			raidClock = 14 + Math.random() * 8;
 			const pool = ["scout"];
 			if (raidNight >= 2) pool.push("jumper", "scout");
@@ -8594,6 +9033,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.fillRect(tile.tx * 64, tile.ty * 64, spec.w * 64, spec.h * 64);
 		}
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		if (buildOpen && buildTool === "place" && ART14.has(RECIPES[recipe].kind)) {
+			const tile = hoverTile();
+			const k = RECIPES[recipe].kind;
+			const img = images.get(PROP_SPEC[k].image);
+			if (img) {
+				const raw = worldToScreen((tile.tx + .5) * 64, (tile.ty + .5) * 64, drawCamX, drawCamY);
+				const pt = zoomPoint(raw.sx, raw.sy);
+				const H = PROP_SPEC[k].drawH * zoom, W = H * img.width / img.height;
+				ctx.save(); ctx.globalAlpha = .55; ctx.translate(pt.sx, pt.sy); if (buildFlip) ctx.scale(-1, 1);
+				ctx.drawImage(img, -W / 2, -H * (1 - anchorOf(k)), W, H); ctx.restore();
+			}
+		}
 		const draws = [];
 		for (const prop of world.props) {
 			const t = prop.tx + prop.ty;
@@ -8675,6 +9126,29 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					} else if ((prop.kind === "car-sedan" || prop.kind === "car-truck") && vehicleArt(prop)) {
 						const va = vehicleArt(prop);
 						blit(va.name, c.x, c.y, va.h, false, 0, 0, drawCamX, drawCamY);
+					} else if (ART14.has(prop.kind) && images.get(spec.image)) {
+						let name = prop.kind === "firering" && prop.lit14 ? "v14/firering-lit" : spec.image;
+						if ((isWall14(prop.kind)) && (prop.hp ?? 99) < (PIECE_HP[prop.kind] ?? 60) * .5 && images.get(`${name}-dmg`)) name = `${name}-dmg`;
+						const img = images.get(name);
+						const raw = worldToScreen(c.x, c.y, drawCamX, drawCamY);
+						const pt = zoomPoint(raw.sx, raw.sy);
+						const dh = img.height / 2 * zoom * (img.height / (img.naturalH || img.height));
+						const sc = (spec.drawH / (img.height / 2));
+						const H = spec.drawH * zoom, W = H * img.width / img.height;
+						const up = anchorOf(name.slice(4));
+						const a0 = ctx.globalAlpha;
+						if (isGate14(prop.kind) && prop.open) ctx.globalAlpha = a0 * .4;
+						if ((prop.flash || 0) > 0) ctx.globalAlpha = a0 * .7;
+						ctx.save();
+						ctx.translate(pt.sx, pt.sy);
+						if (prop.flip14) ctx.scale(-1, 1);
+						ctx.imageSmoothingEnabled = true;
+						ctx.drawImage(img, -W / 2, -H * (1 - up), W, H);
+						ctx.restore();
+						ctx.globalAlpha = a0;
+						void dh; void sc;
+						if (prop.kind === "firering" && prop.lit14 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 6, 30, false, 0, 0, drawCamX, drawCamY);
+						if ((prop.f14 || prop.p14) && buildOpen && (prop.hp ?? 0) < maxHp14(prop)) paintHp14(pt, H, (prop.hp ?? 0) / maxHp14(prop));
 					} else blit(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
@@ -9418,9 +9892,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			consider(c.x, c.y, PROP_SPEC[p.kind].drawH * .72, "tree", p.id);
 		}
 		for (const p of world.props) {
-			if (p.kind !== "press" && p.kind !== "crates" && p.kind !== "orchard" && p.kind !== "maple") continue;
+			if (!(p.kind === "press" || p.kind === "crates" || p.kind === "orchard" || p.kind === "maple" || ART14.has(p.kind))) continue;
 			const c = propCenter(p);
-			consider(c.x, c.y, PROP_SPEC[p.kind].drawH * .8, "prop", p.id);
+			consider(c.x, c.y, Math.max(40, PROP_SPEC[p.kind].drawH * .8), "prop", p.id);
 		}
 		for (const p of world.props) {
 			if (p.kind !== "rock") continue;
@@ -9472,8 +9946,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const p = world.props.find((pp) => pp.id === picked.id);
 			const c = propCenter(p);
 			const near = Math.hypot(c.x - player.x, c.y - player.y) < 72;
-			if (p.kind === "press" || p.kind === "crates" || p.kind === "orchard" || p.kind === "maple") {
-				if (near) useFarm(p);
+			if ((p.kind === "press" || p.kind === "crates" || p.kind === "orchard" || p.kind === "maple" || ART14.has(p.kind))) {
+				if (near || ART14.has(p.kind) && Math.hypot(c.x - player.x, c.y - player.y) < 110) useFarm(p);
 				else intent = {
 					kind: "walk",
 					x: c.x,
@@ -9742,6 +10216,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		choose(id) {
 			applyChoice(id);
+		},
+		v14(cmd, arg) {
+			if (cmd === "craft") craft14(arg);
+			else if (cmd === "benchUp") benchUp14();
+			else if (cmd === "closeCraft") { craftOpen = false; sync(true); }
+			else if (cmd === "openCraft") { if (ok14()) { craftOpen = true; sync(true); } }
+			else if (cmd === "rotate") { buildFlip = !buildFlip; sync(true); }
+			else if (cmd === "tool") { buildTool = arg; sync(true); }
+			else if (cmd === "repairAll") repairAll14();
+			return hud14();
 		},
 		selectRecipe(index) {
 			recipe = index;
@@ -10226,6 +10710,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takeLoot
 	};
 	window.__controlsTest = {
+		v14: () => ({ ...v14, craftOpen, buildFlip, buildTool, raid: raid ? { defend: !!raid.defend, wave: raid.wave, waves: raid.waves, phase: raid.phase, house: raid.house } : null, snow, mapId }),
+		v14Set: (patch) => { Object.assign(v14, patch); sync(true); },
+		v14Props: () => world ? world.props.filter((p) => ART14.has(p.kind) || p.f14 || p.p14).map((p) => ({ id: p.id, kind: p.kind, tx: p.tx, ty: p.ty, hp: p.hp, f14: p.f14 ?? null, p14: !!p.p14, open: !!p.open, flip: !!p.flip14, lit: !!p.lit14 })) : [],
+		v14Use: (id) => { const p = world?.props.find((q) => q.id === id); if (p) v14Use(p); },
+		v14Hurt: (id, d) => { const p = world?.props.find((q) => q.id === id); if (p) hurtProp(p, d); },
+		v14Cmd: (cmd, arg) => api.v14(cmd, arg),
+		v14Build: (index, tx, ty) => { recipe = index; buildOpen = true; hoverX = (tx + .5) * 64; hoverY = (ty + .5) * 64; tryBuild(); },
+		v14Report: () => { report14(raidNight); },
+		v14Defend: () => startDefend14(),
+		hurtPlayer: (n) => { if (player) { player.invuln = 0; hurtPlayer(n, player.x + 10, player.y); } },
+		recipes: () => RECIPES.map((r) => ({ kind: r.kind, label: r.label, v14: !!r.v14 })),
+		freeFarmTile: () => { if (!world) return null; const f = tileOf(farmCenter().x, farmCenter().y); for (let r = 3; r < 9; r++) for (let y = f.ty - r; y <= f.ty + r; y++) for (let x = f.tx - r; x <= f.tx + r; x++) if (inFarm(x, y) && footprintFree(world, x, y, 1, 1) && world.tiles[y * MAP_W + x] !== 2) return { tx: x, ty: y }; return null; },
+		toggleBuild: (on) => { buildOpen = !!on; sync(true); },
+		save: () => saveGame(),
+		v14WinWave: () => { if (!raid) return; for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.left = 0; },
+
 		getYaw: () => lastYaw,
 		getSpeed: () => lastSpeed,
 		getPos: () => ({
