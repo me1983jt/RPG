@@ -13,7 +13,7 @@ for (const [tag, url] of [["before", "http://127.0.0.1:8113/"], ["after", "http:
   await page.addInitScript(() => { window.__v13Quiet = true; window.__v14Skip = true; localStorage.setItem("maine-rpg-hud", JSON.stringify({ quest: true, health: true, aim: true, mini: true })); });
   await page.goto(url, { waitUntil: "networkidle" }); await page.waitForTimeout(2500);
   await page.fill("#wanderer-name", "Justin");
-  await page.getByRole("button", { name: /Hunter/ }).click(); await page.getByRole("button", { name: "Next" }).click(); await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: /Hunter/ }).click(); await page.getByRole("button", { name: "Next" }).click(); for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "+" }).nth(4).click(); await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: /Keen eye/ }).click(); await page.getByRole("button", { name: /Begin as/ }).click();
   await page.waitForTimeout(3500);
   await page.evaluate(() => { const c = window.__controlsTest; c.setHour?.(12); for (let i = 0; i < 6; i++) c.choose?.("close"); });
