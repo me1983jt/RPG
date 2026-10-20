@@ -4749,7 +4749,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { crouch: l1.crouch, noise: Math.round(l1.noise), auto: l1.auto, stick: l1.stick, rows: player ? gridRows(player) : 0, bagLv: player?.bagLv ?? 0, small: !!player?.small, drop: dropHud(), store: storeHud(), hard: !!w13.hard };
 	}
 	// ======== v14 world map (hex travel between local areas) ========
-	const legacyTravel = () => typeof window !== "undefined" && !!window.__v14Skip;
+	// forced encounters (__wmEnc / __wmKind / __wmForce) always use the world map, even with __v14Skip
+	const legacyTravel = () => typeof window !== "undefined" && !!window.__v14Skip && window.__wmEnc == null && !window.__wmKind && !window.__wmForce;
 	let wmAcc = 0;
 	function wmState() {
 		if (!v14.map) { const l = locOfMap(mapId); v14.map = { q: l.q, r: l.r, fog: [], path: [], from: null, warn: "", lastNight: -1, enc: null }; }
@@ -5930,6 +5931,36 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * chest, hands, head over the body, same grid as the body sheet. Missing layers are skipped. Player only. */
 	const ARMOR_ORDER = [["feet", "feetId"], ["legs", "legsId"], ["chest", "coatId"], ["hands", "handsId"], ["head", "headId"]];
 	const TIER_OF = { poor: 1, standard: 2, good: 3, rare: 4 };
+	/** v14.1 paper doll for any humanoid: shared slots (head, chest, legs, feet, hands, back), drawn bottom-up, from
+	 * sheets in the same 88x124 frame layout as the body (4 rows SW, NW, NE, SE; old 8-row sheets still work).
+	 * Per body type: v2/armor/{man|woman|kid}/{slot}-{tier}-{act}.png; the man set falls back to the player's
+	 * v2/armor/{slot}-{tier}-{act}.png. Only the player has it on today; set body.doll = true to turn it on. */
+	const DOLL_SLOTS = [["feet", "feetId"], ["legs", "legsId"], ["chest", "coatId"], ["hands", "handsId"], ["back", "backId"], ["head", "headId"]];
+	const DOLL_TYPES = ["man", "woman", "kid"];
+	function dollTypeOf(who) {
+		if (who === player) return "man";
+		if (who.dollType && DOLL_TYPES.includes(who.dollType)) return who.dollType;
+		if (who.role === "cyndal" || who.role === "loki") return "kid";
+		return /sarah|mira|nora|adele|sera|ruth|mae|etta/.test(who.role ?? "") ? "woman" : "man";
+	}
+	function dollLayerNames(who, act) {
+		if (!who || !(who === player || who.doll)) return [];
+		const type = dollTypeOf(who), out = [];
+		for (const [piece, field] of DOLL_SLOTS) {
+			const g = who[field] && GEAR[who[field]];
+			if (!g) continue;
+			const tier = TIER_OF[g.quality] ?? 1;
+			for (const base of [`v2/armor/${type}/${piece}-${tier}`, ...(type === "man" ? [`v2/armor/${piece}-${tier}`] : [])]) {
+				const n = images.get(`${base}-${act}`) ? `${base}-${act}` : (act === "idle" || act === "run") && images.get(`${base}-walk`) ? `${base}-walk` : "";
+				if (n) { out.push(n); break; }
+			}
+		}
+		return out;
+	}
+	/** Draw a character's doll layers over its body blit (NPCs, raiders, family). */
+	function paintDoll(who, act, frame, dir, x, y, drawH, dcx, dcy, lunge = false) {
+		for (const n of dollLayerNames(who, act)) if (images.get(n)) blit(n, x, y, drawH, true, frame, dir, dcx, dcy, lunge);
+	}
 	function armorLayerNames(act) {
 		if (!player) return [];
 		const out = [];
@@ -5982,7 +6013,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const raw = worldToScreen(player.x, player.y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
 		const lean = lunge ? lungeOf(dir) : { x: 0, y: 0 };
-		const cols = sheetCols(img), rows = 8;
+		const cols = sheetCols(img), g141 = Math.round(img.height / (img.width / cols * 124 / 88)), rows = g141 === 6 || g141 === 4 ? g141 : 8; img.diag4 = rows === 4;
 		const sw = img.width / cols, sh = img.height / rows;
 		const fcols = sheetCols(bimg);
 		let frac = bimg.foot ?? .92;
@@ -7014,6 +7045,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pile.shownAt = performance.now() + 1150;
 		}
 		pushLog("Search the body.");
+	}
+	/** Which way a body falls: away from its facing side, so east-facing bodies fall right. */
+	function deadTilt(dir, id) {
+		const d = dir ?? 1;
+		if (d === 5 || d === 6 || d === 7) return 1;
+		if (d === 1 || d === 2 || d === 3) return -1;
+		return (id ?? 0) % 2 ? 1 : -1;
 	}
 	function markDead(enemy, xp) {
 		if (!enemy || enemy.dead) return;
@@ -8595,6 +8633,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (k === "marcel" && talkNpc === body && dialogue && has("talk")) { act = "talk"; frame = Math.floor(now / 260) % 4; }
 		else if (has("idle")) { act = "idle"; frame = Math.floor((now + seed) / 340) % 4; }
 		blit(`v2/${k}-${act}`, body.x, body.y, folkHeight(body), true, frame, dir, camX, camY);
+		paintDoll(body, act, frame, dir, body.x, body.y, folkHeight(body), camX, camY);
 		return true;
 	}
 	/** v12: gw14 tree variants (pine2/3, spruce2/3 …) mixed in by a fixed per-tile hash; a third keep the old art. */
@@ -10029,10 +10068,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const deadName = `${beastSheet(enemy)}-dead`;
 						const dimg = images.get(deadName);
 						if (dimg) {
-							if (TALL_COMBAT.has(deadName)) {
+							if (TALL_COMBAT.has(deadName) || deadName.startsWith("v2/")) {
 								const u = 1 - Math.max(0, enemy.death) / 1.15;
 								const dn = sheetCols(dimg);
-								blit(deadName, enemy.x, enemy.y, h, true, Math.max(0, Math.min(dn - 1, Math.floor(u * dn))), enemy.dir ?? 0, drawCamX, drawCamY);
+								// v14.1: the v2 death sheets only sag at the knees; after them the body tips over and lands flat
+								const v2d = deadName.startsWith("v2/");
+								const fall = v2d ? Math.max(0, (u - .45) / .55) : 0, side = deadTilt(enemy.dir, enemy.id);
+								blit(deadName, enemy.x, enemy.y, h, true, Math.max(0, Math.min(dn - 1, Math.floor(Math.min(1, u / .45) * dn))), enemy.dir ?? 0, drawCamX, drawCamY, false, 0, side * 1.35 * fall * fall, 1 - .2 * fall);
 							} else if (stripFrames(deadName, dimg) > 1) {
 								const u = 1 - Math.max(0, enemy.death) / 1.15;
 								const f = Math.max(0, Math.min(3, Math.floor(u * 4)));
@@ -10076,10 +10118,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const tilt = pile.dir === 1 || pile.dir === 2 || pile.dir === 3 ? -1.2 : 1.2;
 					const deadName = pile.body ? `${pile.sheet || beastSheet({ kind: pile.body, id: pile.id })}-dead` : "";
 					const dimg = deadName ? images.get(deadName) : null;
-					if (dimg && TALL_COMBAT.has(deadName)) {
+					if (dimg && (TALL_COMBAT.has(deadName) || deadName.startsWith("v2/"))) {
+						// v14.1: a searchable body gets a loot ring
+						if (hasLoot(pile)) { const rr = worldToScreen(pile.x, pile.y, drawCamX, drawCamY), mm = zoomPoint(rr.sx, rr.sy); ctx.save(); ctx.strokeStyle = `rgba(232,196,92,${.55 + .3 * Math.sin(performance.now() / 300)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(mm.sx, mm.sy, 30 * zoom, 13 * zoom, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
 						const dummy = { kind: pile.body, id: pile.id, variant: (pile.sheet || "").startsWith("boss-") || (pile.sheet || "").startsWith("raider-") && !["raider-gray", "raider-blue"].includes(pile.sheet) ? (pile.sheet || "").split("-")[1] : undefined };
 						const v2p = (pile.sheet || "").startsWith("v2/");
-						blit(deadName, pile.x, pile.y, v2p ? realH(pile.sheet, 70) : beastH(dummy), true, v2p ? sheetCols(dimg) - 1 : 3, pile.dir ?? 0, drawCamX, drawCamY);
+						blit(deadName, pile.x, pile.y, v2p ? realH(pile.sheet, 70) : beastH(dummy), true, v2p ? sheetCols(dimg) - 1 : 3, pile.dir ?? 0, drawCamX, drawCamY, false, 0, v2p ? deadTilt(pile.dir, pile.id) * 1.35 : 0, v2p ? .8 : 1);
 					} else if (dimg && stripFrames(deadName, dimg) > 1) {
 						// last frame of the death strip: the body as it came to rest
 						const east = pile.dir >= 5 && pile.dir <= 7;
@@ -10379,8 +10423,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const xfStats = { n: 0 };
 	let occl141 = false, noShadow141 = false;
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
-		// v14.1: characters face only the 4 diagonals; a leftover cardinal facing draws its neighbouring diagonal
-		if (sheet && dir % 2 === 0 && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = [1, 1, 1, 3, 3, 5, 7, 7][dir] ?? 1;
+		// v14.1: characters use the 6 hex facings; a leftover N/S facing draws its neighbouring diagonal
+		if (sheet && (dir === 0 || dir === 4) && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = dir === 0 ? 1 : 3;
 		if (xfRec) xfRec.push([name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge, lift, tilt, flatten, flip]);
 		const img = images.get(name);
 		if (sheet && img && /^v2\/(bandit-[a-z]+|hollowed)-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
@@ -10418,8 +10462,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			rows = sheet ? sheetRowsOf(name) : 1;
 			const cols = sheetCols(img);
 			// v14.1: new character sheets carry 4 rows (SW, NW, NE, SE); 8-row sheets keep loading via their diagonal rows
-			if (sheet && img.diag4 == null) img.diag4 = rows === 8 && Math.round(img.height / (img.width / cols * 124 / 88)) === 4;
-			if (sheet && img.diag4) rows = 4;
+			// v14.1: new character sheets may carry 6 hex rows (NE, E, SE, SW, W, NW) or 4 diagonal rows; read the count off the height
+			if (sheet && img.rowsSeen == null) { const g = Math.round(img.height / (img.width / cols * 124 / 88)); img.rowsSeen = rows === 8 && (g === 6 || g === 4) ? g : 0; img.diag4 = img.rowsSeen === 4; }
+			if (sheet && img.rowsSeen) rows = img.rowsSeen;
 			sw = img.width / (strips ? 4 : cols);
 			sh = img.height / rows;
 			sx = frame % (strips ? 4 : cols) * sw;
@@ -11645,7 +11690,37 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lrTalk: (role) => { const n = world.npcs.find((q) => q.role === role); if (!n) return null; openTalk(n); return dialogue ? { text: dialogue.text, choices: dialogue.choices } : null; },
 		dialogChoices: () => (dialogue?.choices ?? []).map((c) => c.id),
 		l141Barrels: () => world.props.filter((q) => q.kind === "rainbarrel").map((q) => ({ tx: q.tx, ty: q.ty, n: barrel141(q).n })),
-		l141Fig: () => ({ ...figLog }),
+		/** v14.1 URL test harness (?test=wave3 | nightraid | worldmap&enc=caravan | guns): sets up a scenario with no console. */
+	testScenario: (name, opts = {}) => {
+		if (!world || !player) return "no game";
+		const give = (id, n = 1) => { const st = player.bag.find((q) => q.id === id); if (st) st.qty += n; else player.bag.push({ id, qty: n }); };
+		const m = /^wave(\d+)$/.exec(name);
+		if (name === "guns") {
+			for (const id of ["carbine-std", "revolver", "shotgun", "scoped", "winchester", "levergun"]) if (GEAR[id]) give(id);
+			give("shells", 60); player.weaponId = "carbine-std"; refreshGear(player); pushLog("Test: every gun and 60 shells.");
+		} else if (name === "nightraid" || m) {
+			player.wood += 40; player.stone += 30; player.scrap += 20; give("shells", 30);
+			if (v14.st < 5) v14.st = 5;
+			snow = Math.max(snow, 3); inside = null;
+			clock = Math.floor(clock / DAY_LENGTH_SEC) * DAY_LENGTH_SEC + (22 / 24) * DAY_LENGTH_SEC;
+			if (!inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty)) { const sp = nearestRespawn(FARM.tx, FARM.ty, 1, 1); player.x = sp.x; player.y = sp.y; }
+			startRaid();
+			if (m && raid) { const want = Math.max(1, Number(m[1])); for (let w = 1; w < want && raid; w++) { for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.wave = w; raid.phase = "lull"; raid.t = .5; raid.left = 0; } pushLog(`Test: raid at wave ${want}.`); }
+			else pushLog("Test: raid night starts now.");
+		} else if (name === "worldmap") {
+			window.__wmForce = 1;
+			if (opts.enc) { window.__wmKind = opts.enc; window.__wmEnc = 0; }
+			openWorldMap();
+			const st = wmState(); if (opts.enc) { st.path = hexPath([st.q, st.r], [st.q + 1, st.r], bikeBuilt()); }
+			pushLog(opts.enc ? `Test: world map, forced ${opts.enc} encounter on the next hex.` : "Test: world map.");
+		} else return "unknown test";
+		sync(true);
+		return "ok";
+	},
+	l141Fig: () => ({ ...figLog }),
+	l141Img: (n) => { const i = images.get(n); return i ? { w: i.width, h: i.height, cols: sheetCols(i), diag4: i.diag4 } : null; },
+	l141Piles: () => piles.map((p) => ({ title: p.title, body: p.body, sheet: p.sheet, folk: p.folk, loot: hasLoot(p) })),
+	l141Doll: () => ({ player: dollLayerNames(player, "walk"), npcs: (world?.npcs ?? []).map((n) => [n.role, dollTypeOf(n), !!n.doll]) }),
 	l141Lineup: () => {
 		const out = [];
 		const roles = ["justin", "sarah", "loki", "cyndal", "holt", "mira", "nora"];

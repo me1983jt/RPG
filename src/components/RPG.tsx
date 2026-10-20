@@ -248,7 +248,7 @@ export function RPG() {
     const t = window.setTimeout(() => setToastN(-toast.n), 3800);
     return () => window.clearTimeout(t);
   }, [toast?.n]);
-  const [trackerOpen, setTrackerOpen0] = useState(() => { try { const v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); if (typeof v.track === "boolean") return !v.track; } catch { /* none */ } return typeof window === "undefined" || window.innerHeight >= 500; });
+  const [trackerOpen, setTrackerOpen0] = useState(() => { try { const v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); if (typeof v.track === "boolean") return !v.track; } catch { /* none */ } return typeof window === "undefined" || (window.innerHeight >= 500 && !(window.innerWidth >= 1024 && window.innerWidth > window.innerHeight)); });
   // v14 collapsible HUD: quest, track, health, aim, mini. true = collapsed. Kept in localStorage.
   const [hcS, setHc] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); } catch { return {}; } });
   const saveHc = (next: Record<string, boolean>) => { setHc(next); try { localStorage.setItem("maine-rpg-hud", JSON.stringify(next)); } catch { /* private mode */ } };
@@ -373,6 +373,29 @@ export function RPG() {
       return { ...current, [stat]: next };
     });
   }
+
+  // v14.1 URL test harness: ?test=wave3 | nightraid | worldmap&enc=caravan | guns starts a game and sets the scene
+  useEffect(() => {
+    if (typeof location === "undefined") return;
+    const q = new URLSearchParams(location.search);
+    const test = q.get("test");
+    if (!test) return;
+    const w = window as unknown as Record<string, unknown>;
+    if (q.get("skip") !== "0") w.__v14Skip = true;
+    if (q.get("enc")) { w.__wmKind = q.get("enc"); w.__wmEnc = 0; }
+    let tries = 0;
+    const id = window.setInterval(() => {
+      tries += 1;
+      if (!apiRef.current || tries > 60) { if (tries > 60) window.clearInterval(id); return; }
+      window.clearInterval(id);
+      apiRef.current.begin("Tester", "fighter" as RoleId, { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye" as TraitId, "wool" as LookId, { hair: "black", coat: "", hat: "", trousers: true, boots: true, backstory: "hunter", hard: false });
+      window.setTimeout(() => {
+        const ct = (window as unknown as { __controlsTest?: { testScenario?: (n: string, o: Record<string, string>) => string } }).__controlsTest;
+        console.info("test harness:", test, ct?.testScenario?.(test, { enc: q.get("enc") ?? "" }));
+      }, 1800);
+    }, 250);
+    return () => window.clearInterval(id);
+  }, []);
 
   function startNew(): void {
     if (!trait || pointsLeft !== 0) return;

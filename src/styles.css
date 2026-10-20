@@ -111,3 +111,9 @@
   .menu-cols { column-count: 2; column-gap: 1rem; column-fill: balance; }
   .menu-cols > * { break-inside: avoid; }
 }
+
+/* v14.1: on landscape laptops/Chromebooks (1366x768 and up) the quest box is a slim card; the tracker starts collapsed */
+@media (orientation: landscape) and (min-width: 1024px) {
+  [data-hud="quest"] { max-width: 17rem; zoom: 0.84; }
+  [data-hud="quest"] [data-testid="main-tracker"] .text-muted { display: none; }
+}
