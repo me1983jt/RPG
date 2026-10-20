@@ -4378,7 +4378,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (let i = 0; i < 3; i++) {
 			const dist = 260 + i * 380;
 			const s = freeSpot(player.x + dx / dm * dist, player.y + dy / dm * dist);
-			const items = fresh ? run.tiers[i].map(([id, qty]) => ({ id, qty })) : i === 0 ? [{ id: "junk", qty: 1 }] : [];
+			// the Ervin back office stays locked (and stocked) until Dale's key opens it
+			const lockedOffice = run.id === "gas" && i === 2 && !l1.sqf.office;
+			const items = fresh || lockedOffice ? run.tiers[i].map(([id, qty]) => ({ id, qty })) : i === 0 ? [{ id: "junk", qty: 1 }] : [];
 			if (items.length) leavePile(s.x, s.y, `${run.name}: ${rooms[i]}`, items, 0, "", 0);
 			if (i === 0 && run.id === "truck") placeAround14("wreck", tileOf(s.x, s.y).tx + 1, tileOf(s.x, s.y).ty - 1, { loot141: true });
 			if (i === 2 && fresh) {
@@ -4405,7 +4407,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const sq = l1.sq[run.id] ?? 0;
 		pushLog(lore.desc);
 		const my = piles.filter((q) => q.title.startsWith(run.name + ":"));
-		my.forEach((q, i) => { q.note = i; });
+		my.forEach((q) => { const i = LOOT_ROOMS[run.id].indexOf(q.title.slice(run.name.length + 2)); if (i >= 0) q.note = ({ gas: [2, 0, 1] }[run.id] ?? [0, 1, 2])[i]; q.room = i; });
 		const side = (k, dist) => ({ x: s0.x + (s2.x - s0.x) * dist + (s2.y - s0.y) * .45, y: s0.y + (s2.y - s0.y) * dist - (s2.x - s0.x) * .45 });
 		if (run.id === "gas") {
 			lrNpc("lr-tammy", "Tammy Bouchard", { x: s0.x - 90, y: s0.y + 60 });
@@ -4428,7 +4430,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const run = LOOT_RUNS.find((r) => pile.title.startsWith(r.name + ":"));
 		if (!run) return false;
 		// Dale's key: the back office door is steel and locked
-		if (run.id === "gas" && pile.note === 2 && !l1.sqf.office) {
+		if (run.id === "gas" && pile.room === 2 && !l1.sqf.office) {
 			if (!player.bag.some((s) => s.id === "dalekey")) { openD13("Back office", "Steel door, steel frame, a deadbolt. Dale took the key home to Bingham. You aren't getting through this without it.", [{ label: "Leave it", id: "close" }]); return true; }
 			l1.sqf.office = true; takeItem("dalekey", 1);
 		}
@@ -6399,6 +6401,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const ITEM_ICON = {
 		berries: "apple", mushrooms: "apple", chowder: "smokedfish", venisonsteak: "meat", pie: "apple", coffee: "cider", tonic: "dandelion", trout: "smokedfish",
 		snare: "wire", grokclaw: "antlers",
+		// v14.1 stand-in icons until item art lands at public/game/items/<id>.png
+		levergun: "winchester", dalekey: "lockpick", roycap: "toque", spirits: "cider", "bag-sack": "backpack", "bag-hide": "sling", "bag-frame": "packframe",
 		gas: "fuel", carburetor: "oil", chain: "wire", engine: "packframe", gastank: "fuel", sparkplug: "matches", tire: "pelt",
 		medicine: "kit", bone: "antlers", steeltrap: "wire", greens: "dandelion", water: "cider",
 		"carbine-std": "carbine", "carbine-good": "carbine", scoped: "scoped",
@@ -11478,6 +11482,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		l141Hard: (on) => { w13.hard = !!on; },
 		l141Strike: (id) => { const e = world.enemies.find((q) => q.id === id); if (!e) return null; const hp = e.hp; player.cooldown = 0; aim = "chest"; const r0 = Math.random; Math.random = () => 0; try { strikeEnemy(e); } finally { Math.random = r0; } return { before: hp, after: e.hp, dead: !!e.dead }; },
 		l141Use: (tx, ty) => { const p = world.props.find((q) => q.tx === tx && q.ty === ty); if (p) v14Use(p); return p ? p.kind : null; },
+		lrTalk: (role) => { const n = world.npcs.find((q) => q.role === role); if (!n) return null; openTalk(n); return dialogue ? { text: dialogue.text, choices: dialogue.choices } : null; },
+		dialogChoices: () => (dialogue?.choices ?? []).map((c) => c.id),
 		l141Barrels: () => world.props.filter((q) => q.kind === "rainbarrel").map((q) => ({ tx: q.tx, ty: q.ty, n: barrel141(q).n })),
 		l141Props: () => world.props.filter((q) => q.p14).map((q) => ({ kind: q.kind, tx: q.tx, ty: q.ty })),
 		l141Give: (id, n) => { const st = player.bag.find((q) => q.id === id); if (st) st.qty += n; else player.bag.push({ id, qty: n }); },

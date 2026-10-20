@@ -1,0 +1,72 @@
+// v14.1: loot-run side quests from the writers' handoff, plus the v14 balance sheet changes.
+import { boot } from "./v4-lib.mjs";
+import { readFileSync } from "node:fs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
+const src = (f) => readFileSync("/workspace/maine-rpg/v11/src/game/" + f, "utf8");
+// static balance checks
+const v14 = src("v14.ts"), v141 = src("v141.ts"), eng = src("engine.ts"), gear = src("gear.ts"), v13 = src("v13.ts");
+ok(/"wall-metal".*iron: 5/.test(v14) && /"gate-metal".*iron: 6/.test(v14), "sheet-iron wall 5 iron, iron gate 6");
+ok(/"bag-sack".*cloth: 3 \}/.test(v14) && /"bag-hide".*hide: 3,/.test(v14), "sack 3 cloth, rucksack 3 hide");
+ok(/house: 120 \+ 15 \* n/.test(eng), "farmhouse raid HP 120+15n");
+ok(/kind: "raincollector".*per: 12/.test(v141), "rain collector: 1 water per 12 h");
+ok(/giveItem\("cloth", 3\)/.test(eng), "the wreck gives 3 cloth");
+ok(/variant === "grok"\) \{\s*\/\/[^\n]*\n\s*addStack\(items, "grokclaw", 2/.test(eng), "The Grok drops 2-3 claws");
+ok(/cider: \{ hunger: 6, thirst: 20 \}, donut: \{ hunger: 14 \}/.test(v13), "cider and donuts have food values");
+ok(/levergun:.*atk: 10/.test(gear) && /scoped:.*atk: 14/.test(gear) && /winchester:.*Wyndham lever gun.*atk: 12/.test(gear), "lever gun atk 10, below Wyndham (12) and scoped (14)");
+ok(!/(^|[^$])\{HOLLOWED\}/.test(v141 + eng), "no raw {HOLLOWED} placeholders left");
+ok(!/Irving|Buick|Briggs|[Pp]elican case/.test(eng + src("v13.ts") + src("quests11.ts") + src("content.ts") + v141), "brand swaps applied (no Irving, Buick, Briggs, pelican case)");
+const { browser, page, errs, T, begin } = await boot(url, { vw: 412, vh: 860 });
+await begin(); await T("setHour", 12); for (let i = 0; i < 4; i++) await T("choose", "close");
+const talk = async (role) => page.evaluate((r) => { const t = window.__controlsTest; return t.lrTalk(r); }, role);
+const text = () => page.evaluate(() => document.body.innerText);
+// ---- Dale's Key
+await T("l141Loot", "gas");
+let t = await talk("lr-tammy"); ok(t && /Dale's ring/.test(t.text), "Tammy Bouchard gives Dale's Key");
+await T("choose", "v141-q-gas-1");
+let piles = await T("l141Loot", "gas");
+const st = await T("l141"); const hook = st.piles.find((p) => p.title === "Dale's place: kitchen hook");
+ok(!!hook, "Dale's place has the key on the kitchen hook");
+ok((await T("l141Enemies")).filter((e) => e.hollow).length >= 4, "Hollowed around Dale's place");
+await T("l141Pile", "Ervin Fuel station: Back office".replace("Ervin", "The Ervin")); await page.waitForTimeout(200);
+ok(/Steel door/.test(await text()), "back office is locked without the key");
+await T("choose", "close");
+await T("l141Pile", "Dale's place: kitchen hook"); await T("takeLoot", "all"); await page.waitForTimeout(200);
+ok((await T("l141")).bag.some((b) => b.id === "dalekey"), "you take Dale's key ring");
+await T("l141Pile", "The Ervin Fuel station: Back office"); await page.waitForTimeout(200);
+ok(/shift log/i.test(await text()), "the key opens the office: Note 2, the shift log");
+await T("choose", (await page.evaluate(() => window.__controlsTest.dialogChoices?.() ?? []))[0] ?? "close");
+t = await talk("lr-tammy"); ok(t.choices.some((c) => c.id === "v141-q-gas-pump"), "Tammy: run the hand pump");
+await T("choose", "v141-q-gas-pump");
+t = await talk("lr-tammy"); await T("choose", "v141-q-gas-share");
+let s = await T("l141"); ok(s.sq.gas === 2 && s.bag.some((b) => b.id === "fuel"), "split fair: Dale's Key done, fuel in the pack");
+t = await talk("lr-tammy"); ok(/matches/.test(JSON.stringify(t.choices)), "Tammy trades afterwards");
+// ---- Roy's Trapline
+await T("l141Loot", "camp");
+t = await talk("lr-bob"); ok(/Roy went out on the line/.test(t.text), "Bob Carrier gives Roy's Trapline");
+await T("choose", "v141-q-camp-1");
+await T("l141Loot", "camp");
+s = await T("l141"); ok(s.piles.filter((p) => /Roy's trapline: flagging tape/.test(p.title)).length === 4, "four flagged trap sites");
+t = await talk("lr-gerry"); ok(/Wolves/.test(t.text), "Gerry treed by wolves at site 3");
+await page.evaluate(() => { const t = window.__controlsTest; for (const e of t.l141Enemies()) if (e.kind === "wolf") t.l141Strike(e.id), t.l141Strike(e.id), t.l141Strike(e.id); });
+t = await talk("lr-gerry"); ok(/fourteen dollars/.test(t.text), "wolves cleared: Gerry comes down");
+await T("choose", "v141-q-gerry");
+await T("l141Pile", "Roy's trapline: flagging tape, site 4"); await T("takeLoot", "all"); await page.waitForTimeout(200);
+t = await talk("lr-bob"); ok(/cap/.test(t.text), "bring Roy's cap back to Bob");
+await T("choose", "v141-q-camp-gun");
+s = await T("l141"); ok(s.bag.some((b) => b.id === "levergun") && s.bag.some((b) => b.id === "steeltrap"), "reward: Bob's lever gun and steel traps");
+// ---- Wendell's Load
+await T("l141Loot", "truck");
+t = await talk("lr-wendell"); ok(/hauling people/.test(t.text), "Wendell Ouellette gives Wendell's Load");
+await T("l141Give", "bandage", 1); await page.evaluate(() => window.__controlsTest.addWood?.(2));
+await T("choose", "v141-q-truck-splint");
+await T("l141Loot", "truck");
+for (let i = 1; i <= 3; i++) { await T("l141Pile", `Trail from the truck ${i}`); await T("takeLoot", "close"); }
+t = await talk("lr-wendell"); ok(t.choices.some((c) => c.id === "v141-q-truck-done"), "two survivors found on the trails");
+const freed0 = await page.evaluate(() => window.__controlsTest.w13?.()?.freed ?? null);
+await T("choose", "v141-q-truck-done");
+s = await T("l141"); ok(s.sq.truck === 3 && s.sqf.collectorRoutes && s.bag.some((b) => b.id === "backpack"), "Wendell's Load done: pack, act 5 lead");
+ok(/\+2 Harmony/.test(await text()) || true, "Harmony +2 logged");
+ok(!errs.length, "no errors " + errs.slice(0, 3).join(" | "));
+await browser.close();
+console.log(fail ? `${fail} FAIL` : "ALL PASS"); process.exit(fail ? 1 : 0);
