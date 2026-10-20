@@ -1081,7 +1081,7 @@ export function RPG() {
                   </ActionButton>
                 </div>
               </div>
-              <div className="pointer-events-auto grid grid-cols-7 gap-1 short:w-[22rem] short:shrink-0">
+              <div data-hud="actions" className="pointer-events-auto grid grid-cols-7 gap-1 short:w-[22rem] short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
                   <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />

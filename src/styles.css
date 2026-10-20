@@ -94,3 +94,11 @@
 /* v14.1: messages hold, then fade before they drop off */
 @keyframes log-fade { 0%, 72% { opacity: 1; } 100% { opacity: 0; } }
 .log-fade { animation: log-fade 4s linear forwards; }
+
+/* v14.1 large screens (Chromebook, desktop 1280x800 and up): a scaled-up, sharp UI; the health bar and the
+   action bar sit as side panels at the bottom corners so the middle of the view stays open. */
+@media (min-width: 1280px) and (min-height: 700px) {
+  html { font-size: clamp(17px, 1.05vw, 22px); }
+  [data-hud="health"], [data-hud="health-min"] { max-width: 30rem; }
+  [data-hud="actions"] { width: 34rem; margin-left: auto; }
+}
