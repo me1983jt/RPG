@@ -30,7 +30,7 @@ import {
   type SkillId,
 } from "@/game/progress";
 import { facing8Hys } from "@/game/iso";
-import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
+import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
@@ -134,6 +134,10 @@ export interface GameApi {
 
 assertIso();
 var SCREEN_SPEED = 248;
+/** v14.1: animation frame times (gif-compare.md). */
+var ANIM_MS = { walk: 60, run: 50, idle: 150, aim: 60, fire: 45 };
+/** v14.1: frame counts the new sheets carry (any count loads; the real count is read from the sheet width). */
+var ANIM_FRAMES = { walk: 14, run: 14, idle: 10, aim: 6, fire: 6, punch: 10, kick: 12, swing: 14, hit: 5, death: 12, crouch: 8 };
 var ENEMY_SPEED = 148;
 /** One adult body, small next to a house the way a Fallout figure is. */
 var ADULT = 86;
@@ -3637,7 +3641,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cold = weather13().cold + (seasonNow() === 3 ? 1 : 0);
 		if (cold >= 2 && !buffOn("warm") && Math.random() < Math.max(0, .18 * cold / 3 - fx13().sickResist - .05 * lv("survival") - (perk13("survival", 3) ? .2 : 0))) catchAil("cold", "Too many nights in the wet and cold.");
 		if (w13.ail.cold && day - w13.ail.cold >= 3 && (buffOn("warm") || Math.random() < .5)) cureAil("cold", "Three days by the stove did it.");
-		if (w13.ail.cut) player.hp = Math.max(1, player.hp - AILMENTS.cut.hpDay * 3);
+		if (w13.ail.cut) player.hp = Math.max(1, player.hp - AILMENTS.cut.hpDay); // v14.1: softened (was x3)
 		if (w13.ail.bone && day - w13.ail.bone >= 6) cureAil("bone", "It knit on its own. Slow.");
 		v13Migrate();
 		diaryDay(day);
@@ -3997,6 +4001,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		placeAround14("wreck", c.tx, c.ty - 1, { camp14: "wreck" });
 		placeAround14(v14.st >= 2 ? "firering" : "firering", c.tx + 1, c.ty + 1, { camp14: "fire", lit14: v14.st >= 2 });
 		if (v14.st < 1) placeAround14("stash", c.tx - 1, c.ty + 1, { camp14: "stash" });
+		// v14.1 playtest: a pile of spruce deadfall at camp so the first 3 wood is right there
+		if (v14.st < 2 && !v14.woodTaken) placeAround14("logs", c.tx - 2, c.ty + 2, { camp14: "wood", resource: "wood", amount: 3 });
 		if (v14.st >= 2) { const m = { tx: Math.round((c.tx + FARM.tx) / 2), ty: Math.round((c.ty + FARM.ty) / 2) }; placeAround14("sign-farm", m.tx, m.ty, { label: "FARM →", camp14: "sign" }); }
 		// spread out: no raider camp or wild bandit within 34 tiles of the farm
 		for (const e of world.enemies) {
@@ -4284,7 +4290,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (n >= 90 && e.temper === "hostile" && !e.aggro && d < reach * .5) { e.aggro = true; alertPack(e); }
 		}
 	}
+	/** v14.1 playtest: wolves keep clear of the start and farm for the first five minutes of a game. */
+	const coarse141 = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+	const EARLY_WOLF_SEC = 300, EARLY_WOLF_R = 28;
+	function earlyWolves(dt) {
+		l1.playT = (Number(l1.playT) || 0) + dt;
+		if (l1.playT > EARLY_WOLF_SEC || mapId !== 0 || !world?.enemies || !player) return;
+		for (const e of world.enemies) {
+			if (e.dead || (e.kind !== "wolf" && e.kind !== "coyote")) continue;
+			const dx = e.x - player.x, dy = e.y - player.y, d = Math.hypot(dx, dy);
+			if (d > EARLY_WOLF_R * TILE) continue;
+			const a = d > 1 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+			for (let k = 0; k < 12; k++) {
+				const r = (EARLY_WOLF_R + 4 + k) * TILE, ang = a + (k % 2 ? 1 : -1) * k * .25;
+				const x = player.x + Math.cos(ang) * r, y = player.y + Math.sin(ang) * r;
+				if (x < 4 * TILE || y < 4 * TILE || x > 150 * TILE || y > 150 * TILE || pointBlocked(world, x, y, RADIUS)) continue;
+				e.x = x; e.y = y; e.homeX = x; e.homeY = y; e.aggro = false; e.path = []; break;
+			}
+		}
+	}
 	function noiseTick(dt, moving) {
+		earlyWolves(dt);
 		const target = l1.crouch ? (moving ? NOISE.crouch : NOISE.still) : mounted ? NOISE.bike : work && work.swing > 0 ? NOISE.chop : moving ? NOISE.walk : NOISE.still;
 		if (l1.noise > target) l1.noise = Math.max(target, l1.noise - 45 * dt);
 		else l1.noise = Math.min(target, l1.noise + 90 * dt);
@@ -5300,8 +5326,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function compassTo(dx, dy) {
 		return COMPASS[((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8];
 	}
+	function inCombat141() {
+		if (!world || !player) return false;
+		if (swingAnim > 0 || pendingHit) return true;
+		return world.enemies.some((e) => !e.dead && e.aggro && e.temper !== "timid" && Math.hypot(e.x - player.x, e.y - player.y) < 420);
+	}
 	function openTalk(npc) {
 		if (!player) return;
+		// v14.1 playtest: no conversation pops open in the middle of a fight
+		if (inCombat141()) { if (performance.now() - (talkNag141 || 0) > 2500) { talkNag141 = performance.now(); pushLog(`${npc.name ?? "They"} can't talk now. Deal with the fight first.`); } intent = null; return; }
 		ensureProgress(player);
 		parkBike(true);
 		talkNpc = npc;
@@ -5838,6 +5871,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const gain = (prop.amount ?? 3) + (player.trait === "camp" && (prop.resource === "wood" || prop.resource === "stone") ? 1 : 0) + (skillOf("trail") >= 45 ? 1 : 0);
 		if (prop.resource === "scrap") player.scrap = Math.min(999, player.scrap + gain);
 		if (prop.resource === "wood") player.wood = Math.min(999, player.wood + gain);
+		if (prop.camp14 === "wood") v14.woodTaken = true;
 		if (prop.resource === "stone") player.stone = Math.min(999, player.stone + gain);
 		vacate(world, prop);
 		world.props = world.props.filter((p) => p.id !== prop.id);
@@ -5869,8 +5903,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!moving) return 0;
 		const img = images.get(heroKey());
 		const cols = sheetCols(img);
-		const step = cols === 8 ? 11 : 22;
-		return Math.floor(player.anim / step) % cols;
+		// v14.1: player.anim counts frames x 11 for every sheet, so any frame count plays at the timer's rate
+		return Math.floor(player.anim / 11) % cols;
 	}
 	function heroKey() {
 		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack" || intent?.kind === "chop" || intent?.kind === "mine";
@@ -5955,7 +5989,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (bimg.feet) { const f = bimg.feet[(dir % 8) * fcols + (frame % fcols)]; if (f) frac = f; }
 		const dh = HERO_H * heroScale(body) * zoom;
 		const dw = dh * (sw / sh);
-		ctx.drawImage(armorSource(n, img), (frame % cols) * sw, (dir % rows) * sh, sw, sh, foot.sx + lean.x * zoom - dw / 2, foot.sy + lean.y * zoom - dh * frac, dw, dh);
+		ctx.drawImage(armorSource(n, img), (frame % cols) * sw, facingRow(dir, rows, !!img.diag4) * sh, sw, sh, foot.sx + lean.x * zoom - dw / 2, foot.sy + lean.y * zoom - dh * frac, dw, dh);
 	}
 	function act0(n) {
 		return n.split("-").slice(2).join("-");
@@ -5969,16 +6003,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack";
 		const moving = player.anim !== player.idleAnim;
 		player.idleAnim = player.anim;
+		const colsOf = (a) => sheetCols(images.get(plImg(a) || plImg("walk")));
 		let act = "walk";
 		let frame = player.frame;
 		let lunge = false;
 		if (flinch) { act = flinch.name.slice(3); frame = flinch.frame; }
-		else if (swingAnim > 0 && !work && gun && plImg("gun-atk")) { act = "gun-atk"; frame = Math.min(3, Math.floor((1 - swingAnim / .48) * 4)); }
-		else if (swingAnim > 0 && !work && plImg("axe")) { act = "axe"; frame = Math.min(5, Math.floor((1 - swingAnim / .48) * 6)); }
+		else if (swingAnim > 0 && !work && gun && plImg("gun-atk")) { act = "gun-atk"; frame = Math.min(colsOf("gun-atk") - 1, Math.floor((.48 - swingAnim) * 1000 / ANIM_MS.fire)); }
+		else if (swingAnim > 0 && !work && meleeFrame()) {
+			// stand-in art: punch and swing play the 6-frame axe rows, the kick plays the walk rows with a lunge;
+			// rows follow the 8 facings, so N/NE/NW use the back-facing rows
+			const m = meleeFrame();
+			const u = m.frame / m.frames;
+			if (m.move === "kick" || !plImg("axe")) { act = "walk"; frame = Math.floor(u * colsOf("walk")); lunge = u >= .25 && u <= .6; }
+			else { act = "axe"; frame = Math.floor(u * colsOf("axe")); }
+		}
+		else if (swingAnim > 0 && !work && plImg("axe")) { act = "axe"; frame = Math.min(colsOf("axe") - 1, Math.floor((1 - swingAnim / .48) * colsOf("axe"))); }
 		else if (swingAnim > 0 && !work) { act = "walk"; lunge = true; }
-		else if (work && work.swing > .05 && plImg("axe")) { act = "axe"; frame = Math.min(5, Math.floor((1 - Math.min(1, work.swing / .48)) * 6)); }
-		else if (!moving && gun && using && plImg("gun")) { act = "gun"; frame = Math.floor(performance.now() / 320) % 4; }
-		else if (!moving && plImg("idle")) { act = "idle"; frame = Math.floor(performance.now() / 300) % 4; }
+		else if (work && work.swing > .05 && plImg("axe")) { act = "axe"; frame = Math.min(colsOf("axe") - 1, Math.floor((1 - Math.min(1, work.swing / .48)) * colsOf("axe"))); }
+		else if (!moving && gun && using && plImg("gun")) { act = "gun"; frame = Math.floor(performance.now() / ANIM_MS.aim) % colsOf("gun"); }
+		else if (!moving && plImg("idle")) { act = "idle"; frame = Math.floor(performance.now() / ANIM_MS.idle) % colsOf("idle"); }
 		else if (moving && v13Running() && plImg("run")) act = "run";
 		const name = plImg(act) || plImg("walk");
 		blit(name, player.x, player.y, HERO_H, true, frame, player.dir, drawCamX, drawCamY, lunge);
@@ -7239,6 +7282,68 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function strikeEnemy(enemy) {
 		if (!player || enemy.dead) return;
 		if (!paySwing()) return;
+		// v14.1 melee: punch, kick and weapon swings land on their hit frame, not on the click
+		const mv = meleeStart();
+		if (mv) { player.dir = facing8(enemy.x - player.x, enemy.y - player.y); pendingHit = { enemy, at: mv.hitMs / 1000 }; return; }
+		strikeLand(enemy);
+	}
+	/** v14.1: melee move tables (ms per frame, 1-based hit frame). */
+	/** The move timings: the original totals (punch 420 ms, kick 540, swing 610) resampled onto the new frame counts,
+	 * with the hit frame at the same point in the move. */
+	function resampleMove(ms, hit, n) {
+		const m = ms.length, out = [];
+		for (let k = 0; k < n; k++) {
+			const a = k * m / n, b = (k + 1) * m / n;
+			let t = 0;
+			for (let j = Math.floor(a); j < Math.ceil(b) && j < m; j++) t += ms[j] * (Math.min(b, j + 1) - Math.max(a, j));
+			out.push(Math.round(t));
+		}
+		return { ms: out, hit: Math.round((hit - 1) * n / m) + 1 };
+	}
+	const MELEE = {
+		punch: resampleMove([70, 60, 50, 90, 70, 80], 4, ANIM_FRAMES.punch),
+		kick: resampleMove([80, 70, 50, 100, 70, 80, 90], 4, ANIM_FRAMES.kick),
+		swing: resampleMove([90, 80, 70, 40, 90, 70, 80, 90], 5, ANIM_FRAMES.swing)
+	};
+	let pendingHit = null;
+	let talkNag141 = 0;
+	let melee = null; // { move, t0 }
+	let meleeCount = 0;
+	function meleeStart() {
+		if (!player) return null;
+		const fam = GEAR[player.weaponId]?.family;
+		if (isGun(fam)) return null;
+		const move = !player.weaponId || !fam || fam === "fist" ? (++meleeCount % 3 === 0 ? "kick" : "punch") : "swing";
+		const t = MELEE[move];
+		const total = t.ms.reduce((a, b) => a + b, 0);
+		const hitMs = t.ms.slice(0, t.hit - 1).reduce((a, b) => a + b, 0);
+		melee = { move, t0: performance.now(), total };
+		swingAnim = total / 1000;
+		player.cooldown = Math.max(player.cooldown, total / 1000);
+		return { move, hitMs, total };
+	}
+	/** Current melee frame from the move's timing table, or null when no move is playing. */
+	function meleeFrame() {
+		if (!melee) return null;
+		const t = MELEE[melee.move];
+		let e = performance.now() - melee.t0;
+		if (e >= melee.total) { melee = null; return null; }
+		let f = 0;
+		while (f < t.ms.length - 1 && e >= t.ms[f]) { e -= t.ms[f]; f++; }
+		return { move: melee.move, frame: f, frames: t.ms.length, hit: f === t.hit - 1 };
+	}
+	function pendingTick(dt) {
+		if (!pendingHit) return;
+		pendingHit.at -= dt;
+		if (pendingHit.at > 0) return;
+		const e = pendingHit.enemy; pendingHit = null;
+		if (!player || e.dead) return;
+		// out of reach by the time the blow lands: it whiffs
+		if (Math.hypot(e.x - player.x, e.y - player.y) > swingOf().reach * 1.6 + 24) { floater(e.x, e.y - 28, "miss"); return; }
+		strikeLand(e);
+	}
+	function strikeLand(enemy) {
+		if (!player || enemy.dead) return;
 		const aimRow = {
 			head: {
 				hit: .56,
@@ -7373,7 +7478,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!mode11) {
 			wearArmor(amount);
 			const biter = world?.enemies.find((e) => !e.dead && e.kind !== "bandit" && Math.hypot(e.x - fromX, e.y - fromY) < 40);
-			if (biter && Math.random() < .08 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
+			if (biter && curDay() >= 2 && Math.random() < .04 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
 			if (dmg >= player.maxHp * .3 && Math.random() < .12) catchAil("bone", "That hit cracked something.");
 		}
 		player.invuln = .38;
@@ -7739,6 +7844,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.hurt = Math.max(0, player.hurt - dt);
 		reach = Math.max(0, reach - dt);
 		swingAnim = Math.max(0, swingAnim - dt);
+		pendingTick(dt);
 		v14Tick();
 		if (edges.build) {
 			buildOpen = !buildOpen;
@@ -7787,7 +7893,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (tapInteract || edgeKey("KeyE")) {
 			const pile = nearestPile(96);
 			const npc = nearestNpc(72);
-			const node = nearestResource(72);
+			const node = nearestResource(96);
 			const pileD = pile && player ? Math.hypot(pile.x - player.x, pile.y - player.y) : 999;
 			const npcD = npc && player ? Math.hypot(npc.x - player.x, npc.y - player.y) : 999;
 			if (pile && pileD <= npcD && pileD <= 78) openLoot(pile);
@@ -7957,7 +8063,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			// leg cycle follows on-screen distance (one 4-frame cycle per ~72 px), so feet don't skate
 			// on sideways walks (screen moves 1.41 px per world unit there, 0.71 up/down)
 			const mdx = player.x - fromX, mdy = player.y - fromY;
-			player.anim += Math.hypot(mdx - mdy, (mdx + mdy) / 2) * 1.22;
+			// v14.1 (gif-compare): the leg cycle runs on a timer scaled by speed, not on distance:
+			// walk 105 ms/frame, run 70 ms/frame at their reference speeds, faster or slower with actual speed
+			const scr = Math.hypot(mdx - mdy, (mdx + mdy) / 2) / Math.max(dt, 1e-3);
+			const run = scr > SCREEN_SPEED * 1.15;
+			const ms = (run ? ANIM_MS.run : ANIM_MS.walk) / Math.max(.6, Math.min(1.5, scr / (run ? SCREEN_SPEED * 1.4 : SCREEN_SPEED)));
+			const cols = sheetCols(images.get(heroKey()));
+			player.anim += dt * 1000 / ms * 11; void cols;
+			player.running = run;
 			if (!mounted && !turnBased) player.stamina = Math.max(0, player.stamina - 12 * dt);
 			if (turnBased) {
 				apWalk += stepDist;
@@ -8028,6 +8141,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			});
 		}
 		if (!turnBased) for (const enemy of world.enemies) {
+			if (enemy.lineup141) continue;
 			if (enemy.death > 0) enemy.death = Math.max(0, enemy.death - dt);
 			if (enemy.dead) continue;
 			enemy.cooldown = Math.max(0, enemy.cooldown - dt);
@@ -8299,7 +8413,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let best = null;
 		let bestD = maxDist;
 		for (const n of world.npcs) {
-			const d = Math.hypot(n.x - player.x, n.y - player.y);
+			const raw = Math.hypot(n.x - player.x, n.y - player.y);
+			if (raw >= maxDist) continue;
+			// v14.1 playtest: the quest NPC (Justin) wins E/Talk over Loki or villagers standing a bit closer
+			const d = n.role === "justin" || n.questMark ? raw * .45 : raw;
 			if (d < bestD) {
 				best = n;
 				bestD = d;
@@ -9012,6 +9129,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	function stepFolk(npc, dt) {
+		if (npc.lineup141) return;
 		if (!world) {
 			npc.frame = 0;
 			return;
@@ -9048,7 +9166,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const stepped = Math.hypot(npc.x - fromX, npc.y - fromY);
 		if (moving && stepped > .2) {
-			npc.anim += stepped;
+			npc.anim += dt * 1000 / (ANIM_MS.walk / Math.max(.6, Math.min(1.5, stepped / Math.max(dt, 1e-3) / 120))) * 16;
 			npc.frame = Math.floor(npc.anim / 16) % 4;
 			npc.still = false;
 		} else {
@@ -9325,8 +9443,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dh = (roomDims().farm ? 124 : 110) * heroScale(name);
 		const dw = dh * (sw / sh);
 		const col = (pose ? pose.frame : player.frame) % cols;
-		const row = player.dir % rows;
-		ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
+		const row = facingRow(player.dir, rows, !!img.diag4);
+		ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[facingRow(player.dir, rows, !!img.diag4) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
 	}
 	function drawRoom() {
 		if (!inside || !ctx) return;
@@ -9372,8 +9490,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const dh = 110 * heroScale(name);
 			const dw = dh * (sw / sh);
 			const col = (pose ? pose.frame : player.frame) % cols;
-			const row = player.dir % rows;
-			ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[(player.dir % rows) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
+			const row = facingRow(player.dir, rows, !!img.diag4);
+			ctx.drawImage(src, col * sw, row * sh, sw, sh, o.x + inside.rx - dw / 2, o.y + inside.ry - dh * (img.feet ? img.feet[facingRow(player.dir, rows, !!img.diag4) * cols + (player.frame % cols)] : img.foot ?? .92), dw, dh);
 		}
 	}
 	var groundPat = new Map();
@@ -9770,7 +9888,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					let seeThrough = false;
 					// vehicles: use the real art box (native size), not the old prop box
 					const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
-					if (player && !inside && (vArt ? vArt.h > 100 : h > 140) && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
+					if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140)) && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
 						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 						const ps = zoomPoint(pr.sx, pr.sy);
 						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
@@ -9778,7 +9896,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const ph = (vArt ? vArt.h : h * scale) * zoom;
 						const pimg = images.get(vArt ? vArt.name : spec.image);
 						const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
-						const pw = ph * aspect * (tree ? .6 : .92);
+						const pw = ph * aspect * (tree ? .85 : .92);
 						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph;
 					}
 					// ease the fade in and out instead of popping
@@ -9786,7 +9904,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					prop.fade = (prop.fade || 0) + (fadeTo - (prop.fade || 0)) * Math.min(1, STEP * 10);
 					if (prop.fade < .01) prop.fade = 0;
 					seeThrough = prop.fade > 0;
-					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * .62;
+					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * (tree ? .78 : .62);
+					if (prop.fade > .3) occl141 = true;
 					const treeArt = v2TreeArt(prop, n);
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("v2/tractor-drive")) {
 						// v12: the gw14 8-way tractor (4 frames x 8 facings), rolling along its charge line
@@ -10031,7 +10150,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				player.idleAnim = player.anim;
 				if (flinch) blit(flinch.name, player.x, player.y, HERO_H, true, flinch.frame, player.dir, drawCamX, drawCamY, false);
 				else if (axeSwing) blit("v2/hero-axe", player.x, player.y, HERO_H, true, Math.min(5, Math.floor((1 - swingAnim / .48) * 6)), player.dir, drawCamX, drawCamY, false);
-				else if (idle) blit("v2/hero-idle", player.x, player.y, HERO_H, true, Math.floor(performance.now() / 300) % 4, player.dir, drawCamX, drawCamY, false);
+				else if (idle) blit("v2/hero-idle", player.x, player.y, HERO_H, true, Math.floor(performance.now() / ANIM_MS.idle) % sheetCols(images.get("v2/hero-idle")), player.dir, drawCamX, drawCamY, false);
 				else if (swingAnim > 0 && !work && TALL_COMBAT.has(atkName)) {
 					blit(atkName, player.x, player.y, HERO_H, true, Math.min(3, Math.floor((1 - swingAnim / .48) * 4)), player.dir, drawCamX, drawCamY, false);
 				} else if (swingAnim > 0 && !work && facingCam && images.get(atkName)) {
@@ -10065,7 +10184,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		paintFlood(drawCamX, drawCamY);
 		q10Draws(draws, drawCamX, drawCamY);
 		draws.sort((a, b) => a.z - b.z);
+		occl141 = false;
 		for (const item of draws) item.draw();
+		// v14.1 playtest: canopies fade, and when something still covers you a faint copy of you is drawn on top
+		if (occl141 && player && !inside && xfLast?.calls?.length && phase !== "dead") {
+			ctx.save(); ctx.globalAlpha = .42; noShadow141 = true;
+			try { for (const c of xfLast.calls) blit(...c); } finally { noShadow141 = false; ctx.restore(); }
+		}
 		if (work && work.swing > 0 && player && !inside) paintToolSwing(drawCamX, drawCamY);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
@@ -10091,6 +10216,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				g.addColorStop(1, `rgba(120, 18, 12, ${t * .45})`);
 				ctx.fillStyle = g;
 				ctx.fillRect(0, 0, viewW, viewH);
+			}
+		}
+		// v14.1 playtest: the thing E / tap-to-use will pick up glows, so the camp's spruce wood is obvious
+		if (world && player && !buildOpen && phase === "play") {
+			const node = nearestResource(v14.st === 1 ? 640 : 96);
+			const npcD = (() => { const n = nearestNpc(72); return n ? Math.hypot(n.x - player.x, n.y - player.y) : 999; })();
+			if (node && (npcD > 72 || v14.st === 1)) {
+				const c = propCenter(node), raw = worldToScreen(c.x, c.y, drawCamX, drawCamY), m = zoomPoint(raw.sx, raw.sy);
+				const pulse = .55 + .45 * Math.sin(performance.now() / 260);
+				ctx.save();
+				ctx.strokeStyle = `rgba(232, 196, 92, ${.5 + .4 * pulse})`; ctx.lineWidth = 2.5;
+				ctx.beginPath(); ctx.ellipse(m.sx, m.sy, (26 + 4 * pulse) * zoom, (12 + 2 * pulse) * zoom, 0, 0, Math.PI * 2); ctx.stroke();
+				const near = Math.hypot(c.x - player.x, c.y - player.y) < 96;
+				ctx.font = `600 ${Math.round(12 * Math.max(1, zoom * .8))}px system-ui, sans-serif`; ctx.textAlign = "center";
+				ctx.fillStyle = "rgba(15,12,8,.75)"; const label = near ? (coarse141 ? "Tap to pick up" : "E: pick up") + ` ${node.resource === "wood" ? "wood" : node.resource}` : v14.st === 1 ? "Spruce wood" : node.resource === "wood" ? "Timber" : node.resource;
+				const w = ctx.measureText(label).width + 12; ctx.fillRect(m.sx - w / 2, m.sy - 40 * zoom - 14, w, 18);
+				ctx.fillStyle = "#f0d890"; ctx.fillText(label, m.sx, m.sy - 40 * zoom);
+				ctx.restore();
 			}
 		}
 		if (lockedId >= 0) {
@@ -10234,7 +10377,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	const xfStats = { n: 0 };
+	let occl141 = false, noShadow141 = false;
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
+		// v14.1: characters face only the 4 diagonals; a leftover cardinal facing draws its neighbouring diagonal
+		if (sheet && dir % 2 === 0 && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = [1, 1, 1, 3, 3, 5, 7, 7][dir] ?? 1;
 		if (xfRec) xfRec.push([name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge, lift, tilt, flatten, flip]);
 		const img = images.get(name);
 		if (sheet && img && /^v2\/(bandit-[a-z]+|hollowed)-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
@@ -10251,7 +10397,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		};
 		// armor overlays ride on the hero: no second shadow, and the hero sheet's planted-foot data
 		const layer = name.startsWith("overlay-");
-		if (!layer && !gfxHigh) {
+		// v14.1 (gif-compare): every person gets the same engine-drawn soft contact shadow, in both graphics modes
+		const person = !layer && (/^(v2\/)?hero|^pl\//.test(name) || !!figFamily(name));
+		if (person && !noShadow141) softShadow(foot.sx, foot.sy + 1 * zoom, (/cyndal|loki/.test(name) ? 14 : 17) * zoom, name);
+		if (!layer && !person && !gfxHigh && !noShadow141) {
 			ctx.fillStyle = "rgba(12,10,8,0.4)";
 			ctx.beginPath();
 			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 8 * zoom, 0, 0, Math.PI * 2);
@@ -10268,23 +10417,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (sheet || strips) {
 			rows = sheet ? sheetRowsOf(name) : 1;
 			const cols = sheetCols(img);
+			// v14.1: new character sheets carry 4 rows (SW, NW, NE, SE); 8-row sheets keep loading via their diagonal rows
+			if (sheet && img.diag4 == null) img.diag4 = rows === 8 && Math.round(img.height / (img.width / cols * 124 / 88)) === 4;
+			if (sheet && img.diag4) rows = 4;
 			sw = img.width / (strips ? 4 : cols);
 			sh = img.height / rows;
 			sx = frame % (strips ? 4 : cols) * sw;
-			sy = (sheet ? dir % rows : 0) * sh;
+			sy = (sheet ? facingRow(dir, rows, !!img.diag4) : 0) * sh;
 		}
 		const footSrc = layer ? images.get(overlayBase) ?? img : img;
 		let frac = footSrc.foot ?? (sheet || strips ? .92 : .9);
 		if ((sheet || strips) && footSrc.feet) {
 			const fcols = sheetCols(footSrc);
-			const planted = footSrc.feet[(sheet ? dir % rows : 0) * fcols + (frame % fcols)];
+			const planted = footSrc.feet[(sheet ? facingRow(dir, rows, !!img.diag4) : 0) * fcols + (frame % fcols)];
 			if (planted) frac = planted;
 		}
 		drawH *= heroScale(name);
+		drawH *= figScale(name, drawH, images);
 		const dh = drawH * zoom;
 		const dw = dh * (sw / sh);
+		// v14.1 (gif-compare): idle and aim holds lock the feet; each frame is shifted so its foot line sits where frame 0's does
+		if (sheet && /(idle|-gun)$/.test(name)) {
+			const fx = footXOf(img, sheetCols(img), rows, sw, sh);
+			const r = facingRow(dir, rows, !!img.diag4), c = frame % sheetCols(img);
+			const d = (fx[r * sheetCols(img) + c] ?? 0) - (fx[r * sheetCols(img)] ?? 0);
+			p.sx -= d * (dh / sh);
+		}
 		const spriteY = -dh * frac - lift * zoom;
-		if (!layer && gfxHigh) softShadow(foot.sx + 3 * zoom, foot.sy + 1 * zoom, Math.max(12 * zoom, Math.min(dw * .36, (sheet || strips ? 46 : 34) * zoom)), name);
+		if (!layer && !person && gfxHigh && !noShadow141) softShadow(foot.sx + 3 * zoom, foot.sy + 1 * zoom, Math.max(12 * zoom, Math.min(dw * .36, (sheet || strips ? 46 : 34) * zoom)), name);
 		const smooth = ctx.imageSmoothingEnabled;
 		// v13.4: smooth when the sprite lands at a non-integer scale; whole-number upscales stay crisp
 		const ratio = dh / sh;
@@ -11485,7 +11645,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lrTalk: (role) => { const n = world.npcs.find((q) => q.role === role); if (!n) return null; openTalk(n); return dialogue ? { text: dialogue.text, choices: dialogue.choices } : null; },
 		dialogChoices: () => (dialogue?.choices ?? []).map((c) => c.id),
 		l141Barrels: () => world.props.filter((q) => q.kind === "rainbarrel").map((q) => ({ tx: q.tx, ty: q.ty, n: barrel141(q).n })),
-		l141Props: () => world.props.filter((q) => q.p14).map((q) => ({ kind: q.kind, tx: q.tx, ty: q.ty })),
+		l141Fig: () => ({ ...figLog }),
+	l141Lineup: () => {
+		const out = [];
+		const roles = ["justin", "sarah", "loki", "cyndal", "holt", "mira", "nora"];
+		let i = 1;
+		for (const r of roles) { const n = world.npcs.find((q) => q.role === r); if (!n) continue; n.x = player.x + (i - 5) * 16; n.y = player.y - (i - 5) * 16; n.path = []; n.pause = 999; n.dir = 1; n.frame = 0; n.lineup141 = true; out.push(r); i++; }
+		for (const v of ["scout", "brute"]) { spawnRaider(v, { x: player.x - i * 34 + 400, y: player.y + i * 34 - 400 }); const e = world.enemies[world.enemies.length - 1]; e.x = player.x + (i - 5) * 16; e.y = player.y - (i - 5) * 16; e.raid = false; e.aggro = false; e.dir = 1; e.lineup141 = true; e.frame = 0; out.push("raider-" + v); i++; }
+		player.dir = 1; zoom = 1.6;
+		return out;
+	},
+	l141Calm: () => { for (const e of world?.enemies ?? []) { e.aggro = false; } pendingHit = null; swingAnim = 0; melee = null; },
+	l141Fight: () => inCombat141(),
+	l141Facings: () => { const out = []; let d = 1; for (const [x, y] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [0, 1], [1, 0]]) { const w = screenDirToWorld(x, y); d = facing8Hys(d, w.vx, w.vy); out.push(d); } return out; },
+	l141Unarm: () => { player.weaponId = null; refreshGear(player); },
+	l141Melee: () => { const m = meleeFrame(); return { m, pending: !!pendingHit, count: meleeCount }; },
+	l141Props: () => world.props.filter((q) => q.p14).map((q) => ({ kind: q.kind, tx: q.tx, ty: q.ty })),
 		l141Give: (id, n) => { const st = player.bag.find((q) => q.id === id); if (st) st.qty += n; else player.bag.push({ id, qty: n }); },
 		l141Pile: (title) => { const p = piles.find((q) => q.title === title); if (p) { player.x = p.x; player.y = p.y; openLoot(p); } return !!p; },
 		tap: (a) => api.tap(a),
@@ -11860,6 +12035,72 @@ function sheetRowsOf(name) {
 	if (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
 	return 4;
 }
+
+function footXOf(img, cols, rows, sw, sh) {
+	if (img.footX) return img.footX;
+	const out = [];
+	try {
+		const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+		const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0);
+		const d = g.getImageData(0, 0, img.width, img.height).data;
+		for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+			const x0 = Math.round(k * sw), y0 = Math.round(r * sh), w = Math.round(sw), h = Math.round(sh);
+			let bot = -1;
+			for (let y = h - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < w; x++) if (d[((y0 + y) * img.width + x0 + x) * 4 + 3] > 60) { bot = y; break; }
+			let sx = 0, n = 0;
+			for (let y = Math.max(0, bot - 3); y <= bot; y++) for (let x = 0; x < w; x++) if (d[((y0 + y) * img.width + x0 + x) * 4 + 3] > 60) { sx += x; n++; }
+			out.push(n ? sx / n : 0);
+		}
+	} catch { /* keep unlocked */ }
+	img.footX = out;
+	return out;
+}
+/** v14.1 scale check: NPC and raider sheets were drawn at 98-104 px against the hero's 69 px. At 11 px/ft every
+ * person is drawn at real height: grown men and women 66 px (6 ft), kids (Cyndal, Loki) 58 px. Each character is
+ * measured once from its walk/base sheet so all its poses share one scale. */
+const FIG_ADULT = 66, FIG_KID = 58;
+const figCache = new Map();
+function figFamily(name) {
+	if (/^(v2\/)?hero|^pl\/|^overlay-/.test(name)) return null;
+	let m = name.match(/^v2\/(bandit-[a-z]+|hollowed|[a-z]+)-(walk|run|idle|axe|gun|gun-atk|crouch|carry|death|down|hit|talk|walk-atk|walk-dead)$/);
+	if (m && !/^(wolf|bike|tractor|hero)/.test(m[1])) return { key: "v2/" + m[1], ref: [`v2/${m[1]}-walk`, `v2/${m[1]}-idle`] };
+	m = name.match(/^(npc-[a-z]+|guard-(?:watch-)?[a-z]+|raider(?:-[a-z]+)?|boss-[a-z]+|villager)(?:-atk|-dead)?$/);
+	if (m && !/-dead$/.test(name)) return { key: m[1], ref: [m[1]] };
+	return null;
+}
+function measureFig(img, sh) {
+	try {
+		const cols = sheetCols(img), sw = Math.floor(img.width / cols), h = Math.floor(sh);
+		const c = document.createElement("canvas"); c.width = sw; c.height = h;
+		const g = c.getContext("2d", { willReadFrequently: true }); if (!g) return 0;
+		let best = 0;
+		for (let f = 0; f < Math.min(cols, 4); f++) {
+			g.clearRect(0, 0, sw, h); g.drawImage(img, f * sw, 0, sw, h, 0, 0, sw, h);
+			const d = g.getImageData(0, 0, sw, h).data; let top = -1, bot = -1;
+			for (let y = 0; y < h && top < 0; y++) for (let x = 0; x < sw; x++) if (d[(y * sw + x) * 4 + 3] > 60) { top = y; break; }
+			for (let y = h - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < sw; x++) if (d[(y * sw + x) * 4 + 3] > 60) { bot = y; break; }
+			if (top >= 0) best = Math.max(best, bot - top + 1);
+		}
+		return best / h;
+	} catch { return 0; }
+}
+function figScale(name, drawH, images) {
+	const fam = figFamily(name); if (!fam || typeof document === "undefined") return 1;
+	let frac = figCache.get(fam.key);
+	if (frac == null) {
+		const ref = fam.ref.map((r) => images.get(r)).find((im) => im && im.width) || images.get(name);
+		if (!ref || !ref.width) return 1;
+		const rows = sheetRowsOf(fam.ref[0]) || 1;
+		frac = measureFig(ref, ref.height / rows);
+		figCache.set(fam.key, frac);
+	}
+	if (frac < .2) return 1;
+	const want = (/cyndal|loki/.test(fam.key) ? FIG_KID : FIG_ADULT) * (/^boss-/.test(fam.key) ? 1.08 : 1);
+	const k = Math.max(.4, Math.min(1.6, want / (frac * drawH)));
+	figLog[fam.key] = { frac: +frac.toFixed(3), k: +k.toFixed(3), px: Math.round(frac * drawH * k) };
+	return k;
+}
+const figLog = {};
 /** v10.1: the gw12 Justin sheets are a 69 px figure in an 88x124 cell; draw them at the same 69 px hero height as the walk. */
 const HERO69 = new Set(["hero", "hero-gun", "hero-gun-atk", "hero-hit", "hero-down", "v2/hero-idle", "v2/hero-axe", "v2/hero-death"]);
 function heroScale(name) {
@@ -11868,10 +12109,9 @@ function heroScale(name) {
 /** 4 frames across (352px), 6 (528px) or 8 (704px). Anything else stays 4. */
 function sheetCols(img) {
 	if (img && img.cols) return img.cols;
-	if (img && img.width % 88 === 0) {
-		const c = img.width / 88;
-		if (c === 3 || c === 4 || c === 6 || c === 8) return c;
-	}
+	// v14.1: any frame count loads; the count comes from the sheet width (88 px cells, or square-ish cells by height)
+	if (img && img.width % 88 === 0 && img.width >= 88) { const c = img.width / 88; if (c >= 1 && c <= 32) return c; }
+	if (img && img.height) { for (const rows of [8, 4, 1]) { const ch = img.height / rows, c = Math.round(img.width / (ch * 88 / 124)); if (c >= 1 && c <= 32 && Math.abs(img.width / c - ch * 88 / 124) < 2) return c; } }
 	return 4;
 }
 function measureFoot(img, sheet, sheetRows = 4) {

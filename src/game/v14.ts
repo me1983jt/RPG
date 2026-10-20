@@ -4,6 +4,7 @@ export const MAT_NAME: Record<V14Mat, string> = { wood: "Wood", stone: "Stone", 
 export type Cost = Partial<Record<V14Mat, number>>;
 
 export interface V14State {
+  woodTaken?: boolean;
   /** 0 search the wreck, 1 light the fire, 2 follow the smoke, 3 trust task (First Snow), 4 defend the farm, 5 secured */
   st: number;
   camp: { tx: number; ty: number } | null;

@@ -1,0 +1,106 @@
+{
+"wall-wood": [
+0.5,
+0.16
+],
+"wall-wood-dmg": [
+0.5,
+0.16
+],
+"gate-wood": [
+0.5,
+0.155
+],
+"gate-wood-dmg": [
+0.5,
+0.155
+],
+"wall-stone": [
+0.5,
+0.16
+],
+"wall-stone-dmg": [
+0.5,
+0.16
+],
+"gate-stone": [
+0.5,
+0.155
+],
+"gate-stone-dmg": [
+0.5,
+0.155
+],
+"wall-metal": [
+0.5,
+0.16
+],
+"wall-metal-dmg": [
+0.5,
+0.16
+],
+"gate-metal": [
+0.5,
+0.155
+],
+"gate-metal-dmg": [
+0.5,
+0.155
+],
+"wall-x": [
+0.5,
+0.256
+],
+"spikes": [
+0.5,
+0.06
+],
+"chest": [
+0.5,
+0.06
+],
+"rainbarrel": [
+0.5,
+0.06
+],
+"sandbags": [
+0.5,
+0.06
+],
+"sandbags-x": [
+0.5,
+0.06
+],
+"workbench": [
+0.5,
+0.06
+],
+"wreck": [
+0.5,
+0.06
+],
+"firering": [
+0.5,
+0.06
+],
+"firering-lit": [
+0.5,
+0.06
+],
+"stash": [
+0.5,
+0.06
+],
+"sign-farm": [
+0.5,
+0.06
+],
+"lookout": [
+0.5,
+0.06
+],
+"lookout-x": [
+0.5,
+0.06
+]
+}

@@ -82,6 +82,7 @@ export interface V141State {
   auto: boolean;
   /** loot-run side quests: stage per run, plus flags */
   sq: Record<string, number>;
+  playT?: number;
   sqf: Record<string, boolean>;
 }
 export function freshV141(): V141State {

@@ -62,12 +62,20 @@ function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { l
         const dyed = tg.getImageData(0, 0, cw, ch);
         dyeBodySheet(dyed, 1, look, hair, 1);
         tg.putImageData(dyed, 0, 0);
-        ref.current.width = cw * 2;
-        ref.current.height = ch * 2;
+        for (const part of parts) tg.drawImage(part, 0, 0, cw, ch, 0, 0, cw, ch);
+        // v14.1: crop to the figure so the preview fills its box instead of a small hero lost at the bottom of an empty cell
+        const px = tg.getImageData(0, 0, cw, ch).data;
+        let x0 = cw, y0 = ch, x1 = 0, y1 = 0;
+        for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (px[(y * cw + x) * 4 + 3] > 20) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        if (x1 < x0) { x0 = 0; y0 = 0; x1 = cw - 1; y1 = ch - 1; }
+        const side = Math.max(x1 - x0, (y1 - y0) * 0.72) + 8, mx = (x0 + x1) / 2, sw = Math.round(side), sh = Math.round(side / 0.72);
+        const sx = Math.round(mx - sw / 2), sy = Math.round(y1 + 4 - sh);
+        const k = 4;
+        ref.current.width = sw * k;
+        ref.current.height = sh * k;
         g.imageSmoothingEnabled = false;
-        g.clearRect(0, 0, cw * 2, ch * 2);
-        g.drawImage(tmp, 0, 0, cw * 2, ch * 2);
-        for (const part of parts) g.drawImage(part, 0, 0, cw, ch, 0, 0, cw * 2, ch * 2);
+        g.clearRect(0, 0, sw * k, sh * k);
+        g.drawImage(tmp, sx, sy, sw, sh, 0, 0, sw * k, sh * k);
       } catch {
         /* preview is optional */
       }
@@ -1162,9 +1170,9 @@ export function RPG() {
         <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
-        <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto flex min-h-full w-full max-w-lg items-center py-4 short:max-w-3xl short:py-1">
-          <div className="w-full plank border border-border bg-surface/95 p-6 short:p-3">
+        <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] short:pt-[max(0.25rem,env(safe-area-inset-top))] short:pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex min-h-full w-full max-w-lg items-center py-4 short:max-w-5xl short:py-1">
+          <div data-menu="card" className="w-full plank border border-border bg-surface/95 p-6 short:p-3 menu-cols">
             <p className="text-xs uppercase tracking-widest text-primary">Northwestern Maine</p>
             <h1 className="mt-1 font-display text-5xl leading-none short:text-3xl">Maine RPG</h1>
             <p className="mt-3 leading-relaxed text-muted short:mt-1 short:line-clamp-2 short:text-sm">
@@ -1446,7 +1454,7 @@ export function RPG() {
                 </>
               )}
             </div>
-            <p className="mt-4 text-base font-semibold leading-relaxed text-fg">
+            <p className="mt-4 text-base font-semibold leading-relaxed text-fg short:hidden">
               Hold on the ground to run. Click a chopper to chase and keep swinging until they drop. Click the ground to break off. A carbine shoots from farther away. An axe in your hand takes three swings, then the tree falls. A pickaxe in your hand cracks a rock for iron.
             </p>
             {!hud.ready ? <p className="mt-2 text-xs text-muted">Painting the spruce…</p> : null}
@@ -1574,7 +1582,7 @@ function useShortScreen(): boolean {
   const [short, setShort] = useState(false);
   useEffect(() => {
     if (typeof matchMedia === "undefined") return;
-    const mq = matchMedia("(max-height: 520px)");
+    const mq = matchMedia("(max-height: 520px), (max-height: 640px) and (orientation: landscape)");
     const on = () => setShort(mq.matches);
     on();
     mq.addEventListener("change", on);

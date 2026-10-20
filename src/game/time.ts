@@ -1,5 +1,6 @@
 /** Real seconds in one in-game day. Change this number later to retune the clock. */
-export const DAY_LENGTH_SEC = 12 * 60;
+/** v14.1: slowed from 12 to 20 real minutes per in-game day. */
+export const DAY_LENGTH_SEC = 20 * 60;
 
 /** Day 1 starts at 7:00. */
 export function morningClock(): number {

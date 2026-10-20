@@ -14,7 +14,10 @@
   --radius: 0.5rem;
 }
 
-@custom-variant short (@media (max-height: 520px));
+@custom-variant short {
+  @media (max-height: 520px) { @slot; }
+  @media (max-height: 640px) and (orientation: landscape) and (min-height: 521px) { @slot; }
+}
 
 @layer base {
   button:not(:disabled),
@@ -101,4 +104,10 @@
   html { font-size: clamp(17px, 1.05vw, 22px); }
   [data-hud="health"], [data-hud="health-min"] { max-width: 30rem; }
   [data-hud="actions"] { width: 34rem; margin-left: auto; }
+}
+
+/* v14.1: wide, short windows (1024x594 Chromebook, landscape phones) set the new-game card in two columns so it fits without scrolling */
+@media (max-height: 640px) and (orientation: landscape) and (min-width: 700px) {
+  .menu-cols { column-count: 2; column-gap: 1rem; column-fill: balance; }
+  .menu-cols > * { break-inside: avoid; }
 }
