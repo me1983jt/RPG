@@ -38,22 +38,26 @@ export interface Piece { id: string; kind: string; name: string; cost: Cost; hp:
 export const PIECES: Piece[] = [
   { id: "wall-wood", kind: "wall-wood", name: "Stake wall", cost: { wood: 3 }, hp: 60, up: "wall-stone", blurb: "Sharpened spruce stakes, 7 ft." },
   { id: "wall-stone", kind: "wall-stone", name: "Stone wall", cost: { stone: 4, wood: 1 }, hp: 120, up: "wall-metal", blurb: "Fieldstone laid dry." },
-  { id: "wall-metal", kind: "wall-metal", name: "Sheet-iron wall", cost: { iron: 3, junk: 2 }, hp: 200, blurb: "Roofing tin on posts." },
+  { id: "wall-metal", kind: "wall-metal", name: "Sheet-iron wall", cost: { iron: 5, junk: 2 }, hp: 200, blurb: "Roofing tin on posts." },
   { id: "gate-wood", kind: "gate-wood", name: "Plank gate", cost: { wood: 4 }, hp: 70, up: "gate-stone", blurb: "Tap to open or shut." },
   { id: "gate-stone", kind: "gate-stone", name: "Stone-post gate", cost: { stone: 4, wood: 2 }, hp: 130, up: "gate-metal", blurb: "Heavy door, stone posts." },
-  { id: "gate-metal", kind: "gate-metal", name: "Iron gate", cost: { iron: 4, junk: 2 }, hp: 210, blurb: "Barred and riveted." },
+  { id: "gate-metal", kind: "gate-metal", name: "Iron gate", cost: { iron: 6, junk: 2 }, hp: 210, blurb: "Barred and riveted." },
   { id: "spikes", kind: "spikes", name: "Spike trap", cost: { wood: 2, junk: 1 }, hp: 40, blurb: "Hurts raiders who cross it. Wears down." },
   { id: "sandbags", kind: "sandbags", name: "Sandbags", cost: { cloth: 1, stone: 1 }, hp: 50, blurb: "Cover. Raiders have to break it." },
   { id: "chest", kind: "chest", name: "Storage chest", cost: { wood: 3, iron: 1 }, hp: 40, blurb: "Holds what the pack can't." },
   { id: "campfire", kind: "campfire", name: "Campfire", cost: { wood: 3, stone: 2 }, hp: 30, blurb: "Heat and a pot." },
-  { id: "rainbarrel", kind: "rainbarrel", name: "Rain barrel", cost: { wood: 3, iron: 1 }, hp: 30, blurb: "Fills itself. Water for the jug." },
+  { id: "garden", kind: "garden", name: "Garden bed", cost: { wood: 3, stone: 1 }, hp: 30, blurb: "Greens every day. Tap to harvest." },
+  { id: "smokehouse", kind: "smokehouse", name: "Smokehouse", cost: { wood: 6, stone: 2 }, hp: 50, blurb: "Raw meat in, jerky out." },
+  { id: "raincollector", kind: "raincollector", name: "Rain collector", cost: { wood: 2, cloth: 2, iron: 1 }, hp: 30, blurb: "Makes water: 1 jug every 12 hours, quicker in rain." },
+  { id: "still", kind: "still", name: "Still", cost: { iron: 3, junk: 3, wood: 2 }, hp: 40, blurb: "Water and apples into spirits." },
+  { id: "rainbarrel", kind: "rainbarrel", name: "Rain barrel", cost: { wood: 3, iron: 1 }, hp: 30, blurb: "Stores water: holds what the rain and your collectors give it." },
 ];
 export const PIECE_HP: Record<string, number> = Object.fromEntries(PIECES.map((p) => [p.kind, p.hp]));
 PIECE_HP["lookout"] = 70;
 export const PIECE_BROKEN: Record<string, string> = {
   "wall-wood": "wall-x", "wall-stone": "wall-x", "wall-metal": "wall-x",
   "gate-wood": "wall-x", "gate-stone": "wall-x", "gate-metal": "wall-x",
-  sandbags: "sandbags-x", lookout: "lookout-x", chest: "chest", rainbarrel: "rainbarrel", spikes: "spikes",
+  sandbags: "sandbags-x", lookout: "lookout-x", chest: "chest", garden: "garden", smokehouse: "smokehouse", raincollector: "raincollector", still: "still", rainbarrel: "rainbarrel", spikes: "spikes",
 };
 export const PIECE_UP: Record<string, string> = Object.fromEntries(PIECES.filter((p) => p.up).map((p) => [p.kind, p.up!]));
 export const isWall14 = (k: string) => /^(wall|gate)-(wood|stone|metal)$/.test(k);
@@ -95,11 +99,14 @@ export const CRAFT14: Craft14[] = [
   { id: "c-plate", makes: "plate", qty: 1, tier: 3, group: "Armor", cost: { iron: 8, junk: 4, hide: 2 } },
   { id: "c-steeltoes", makes: "steeltoes", qty: 1, tier: 3, group: "Armor", cost: { iron: 4, hide: 2 } },
   { id: "c-bomb", makes: "bomb", qty: 1, tier: 3, group: "Traps", cost: { iron: 3, junk: 3, cloth: 1 } },
+  { id: "c-bag1", makes: "bag-sack", qty: 1, tier: 1, group: "Tools", cost: { cloth: 3 } },
+  { id: "c-bag2", makes: "bag-hide", qty: 1, tier: 2, group: "Tools", cost: { hide: 3, cloth: 2 } },
+  { id: "c-bag3", makes: "bag-frame", qty: 1, tier: 3, group: "Tools", cost: { hide: 3, wood: 3, iron: 2 } },
   { id: "c-medicine", makes: "medicine", qty: 1, tier: 3, group: "Meds", cost: { cloth: 2, grokclaw: 1 } },
 ];
 export const BENCH_UP: Record<number, Cost> = { 1: { wood: 6, iron: 4, junk: 2 }, 2: { stone: 6, iron: 8, junk: 4, grokclaw: 1 } };
 
 /** Where each v14 sprite meets the ground: [x frac, frac up from the bottom]. Art is 2x world px. */
-export const ART14 = new Set(["wall-wood", "wall-stone", "wall-metal", "gate-wood", "gate-stone", "gate-metal", "wall-x", "spikes", "chest", "rainbarrel", "sandbags", "sandbags-x", "workbench", "wreck", "firering", "stash", "sign-farm", "lookout", "lookout-x"]);
+export const ART14 = new Set(["wall-wood", "wall-stone", "wall-metal", "gate-wood", "gate-stone", "gate-metal", "wall-x", "spikes", "chest", "rainbarrel", "sandbags", "sandbags-x", "workbench", "wreck", "firering", "stash", "sign-farm", "lookout", "lookout-x", "garden", "smokehouse", "raincollector", "still"]);
 export const ANCHOR14: Record<string, number> = { wall: .16, gate: .155, "wall-x": .256 };
 export const anchorOf = (img: string) => (img.startsWith("wall-x") ? .256 : img.startsWith("wall-") ? .16 : img.startsWith("gate-") ? .155 : .06);

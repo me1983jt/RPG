@@ -85,7 +85,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "villager") {
     return {
       speaker: "Villager",
-      text: "They nod. Nothing to trade, and no news they want to give.",
+      text: "They nod. Nothing to trade, and no news they'd part with.",
       choices: [{ label: "All right", id: "close" }],
     };
   }
@@ -128,7 +128,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "nora") {
     return {
       speaker: name,
-      text: "Nora Hebert. Holeb is a long porch and a longer winter. Mira Pelletier is my cousin's cousin. She still counts who comes back up the old Canada Road.",
+      text: "Nora Hebert. Holeb's a long porch and a longer winter, dear. Mira Pelletier is my cousin's cousin. She still counts who comes back up the old Canada Road.",
       choices: [{ label: "I'll tell her you asked", id: "close" }],
     };
   }
@@ -198,7 +198,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
       return t.wood >= SNOW_WOOD
         ? {
             speaker: name,
-            text: "That's good dry wood. Stack it by the stove.",
+            text: "That's good dry wood. Stack it by the stove, bark side up.",
             choices: [{ label: `Hand over the wood (${SNOW_WOOD})`, id: "snow-wood" }],
           }
         : {
@@ -210,12 +210,12 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     if (t.snow === 2) {
       return {
         speaker: name,
-        text: "Stove's going. Go see Sarah. She's got the kitchen and the press.",
+        text: "Stove's drawing good. Go see Sarah. She runs the kitchen and the press.",
         choices: [{ label: "I will", id: "close" }],
       };
     }
     if (t.raidOn) {
-      return { speaker: name, text: "Get back on a post! They're still out there.", choices: [{ label: "Going", id: "close" }] };
+      return { speaker: name, text: "Get back on a post! They ain't done yet.", choices: [{ label: "Going", id: "close" }] };
     }
     if (t.raidReady) {
       return {
@@ -264,7 +264,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     }
     return {
       speaker: name,
-      text: "The kitchen restocks every morning. Leave the two rows standing. They're why the cups stay full.",
+      text: "Kitchen fills back up every morning. Leave the two rows standing. They're why the cups stay full.",
       choices: [
         { label: "I will", id: "close" },
         { label: "Stand with me if they come", id: "join-sarah" },
@@ -347,7 +347,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "holt") {
     return {
       speaker: name,
-      text: "I saw lamps at Holeb last month. Long walk southeast. Longer if a chopper with a lever gun wants a word. Ada overnighted there when the Moose River was high.",
+      text: "I saw lamps at Holeb last month. Some long walk southeast, ayuh. Longer if a chopper with a lever gun wants a word. Ada overnighted there when the Moose River was high.",
       choices: [
         { label: "Walk it with me", id: "join-holt", check: { skill: "speech", dc: 46 } },
         { label: "Noted", id: "close" },

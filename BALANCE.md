@@ -11,7 +11,7 @@ Goal: a tense but fair early game, where nothing can be farmed without limit.
 | Rocks, trees | Each node is removed after gathering | Can't be farmed. Unchanged |
 | Raid scouts (14 HP, 4 atk) through Plate/Brute (46 HP, 8 atk) | Waves 3 to 5. Farmhouse HP 90+15n, +15 per stone wall | Night 1 is mostly scouts and night 5+ brings brutes. Unchanged |
 | Raid reward | 6+4n iron and 20+10n XP per night held | Danger scales with n, so it's fair. Unchanged |
-| Hunting trip | **Unlimited trips back to back.** A deer (20 HP, 2 atk) gave 2 meat + 1 hide, worth 3 iron at Bangor | **Farmable. Changed** |
+| Hunting trip | **Unlimited trips back to back.** A deer (18 HP, 5 atk, 8 XP in the woods; 16 HP, 2 atk in a road migration) gives 2 meat + 2 bone + 1 hide (v14.1: matched to the code), worth 3 iron at Bangor | **Farmable. Changed** |
 | Fishing | **Unlimited casts.** 12% chance of 3 smoked fish, otherwise 1 | **Farmable food. Changed** |
 | Shell prices | Réjean 8 iron for 6, Marcel 10 for 8, **Bangor 8 for 8** | Bangor was the cheapest and needs no risk past the trip. Changed |
 | Gas prices | Marcel 4 iron a can, **Bangor 2 for 6** | Changed to match Marcel |
@@ -133,3 +133,17 @@ A day is 12 real minutes (`DAY_LENGTH_SEC`), so the hourly rates below are per i
 | Moose | 96 in tall | **92 in**, shoulder about 66 px | Realistic scale |
 
 Prices and loot (camp raids, caravans, Marcel, Bangor) were reviewed and are unchanged.
+
+## v14.1 balance (from the "RPG Balance v14" sheet)
+| Item | Before | After |
+|---|---|---|
+| First Defend the Farm | Lost wave restored the walls | Can be lost: retry from the checkpoint, walls keep their damage |
+| Farmhouse raid HP | 90+15n | 120+15n |
+| Sheet-iron wall / iron gate | 3 / 4 iron | 5 / 6 iron |
+| Rain collector | — | Makes 1 water per 12 h (twice as fast in rain); pours into a rain barrel within 6 tiles |
+| Rain barrel | Endless water on tap | Stores up to 8 jugs; fills in rain and from collectors |
+| Sewn sack / hide rucksack | 4 cloth / 4 hide | 3 cloth / 3 hide |
+| Starting wreck cloth | 2 | 3 |
+| The Grok | Claw only from the quest | Drops 2-3 Grok claws, 3 hide, 3 meat |
+| Hot cider / cider donut | Heal only | +6 food +20 water / +14 food, each +15 stamina |
+| Bob's lever gun | — | atk 10, slowest reload of any long gun (1.15 s), below the Wyndham (12) and scoped carbine (14) |

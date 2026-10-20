@@ -179,7 +179,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return {
         replace: {
           speaker: "Loki",
-          text: "Biscuit ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, Dad said. You can follow his paw prints, they're in the mud by the trees. Please?",
+          text: "Biscuit ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, Dad said. You can follow his paw prints. They're in the mud by the trees. Please?",
           choices: [{ label: "I'll find him, bud", id: "q10-dog-accept" }],
         },
       };
@@ -192,7 +192,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
         },
       };
     if (q.dog === 2)
-      return { replace: { speaker: "Loki", text: "Did you find him yet? His paw prints go out past the orchard toward the big spruce.", choices: [{ label: "Still looking", id: "close" }] } };
+      return { replace: { speaker: "Loki", text: "Did you find him yet? Is he cold? His paw prints go out past the orchard toward the big spruce.", choices: [{ label: "Still looking", id: "close" }] } };
     return null;
   }
   if (role === "cyndal") {
@@ -200,7 +200,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return {
         replace: {
           speaker: "Cyndal",
-          text: "You got all three! The tube's a 6V6, that's the right one. Hold the lamp... okay. Okay! Listen. That's a man talking. \"...Thibodeau, Skowhegan, anybody on this band...\" He says he trades. He'll come up the road with his sled if we call.",
+          text: "You got all three! The tube's a 6V6. That's the right one. Hold the lamp... okay. Okay! Listen. That's a man talking. \"...Thibodeau, Skowhegan, anybody on this band...\" He says he trades. He'll come up the road with his sled if we call.",
           choices: [{ label: "Nice work, Cyndal", id: "q10-radio-done" }],
         },
       };

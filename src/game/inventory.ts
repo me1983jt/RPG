@@ -95,7 +95,8 @@ export function wornCount(p: Holder, id: string): number {
   return n;
 }
 export function gridRows(p: Holder): number {
-  return GRID_ROWS + (p.backId === "packframe" ? 2 : p.backId === "backpack" ? 1 : 0);
+  // v14.1: new games start two rows short (p.small); crafted bags (p.bagLv) add the rows back and more
+  return Math.max(2, GRID_ROWS + (p.backId === "packframe" ? 2 : p.backId === "backpack" ? 1 : 0) - (p.small ? 2 : 0) + (Number(p.bagLv) || 0));
 }
 
 /** Place every loose stack: keep saved spots that still fit, then pack the rest top-left first

@@ -95,7 +95,11 @@ export type PropKind =
   | "stash"
   | "sign-farm"
   | "lookout"
-  | "lookout-x";
+  | "lookout-x"
+  | "garden"
+  | "smokehouse"
+  | "raincollector"
+  | "still";
 
 export type Resource = "scrap" | "wood" | "stone";
 
@@ -185,6 +189,10 @@ export const PROP_SPEC: Record<PropKind, PropSpec> = {
   "sign-farm": { w: 1, h: 1, blocks: false, drawH: 66, image: "v14/sign-farm" },
   "lookout": { w: 1, h: 1, blocks: false, drawH: 154, image: "v14/lookout" },
   "lookout-x": { w: 1, h: 1, blocks: false, drawH: 154, image: "v14/lookout-x" },
+  "garden": { w: 1, h: 1, blocks: true, drawH: 22, image: "v14/garden" },
+  "smokehouse": { w: 1, h: 1, blocks: true, drawH: 88, image: "v14/smokehouse" },
+  "raincollector": { w: 1, h: 1, blocks: true, drawH: 50, image: "v14/raincollector" },
+  "still": { w: 1, h: 1, blocks: true, drawH: 52, image: "v14/still" },
 };
 
 export interface Recipe {
@@ -466,6 +474,8 @@ export interface HudSnapshot {
   questText: string;
   journal: { id: string; title: string; text: string; done: boolean }[];
   log: string[];
+  logIds?: number[];
+  v141?: any;
   buildOpen: boolean;
   recipe: number;
   canPlace: boolean;

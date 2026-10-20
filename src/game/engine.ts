@@ -34,8 +34,9 @@ import { assertIso, facing8, facing8Screen, facingFromWorld, screenDirToWorld, s
 import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
+import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
-import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
+import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
 import {
@@ -88,6 +89,7 @@ export interface GameApi {
   raidMode: () => void;
   startMode: (kind: "winter" | "endless" | "watch") => void;
   setStick: (x: number, y: number) => void;
+  v141: (cmd: string, arg?: any) => any;
   tap: (action: "attack" | "interact" | "build" | "pause" | "resume" | "menu" | "respawn" | "save") => void;
   choose: (id: string) => void;
   selectRecipe: (index: number) => void;
@@ -142,7 +144,8 @@ var STEP = 1 / 60;
 var IMAGES = [
 	"v2/tracks/wolf-left", "v2/tracks/wolf-right",
 	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
-	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x"].map((n) => `v14/${n}`),
+	"v2/hollowed-walk", "v2/hollowed-walk-atk", "v2/hollowed-walk-dead",
+	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x","garden","smokehouse","raincollector","still"].map((n) => `v14/${n}`),
 	"hero",
 	"hero-axe",
 	"hero-pick",
@@ -370,6 +373,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let buildOpen = false;
 	let packOpen = false;
 	let statsOpen = false;
+	let statsWait = false;
 	let inside = null;
 	/** The building just stepped out of: taps on it don't pull you straight back in for a moment. */
 	let justLeft = null;
@@ -556,11 +560,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lines.length = 0;
 		lines.push({
 			text,
-			t: 4
+			t: 4,
+			id: ++logSeq
 		});
 		log = [text];
 	}
 	const allLog = [];
+	let logSeq = 0;
 	function pushLog(text) {
 		allLog.push(text);
 		if (allLog.length > 40) allLog.shift();
@@ -591,6 +597,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0, raidReady: raidCanStart(), raidOn: !!raid, raidNext: raidNight + 1 };
 	}
 	function hudQuestText() {
+		const dh = dropHud();
+		if (dh && !raid) return dh;
 		if (raid?.defend) {
 			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
 			return `Defend the farm: ${raid.phase === "wave" ? `wave ${raid.wave} of ${raid.waves}` : `wave ${raid.wave + 1} of ${raid.waves} coming`}. Farmhouse ${pct}%.`;
@@ -616,6 +624,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function sync(force = false) {
 		if (!force) return;
+		// v14.1: Stats never sits over Build (level-ups while building wait for you to close it)
+		if (buildOpen && statsOpen) { statsOpen = false; statsWait = true; }
+		if (!buildOpen && statsWait) { statsWait = false; statsOpen = true; }
 		musicTick();
 		const p = player;
 		useHud.setState({
@@ -638,6 +649,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			questKills,
 			questText: hudQuestText(),
 			v113: v3Hud(),
+			logIds: lines.map((l) => l.id),
+			v141: hud141(),
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
 			wmap: wmHud(),
@@ -1117,6 +1130,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		w13 = freshW13();
 		v14 = freshV14();
 		if (typeof window !== "undefined" && window.__v14Skip) v14.st = 5;
+		l1 = freshV141(); storeKey = "";
+		// v14.1: a small starting pack that grows with crafted bags (older suites keep the old pack)
+		if (!(typeof window !== "undefined" && window.__v14Skip)) { player.small = true; player.bagLv = 0; }
 		craftOpen = false;
 		if (pendingBackstory) { applyBackstory(pendingBackstory); pendingBackstory = ""; }
 		if (pendingHard) { w13.hard = true; pendingHard = false; }
@@ -1302,6 +1318,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v3 = loadV3(data.v113);
 		w13 = loadW13(data.v13);
 		v14 = loadV14(data.v14);
+		l1 = loadV141(data.v141); storeKey = "";
 		craftOpen = false;
 		if (world.questBandits > 0) {
 			questTotal = world.questBandits;
@@ -1404,6 +1421,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.q11 = q11;
 		if (world && mapId === 0) { v14.placed = world.props.filter((p) => p.p14).map((p) => ({ k: p.kind, tx: p.tx, ty: p.ty, hp: Math.round(p.hp ?? 0), f: !!p.flip14 })); for (const p of world.props) if (p.f14) note14(p); }
 		data.v14 = v14;
+		data.v141 = l1;
 		data.v113 = v3;
 		data.v13 = w13;
 		data.regions = [...regions.values()];
@@ -1563,7 +1581,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function noticeRange(base) {
 		// v11.1: the motor bicycle is loud; raiders hear it coming from much farther off
-		return base * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1) * (1 - .03 * lv("stealth")) * (nightDark(clock) > .3 ? moon13().bold : 1) * (w13.weather.id === "fog" ? .7 : 1);
+		return base * (l1.crouch && !mounted ? CROUCH_SIGHT : 1) * (1 - Math.min(.4, skillOf("sneak") / 220)) * (mounted ? 1.7 : 1) * (1 - .03 * lv("stealth")) * (nightDark(clock) > .3 ? moon13().bold : 1) * (w13.weather.id === "fog" ? .7 : 1);
 	}
 	function reveal(tx, ty, r, remember) {
 		const r2 = r * r;
@@ -1677,7 +1695,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
 		if (id.startsWith("v13-") && v13Choice(id)) return;
-		if (id.startsWith("v14-") && v14Choice(id)) { sync(true); return; }
+		if ((id.startsWith("v14-") || id.startsWith("v141-")) && v14Choice(id)) { sync(true); return; }
 		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id.startsWith("q113-") && v3Choice(id)) return;
 		if (id === "raid-ask") {
@@ -3789,7 +3807,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function caravanMenu() {
 		const r = v13Caravan();
 		if (!r) return openD13("Road", "No caravan on the road right now. They run on a schedule: Lowelltown to Skowhegan every 2 days (9 to 3), Skowhegan to Bangor every 3 days (10 to 4).", [{ label: "Close", id: "close" }]);
-		if (w13.caravan[caravanKey(r)]) return openD13("Caravan", "The caravan's already gone by today.", [{ label: "Close", id: "close" }]);
+		if (w13.caravan[caravanKey(r)]) return openD13("Caravan", "Caravan's already been through today. You missed 'em.", [{ label: "Close", id: "close" }]);
 		return openD13(`Caravan: ${r.from} to ${r.to}`, "Two sledges and a horse, three men with deer rifles. The driver squints at you.", [{ label: "Ride guard for them", id: "v13-car-guard" }, { label: "Rob it", id: "v13-car-rob" }, { label: "Let it pass", id: "close" }]);
 	}
 	// ---- Harmony rebuilding
@@ -3850,6 +3868,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const n = w13.needs;
 		if (f.hunger) n.hunger = Math.min(100, n.hunger + f.hunger * more);
 		if (f.thirst) n.thirst = Math.min(100, n.thirst + f.thirst * more);
+		if (def.id === "cider" || def.id === "donut") { player.stamina = Math.min(player.maxStamina, player.stamina + 15); if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal); pushLog(def.id === "cider" ? "Hot cider. Warm all the way down. +15 stamina." : "Still warm from Sarah's kettle. +15 stamina."); }
 		if (f.sleep) n.sleep = Math.min(100, n.sleep + f.sleep);
 		if (perk13("cooking", 9) && RECIPES13.some((r) => r.makes === def.id)) n.thirst = Math.min(100, n.thirst + 10);
 		if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal);
@@ -4010,7 +4029,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (prop.kind === "wreck") {
 			if (v14.st > 0) return pushLog("The truck's picked clean. Somebody's luck ran out here.");
 			v14.st = 1;
-			giveItem("matches"); giveItem("junk", 3); giveItem("cloth", 2); giveItem("water");
+			giveItem("matches"); giveItem("junk", 3); giveItem("cloth", 3); giveItem("water");
 			const st = world.props.find((p) => p.camp14 === "stash"); if (st) { vacate(world, st); world.props = world.props.filter((p) => p !== st); }
 			pushLog("Under the seat: a match tin, a twist of cloth, a jug of water and a fistful of bolts.");
 			pushLog("It'll be dark and cold soon. Get 3 wood off the spruce and light the fire ring.");
@@ -4030,8 +4049,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (prop.kind === "sign-farm") return pushLog("Hand-painted: FARM. KEEP TO THE ROAD. Somebody added: WE SHOOT.");
 		if (prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Justin: \"That's my bench. Earn it first.\"" : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
 		if (isGate14(prop.kind)) return toggleGate14(prop);
-		if (prop.kind === "chest") return pushLog("The chest. Stash things here from the pack (drop them by it)."), void 0;
-		if (prop.kind === "rainbarrel") { if (tryGive("water")) pushLog("You fill a jug from the rain barrel."); else pushLog("No room for a jug."); sync(true); return; }
+		if (prop.kind === "chest") return openStore(prop), void 0;
+		if (prodOf(prop.kind)) return prodUse(prop), void 0;
+		if (prop.kind === "rainbarrel") {
+			// v14.1: the barrel stores water; rain and nearby rain collectors fill it
+			const st = barrel141(prop);
+			if (st.n <= 0) { pushLog(`Rain barrel: empty (0 of ${BARREL_CAP} jugs). It fills in rain, or from a rain collector next to it.`); sync(true); return; }
+			if (tryGive("water")) { st.n -= 1; pushLog(`You fill a jug from the rain barrel. ${st.n} of ${BARREL_CAP} jugs left.`); } else pushLog("No room for a jug.");
+			sync(true); return;
+		}
 		if (PIECE_HP[prop.kind] || prop.kind === "wall-x" || prop.kind === "sandbags-x" || prop.kind === "lookout-x") return repairOne14(prop);
 	}
 	function toggleGate14(prop) {
@@ -4141,13 +4167,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function defendLost14(why) {
 		v14.tries += 1;
 		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
-		for (const s of defendSnap ?? []) { if (s.p.kind !== s.k) { vacate(world, s.p); s.p.kind = s.k; occupy(world, s.p); } s.p.hp = s.hp; note14(s.p); }
+		// v14.1 balance: the wave can be lost. You retry from the checkpoint, but the walls keep the damage they took.
+		const hurt14 = world.props.filter((p) => (p.f14 || p.p14) && p.hp < maxHp14(p)).length;
 		guardPost.clear();
 		raid.wave = Math.max(0, raid.wave - 1); raid.phase = "lull"; raid.t = 9; raid.left = 0; raid.house = raid.houseMax; raid.warned = false;
 		v14.defendWave = raid.wave;
 		player.hp = player.maxHp; player.invuln = 2;
 		const spot = raidHouse(); if (spot) { const r = nearestRespawn(tileOf(spot.x, spot.y).tx, tileOf(spot.x, spot.y).ty + 2, 1, 1); player.x = r.x; player.y = r.y; }
-		openD13("Defend the farm", `${why} Justin hauls you up by the coat. "Again. They'll come the same way." The wave starts over.`, [{ label: "Back to the gate", id: "close" }]);
+		openD13("Defend the farm", `${why} Justin hauls you up by the coat. "Again. They'll come the same way, they always do." The wave starts over.${hurt14 ? ` The walls keep their damage: ${hurt14} piece${hurt14 === 1 ? "" : "s"} want repair (Build → Repair).` : ""}`, [{ label: "Back to the gate", id: "close" }]);
 	}
 	function defendWon14() {
 		v14.st = 5; v14.defendWave = 0; defendSnap = null;
@@ -4176,7 +4203,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 	}
-	function v14Talk(role) {
+	function v14Talk(role, npc) {
+		if (String(role).startsWith("lr-")) return lrTalk(npc);
 		if (role !== "justin" || ok14()) return null;
 		if (v14.st === 4) return { speaker: "Justin", text: "Get on the gate! Shoot what comes over the stakes.", choices: [{ label: "Going", id: "close" }] };
 		if (v14.st >= 3 && snow <= 0) return { speaker: "Justin", text: "Justin. My wife Sarah, my kids in the house. We lost hens and a gas can to the road last week, so you'll forgive the rifle. You saw the stakes. Half of them are down. First snow tonight and the stove's down to kindling. Bring three armloads of wood off the pile by the barn and we'll talk about you staying.", choices: [{ label: "I'll bring the wood", id: "snow-accept" }, { label: "I'll go", id: "close" }] };
@@ -4234,8 +4262,463 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.fillStyle = f > .5 ? "#8fbf6a" : f > .2 ? "#e0b050" : "#d0644a"; ctx.fillRect(pt.sx - w / 2, y, w * Math.max(0, f), 5 * zoom);
 	}
 	function v14Choice(id) {
+		if (v141Choice(id)) return true;
+		if (lrChoice(id)) return true;
 		if (id === "v14-repair-all") { dialogue = null; phase = "play"; repairAll14(); return true; }
 		return false;
+	}
+	// ======== v14.1: loot runs, the horde, stealth, farm production, pack growth, hard-mode pack drop, storage, controls
+	let l1 = freshV141();
+	let stickX = 0, stickY = 0, coastT = 0, coastX = 0, coastY = 0, noiseHear = 0, prodAcc = 0, storeKey = "";
+	const test141 = () => typeof window !== "undefined" && !!window.__v14Skip;
+	/** A sound at (x, y): the Hollowed in reach turn toward it; raiders nearby wake. */
+	function emitNoise(n, x = player?.x, y = player?.y) {
+		if (!world || !player) return;
+		l1.noise = Math.max(l1.noise, n);
+		const reach = noiseReach(n);
+		for (const e of world.enemies) {
+			if (e.dead) continue;
+			const d = Math.hypot(e.x - x, e.y - y);
+			if (d > reach) continue;
+			if (e.hollow) { e.heard = { x, y, t: clock }; e.path = null; e.pathT = 0; }
+			else if (n >= 90 && e.temper === "hostile" && !e.aggro && d < reach * .5) { e.aggro = true; alertPack(e); }
+		}
+	}
+	function noiseTick(dt, moving) {
+		const target = l1.crouch ? (moving ? NOISE.crouch : NOISE.still) : mounted ? NOISE.bike : work && work.swing > 0 ? NOISE.chop : moving ? NOISE.walk : NOISE.still;
+		if (l1.noise > target) l1.noise = Math.max(target, l1.noise - 45 * dt);
+		else l1.noise = Math.min(target, l1.noise + 90 * dt);
+		noiseHear += dt;
+		if (noiseHear > .5) { noiseHear = 0; if (l1.noise > 5) emitNoise(l1.noise); }
+	}
+	function setCrouch(on) {
+		if (mounted && on) { pushLog("Not on the bike."); return; }
+		l1.crouch = on;
+		pushLog(on ? "You get down low. Slower, and a lot quieter." : "You stand up.");
+		sync(true);
+	}
+	// ---- the Hollowed
+	function spawnHollowed(n, at, spread = 70) {
+		const out = [];
+		for (let i = 0; i < n; i++) {
+			const a = i / n * Math.PI * 2, r = spread * (.4 + Math.random() * .6);
+			let x = at.x + Math.cos(a) * r, y = at.y + Math.sin(a) * r;
+			if (pointBlocked(world, x, y, RADIUS)) { x = at.x; y = at.y; }
+			spawnRaider("gray", { x, y });
+			const e = world.enemies[world.enemies.length - 1];
+			Object.assign(e, { hollow: true, raid: false, aggro: false, name: HOLLOWED, hp: 18, maxHp: 18, atk: 5, xp: 6, elite: false, variant: "", wander: Math.random() * 6 });
+			out.push(e);
+		}
+		return out;
+	}
+	function stepHollow(e, dt, dist) {
+		const sight = 125 * (l1.crouch ? CROUCH_SIGHT : 1) * (nightShade(clock) > .22 ? .8 : 1);
+		if (!e.aggro && dist < sight) { e.aggro = true; e.heard = null; for (const o of world.enemies) if (o.hollow && !o.dead && !o.aggro && Math.hypot(o.x - e.x, o.y - e.y) < 160) o.aggro = true; }
+		if (e.aggro && dist > 520) e.aggro = false;
+		let moving = false;
+		if (e.aggro && dist <= 48 && e.cooldown <= 0) {
+			e.cooldown = 1.25; e.dir = facing8(player.x - e.x, player.y - e.y);
+			hurtPlayer(e.crippleArm > 0 ? 3 : e.atk, e.x, e.y);
+		} else {
+			let gx = null, gy = null, sp = 62;
+			if (e.aggro) { gx = player.x; gy = player.y; sp = 74; }
+			else if (e.heard && clock - e.heard.t < 40) { gx = e.heard.x; gy = e.heard.y; if (Math.hypot(gx - e.x, gy - e.y) < 30) e.heard = null; }
+			else { e.wander -= dt; if (e.wander <= 0) { e.wander = 4 + Math.random() * 5; const a = Math.random() * Math.PI * 2; e.goal = { x: e.homeX + Math.cos(a) * 90, y: e.homeY + Math.sin(a) * 90 }; } if (e.goal) { gx = e.goal.x; gy = e.goal.y; sp = 30; } }
+			if (e.crippleLeg > 0) sp *= .5;
+			if (gx != null) {
+				if (e.pathT <= 0 || !e.path) { e.path = pathTo(world, e.x, e.y, gx, gy); e.pathT = .7; }
+				if (e.path?.length) { e.path = follow(e, e.path, sp, dt, true); moving = true; }
+			}
+		}
+		// the shamble: a slow, uneven step
+		if (moving) e.anim += dt * (4.2 + Math.sin(clock * 2.3 + e.id) * 1.6);
+		e.frame = moving ? Math.floor(e.anim) % 4 : 0;
+	}
+	function hollowedArea(mid) {
+		if (!world || !player || world.enemies.some((e) => e.hollow)) return;
+		const groups = mid === 9 ? 0 : mid >= 3 ? 2 : 0;
+		for (let g = 0; g < groups; g++) {
+			for (let k = 0; k < 30; k++) {
+				const a = Math.random() * Math.PI * 2, r = 900 + Math.random() * 1500;
+				const at = { x: player.x + Math.cos(a) * r, y: player.y + Math.sin(a) * r };
+				const t = tileOf(at.x, at.y);
+				if (t.tx < 4 || t.ty < 4 || t.tx > 150 || t.ty > 150 || pointBlocked(world, at.x, at.y, RADIUS)) continue;
+				spawnHollowed(4 + Math.floor(Math.random() * 3), at);
+				break;
+			}
+		}
+	}
+	// ---- loot runs
+	function lootHud() {
+		const today = curDay();
+		return LOOT_RUNS.map((l) => { const left = restockLeft(l, l1.loot[l.id], today); return { id: l.id, name: l.name, q: l.q, r: l.r, ready: left === 0, days: left }; });
+	}
+	function freeSpot(x, y) {
+		for (let r = 0; r < 8; r++) for (let k = 0; k < 12; k++) {
+			const a = k / 12 * Math.PI * 2, px = x + Math.cos(a) * r * 40, py = y + Math.sin(a) * r * 40;
+			if (!pointBlocked(world, px, py, RADIUS)) return { x: px, y: py };
+		}
+		return { x, y };
+	}
+	const LOOT_ROOMS = { gas: ["Pump island", "Store shelves", "Back office"], camp: ["Woodshed", "Camp kitchen", "Gun cabinet"], truck: ["Truck cab", "Cargo bay", "Chained crate"] };
+	function lootEnter(run) {
+		const m = wmState();
+		m.warn = "";
+		regions.delete(9);
+		m.enc = "loot:" + run.id;
+		wmArrive(9, m.from);
+		const today = curDay();
+		const fresh = restockLeft(run, l1.loot[run.id], today) === 0;
+		l1.loot[run.id] = fresh ? today : l1.loot[run.id];
+		// deeper = farther from where you came in (toward the middle of the little map)
+		const cx = 78 * 64, cy = 78 * 64;
+		const dx = cx - player.x, dy = cy - player.y, dm = Math.hypot(dx, dy) || 1;
+		const rooms = LOOT_ROOMS[run.id];
+		piles = piles.filter((q) => !q.title.startsWith(run.name + ":"));
+		for (let i = 0; i < 3; i++) {
+			const dist = 260 + i * 380;
+			const s = freeSpot(player.x + dx / dm * dist, player.y + dy / dm * dist);
+			const items = fresh ? run.tiers[i].map(([id, qty]) => ({ id, qty })) : i === 0 ? [{ id: "junk", qty: 1 }] : [];
+			if (items.length) leavePile(s.x, s.y, `${run.name}: ${rooms[i]}`, items, 0, "", 0);
+			if (i === 0 && run.id === "truck") placeAround14("wreck", tileOf(s.x, s.y).tx + 1, tileOf(s.x, s.y).ty - 1, { loot141: true });
+			if (i === 2 && fresh) {
+				const g = { x: s.x + 90, y: s.y + 40 };
+				if (run.id === "gas") spawnHollowed(4, g);
+				else if (run.id === "camp") for (let k = 0; k < 3; k++) q10Spawn("wolf", "", "Timber wolf", { x: g.x + k * 40, y: g.y - k * 30 }, [22, 5, 10], "enc", true);
+				else for (let k = 0; k < 2; k++) { spawnRaider("scout", { x: g.x + k * 50, y: g.y }); world.enemies[world.enemies.length - 1].raid = false; world.enemies[world.enemies.length - 1].aggro = false; }
+			}
+		}
+		{ const my = piles.filter((q) => q.title.startsWith(run.name + ":")); if (my.length) lrSetup(run, my[0], my[my.length - 1]); else lrSetup(run, player, { x: player.x + dx / dm * 1000, y: player.y + dy / dm * 1000 }); }
+		pushLog(fresh ? `${run.name}. ${run.blurb} The good stuff is deeper in.` : `${run.name}. Picked over. It'll be worth a look again in ${restockLeft(run, l1.loot[run.id], today)} day${restockLeft(run, l1.loot[run.id], today) === 1 ? "" : "s"}.`);
+		pushLog("Walk to the tinted edge to get back on the world map.");
+		saveGame(); sync(true);
+	}
+	// ---- loot-run side quests (gb-handoff/lootruns.md): Dale's Key, Roy's Trapline, Wendell's Load
+	let lrNpcId = 990000;
+	function lrNpc(role, name, at) {
+		const s = freeSpot(at.x, at.y);
+		world.npcs = world.npcs.filter((n) => n.role !== role);
+		world.npcs.push({ id: lrNpcId++, role, name, x: s.x, y: s.y, homeX: s.x, homeY: s.y, dir: 0, frame: 0, anim: 0, path: null, pause: 99, hp: 30, maxHp: 30, lr141: true });
+	}
+	function lrSetup(run, s0, s2) {
+		const lore = LOOT_LORE[run.id];
+		const sq = l1.sq[run.id] ?? 0;
+		pushLog(lore.desc);
+		const my = piles.filter((q) => q.title.startsWith(run.name + ":"));
+		my.forEach((q, i) => { q.note = i; });
+		const side = (k, dist) => ({ x: s0.x + (s2.x - s0.x) * dist + (s2.y - s0.y) * .45, y: s0.y + (s2.y - s0.y) * dist - (s2.x - s0.x) * .45 });
+		if (run.id === "gas") {
+			lrNpc("lr-tammy", "Tammy Bouchard", { x: s0.x - 90, y: s0.y + 60 });
+			if (sq === 1) { const k = side(0, 1.1); leavePile(k.x, k.y, "Dale's place: kitchen hook", [{ id: "dalekey", qty: 1 }], 0, "", 0); spawnHollowed(4, { x: k.x + 60, y: k.y + 40 }, 60); }
+		} else if (run.id === "camp") {
+			if (sq < 3) lrNpc("lr-bob", "Bob Carrier", { x: s0.x - 80, y: s0.y + 50 });
+			if (sq === 1) {
+				for (let i = 0; i < 4; i++) { const k = side(i, .3 + i * .28); leavePile(k.x, k.y, `Roy's trapline: flagging tape, site ${i + 1}`, i === 3 ? [{ id: "roycap", qty: 1 }, { id: "steeltrap", qty: 1 }] : [{ id: "snare", qty: 1 }], 0, "", 0);
+					if (i === 2) { lrNpc("lr-gerry", "Gerry", { x: k.x + 30, y: k.y - 30 }); for (let w = 0; w < 4; w++) q10Spawn("wolf", "", "Timber wolf", { x: k.x + 120 + w * 30, y: k.y + 40 - w * 25 }, [22, 5, 10], "enc", true); }
+					if (i === 3) spawnHollowed(3, { x: k.x + 70, y: k.y + 30 }, 50); }
+			}
+		} else if (run.id === "truck") {
+			lrNpc("lr-wendell", "Wendell Ouellette", side(0, .2));
+			if (sq === 2) for (let i = 0; i < 3; i++) { const k = side(i, .45 + i * .3); leavePile(k.x, k.y, `Trail from the truck ${i + 1}`, [{ id: "cloth", qty: 1 }], 0, "", 0); }
+		}
+	}
+	/** A note is read the first time you open its room; then the loot shows. */
+	function lrNote(pile) {
+		if (pile.note == null || pile.noteRead) return false;
+		const run = LOOT_RUNS.find((r) => pile.title.startsWith(r.name + ":"));
+		if (!run) return false;
+		// Dale's key: the back office door is steel and locked
+		if (run.id === "gas" && pile.note === 2 && !l1.sqf.office) {
+			if (!player.bag.some((s) => s.id === "dalekey")) { openD13("Back office", "Steel door, steel frame, a deadbolt. Dale took the key home to Bingham. You aren't getting through this without it.", [{ label: "Leave it", id: "close" }]); return true; }
+			l1.sqf.office = true; takeItem("dalekey", 1);
+		}
+		pile.noteRead = true;
+		const n = LOOT_LORE[run.id].notes[pile.note];
+		openD13(n.title, n.text, [{ label: "Search the room", id: `v141-search-${pile.id}` }]);
+		return true;
+	}
+	function lrTalk(npc) {
+		const r = npc.role, sq = (k) => l1.sq[k] ?? 0;
+		if (r === "lr-tammy") {
+			const st = sq("gas");
+			if (st === 0) return { speaker: "Tammy Bouchard", text: "\"That hand pump in the back office'll pull the last of the underground tank. Key's on Dale's ring, and Dale's at his place up the Bingham road. What's left of him, anyhow. Bring me the key and I'll split the fuel with you, fair.\"", choices: [{ label: "I'll get Dale's key", id: "v141-q-gas-1" }, { label: "Not now", id: "close" }] };
+			if (st === 1 && !l1.sqf.pumped) return { speaker: "Tammy Bouchard", text: l1.sqf.office ? "\"Office is open? Then run the pump. It's loud, mind. Loud brings company.\"" : `"Dale's place is off the back lot, up the road. There's ${HOLLOWED} around it. Keep low and quiet, or don't, your funeral."`, choices: [...(l1.sqf.office ? [{ label: "Run the hand pump (loud)", id: "v141-q-gas-pump" }] : []), { label: "Going", id: "close" }] };
+			if (st === 1 && l1.sqf.pumped) return { speaker: "Tammy Bouchard", text: "\"Four cans. Two's mine, that was the deal.\"", choices: [{ label: "Split it fair (2 fuel each)", id: "v141-q-gas-share" }, { label: "Keep all four", id: "v141-q-gas-keep" }] };
+			if (l1.sqf.tammyCold) return { speaker: "Tammy Bouchard", text: "She looks right through you and rolls another tea-leaf smoke.", choices: [{ label: "Go", id: "close" }] };
+			return { speaker: "Tammy Bouchard", text: "\"Back again. I've got matches and a little oil if you've iron.\"", choices: [{ label: "Matches: 2 iron", id: "v141-buy-matches" }, { label: "Oil: 3 iron", id: "v141-buy-oil" }, { label: "Bye, Tammy", id: "close" }] };
+		}
+		if (r === "lr-bob") {
+			const st = sq("camp");
+			if (st === 0) return { speaker: "Bob Carrier", text: "\"Roy went out on the line eleven days ago. Gerry went after him. I'm too stove-up in the knees to walk it. Find 'em, or find what happened. I'd rather know.\"", choices: [{ label: "I'll walk the line", id: "v141-q-camp-1" }, { label: "Not now", id: "close" }] };
+			if (st === 1 && !player.bag.some((s) => s.id === "roycap")) return { speaker: "Bob Carrier", text: "\"Orange flagging tape on the trees. Four sites. Gerry'd have stuck to it.\"", choices: [{ label: "Going", id: "close" }] };
+			if (st === 1) return { speaker: "Bob Carrier", text: `You hand him the cap. He turns it over a long time. "${l1.sqf.gerry ? "Gerry's back, anyhow. " : ""}Well. Now I know." He nods at the bottom bunk. "Take the lever gun. Or my glasses, if you'd rather."`, choices: [{ label: "Bob's lever gun", id: "v141-q-camp-gun" }, { label: "The binoculars", id: "v141-q-camp-bino" }] };
+			return { speaker: "Bob Carrier", text: "\"Stove's going. Sleep here if you need to.\"", choices: [{ label: "Thanks, Bob", id: "close" }] };
+		}
+		if (r === "lr-gerry") {
+			if (l1.sqf.gerry) return { speaker: "Gerry", text: "\"I'm going. I'm going.\"", choices: [{ label: "Close", id: "close" }] };
+			const wolves = world.enemies.some((e) => !e.dead && e.kind === "wolf" && Math.hypot(e.x - npc.x, e.y - npc.y) < 500);
+			if (wolves) return { speaker: "Gerry", text: "From the top of a ladder stand: \"Wolves! Don't just stand there gawking, clear 'em off!\"", choices: [{ label: "Close", id: "close" }] };
+			return { speaker: "Gerry", text: "\"Lord. Thank you. Roy's tracks went on toward the drift past the last flag. I couldn't. Tell Bob I'm coming. And... tell him I've got his fourteen dollars. Sort of.\" He hands you a maple tin.", choices: [{ label: "Head back to camp", id: "v141-q-gerry" }] };
+		}
+		if (r === "lr-wendell") {
+			const st = sq("truck");
+			if (st === 0) return { speaker: "Wendell Ouellette", text: "\"I was hauling people. Didn't know it till Skowhegan. They were Forks people, the Collector's taking 'em south. I let 'em out the floor, sort of. I think some made it to the spruce. Somebody's gotta find 'em before the cold or his boys do.\" His ankle's bent wrong.", choices: [{ label: "Splint the ankle (bandage + 1 wood)", id: "v141-q-truck-splint" }, { label: "Not now", id: "close" }] };
+			if (st === 1 || st === 2) { const found = (l1.sq.truckFound ?? 0); return { speaker: "Wendell Ouellette", text: found >= 2 ? "\"Two of 'em? Two's... two's good. Send 'em to Harmony, there's a clinic there.\"" : `"Three trails off the truck. Boot prints, a mitten, blood. ${found} found so far."`, choices: [...(found >= 2 ? [{ label: "They're headed for Harmony", id: "v141-q-truck-done" }] : []), { label: "Going", id: "close" }] }; }
+			return { speaker: "Wendell Ouellette", text: "\"The Collector's boys'll be back for the truck. Let 'em have it.\"", choices: [{ label: "Close", id: "close" }] };
+		}
+		return null;
+	}
+	function lrChoice(id) {
+		let m = /^v141-search-(\d+)$/.exec(id);
+		if (m) { const p = piles.find((q) => q.id === +m[1]); dialogue = null; phase = "play"; if (p) openLoot(p); return true; }
+		const done = () => { dialogue = null; phase = "play"; saveGame(); sync(true); return true; };
+		if (id === "v141-q-gas-1") { l1.sq.gas = 1; pushLog("Dale's Key: get the key ring off the kitchen hook at Dale's place. Come back to the station to set it up."); regions.delete(9); return done(); }
+		if (id === "v141-q-gas-pump") { l1.sqf.pumped = true; emitNoise(100); spawnHollowed(5, { x: player.x + 520, y: player.y - 200 }, 90); pushLog(`The hand pump squeals like a stuck pig. Four cans. Out of the treeline, ${HOLLOWED}, coming for the noise.`); return done(); }
+		if (id === "v141-q-gas-share") { l1.sq.gas = 2; giveItem("fuel", 2); pushLog("Dale's Key done: 2 fuel. Tammy will trade with you now, and the back office stays open."); grantXp(30); return done(); }
+		if (id === "v141-q-gas-keep") { l1.sq.gas = 2; l1.sqf.tammyCold = true; giveItem("fuel", 4); pushLog("You keep all four. Tammy won't forget it."); grantXp(20); return done(); }
+		if (id === "v141-buy-matches" || id === "v141-buy-oil") { const c = id.endsWith("matches") ? 2 : 3; if (player.scrap < c) pushLog("Not enough iron."); else { player.scrap -= c; giveItem(id.endsWith("matches") ? "matches" : "oil"); } return done(); }
+		if (id === "v141-q-camp-1") { l1.sq.camp = 1; pushLog("Roy's Trapline: walk the four flagged sites."); regions.delete(9); return done(); }
+		if (id === "v141-q-gerry") { l1.sqf.gerry = true; giveItem("maple"); world.npcs = world.npcs.filter((n) => n.role !== "lr-gerry"); pushLog("Gerry heads back to camp. Gerry pays his 14-dollar debt with a maple tin."); return done(); }
+		if (id === "v141-q-camp-gun" || id === "v141-q-camp-bino") {
+			l1.sq.camp = 2; takeItem("roycap", 1); giveItem("steeltrap", 2); giveItem("hide", 2);
+			// adult player only: the gun goes in your own pack, never to a companion
+			giveItem(id.endsWith("gun") ? "levergun" : "binoculars");
+			pushLog(`Roy's Trapline done. Steel traps, hides${id.endsWith("gun") ? " and Bob's lever gun" : " and Bob's binoculars"}. The camp's a safe place to rest now.`); grantXp(40); return done();
+		}
+		if (id === "v141-q-truck-splint") {
+			const b = player.bag.find((s) => /^bandage/.test(s.id));
+			if (!b || player.wood < 1) { pushLog("You need a bandage and a stick of wood."); return done(); }
+			takeItem(b.id, 1); player.wood -= 1; l1.sq.truck = 2; l1.sq.truckFound = 0;
+			pushLog("You splint Wendell's ankle. Wendell's Load: follow the three trails off the truck."); regions.delete(9); return done();
+		}
+		if (id === "v141-q-truck-done") {
+			l1.sq.truck = 3; giveItem("backpack"); giveItem("medicine"); w13.freed = (w13.freed ?? 0) + 2; l1.sqf.collectorRoutes = true;
+			if (w13.loyal) w13.loyal.mira = (w13.loyal.mira ?? 0) + 5;
+			for (let i = 0; i < 3; i++) { spawnRaider("scout", { x: player.x + 420 + i * 50, y: player.y - 120 }); const e = world.enemies[world.enemies.length - 1]; e.raid = false; }
+			pushLog("Wendell's Load done: a canvas pack and medicine. Two Forks people on the road to Harmony (+2 Harmony). Mira will hear of it. Wendell's sheet lists the Collector's caravan routes: a lead for act 5.");
+			pushLog("Engines on Route 27. The Collector's men are back for the truck. Defend it or let it go.");
+			grantXp(40); return done();
+		}
+		return false;
+	}
+	/** Trails off the truck: opening each one is a survivor, a body, or an ambush. */
+	function lrTrail(pile) {
+		const m = /^Trail from the truck (\d)$/.exec(pile.title);
+		if (!m || pile.trailDone) return;
+		pile.trailDone = true;
+		const i = +m[1];
+		if (i === 2) { pushLog("A mitten, and a shape under the snow. You leave them be."); return; }
+		l1.sq.truckFound = (l1.sq.truckFound ?? 0) + 1;
+		if (i === 3) { for (let k = 0; k < 2; k++) { spawnRaider("scout", { x: pile.x + 200 + k * 40, y: pile.y }); world.enemies[world.enemies.length - 1].raid = false; } pushLog("A Forks woman in a spruce hollow, and two of the Collector's men right behind her. Ambush."); }
+		else pushLog("A Forks man under a blowdown, half frozen. You point him toward Harmony.");
+	}
+	// ---- farm production
+	function prodKey(p) { return `${p.tx},${p.ty}`; }
+	function prodState(p) { return (l1.prod[prodKey(p)] ??= { t: clock, n: 0, load: 0 }); }
+	function prodRun(p) {
+		const def = prodOf(p.kind); if (!def) return;
+		const st = prodState(p);
+		const hrs = (clock - st.t) / DAY_LENGTH_SEC * 24;
+		const wet = w13.weather.id === "rain" || w13.weather.id === "snow" || w13.weather.id === "noreaster";
+		let per = def.per;
+		if (def.kind === "raincollector" && wet) per /= 2;
+		if (def.kind === "garden" && world.props.some((q) => q.kind === "raincollector" && Math.hypot(q.tx - p.tx, q.ty - p.ty) < 6)) per *= .75;
+		if (hrs < per) return;
+		const batches = Math.floor(hrs / per);
+		st.t += batches * per / 24 * DAY_LENGTH_SEC;
+		for (let i = 0; i < batches && st.n < def.cap; i++) {
+			if (def.needs) { if (st.load <= 0) break; st.load -= 1; }
+			st.n = Math.min(def.cap, st.n + def.qty);
+		}
+	}
+	const BARREL_CAP = 8;
+	function barrel141(p) {
+		const k = prodKey(p);
+		if (!l1.prod[k]) l1.prod[k] = { t: clock, n: 4, load: 0 };
+		const st = l1.prod[k];
+		const wet = w13.weather.id === "rain" || w13.weather.id === "snow" || w13.weather.id === "noreaster";
+		const hrs = (clock - st.t) / DAY_LENGTH_SEC * 24;
+		if (!wet) { st.t = clock; return st; }
+		if (hrs >= 12) { const b = Math.floor(hrs / 12); st.t += b * 12 / 24 * DAY_LENGTH_SEC; st.n = Math.min(BARREL_CAP, st.n + b); }
+		return st;
+	}
+	/** Rain collectors pour what they make into a rain barrel within 6 tiles (the barrel stores, the collector produces). */
+	function pourCollector(p, st) {
+		if (st.n <= 0) return;
+		const b = world.props.find((q) => q.kind === "rainbarrel" && Math.hypot(q.tx - p.tx, q.ty - p.ty) <= 6);
+		if (!b) return;
+		const bs = barrel141(b);
+		const mv = Math.min(st.n, BARREL_CAP - bs.n);
+		bs.n += mv; st.n -= mv;
+	}
+	function prodTick(dt) {
+		if (!world || mapId !== 0 || mode11) return;
+		prodAcc += dt; if (prodAcc < 1) return; prodAcc = 0;
+		for (const p of world.props) if (p.p14 && prodOf(p.kind)) { prodRun(p); if (p.kind === "raincollector") pourCollector(p, prodState(p)); }
+		for (const p of world.props) if (p.kind === "rainbarrel") barrel141(p);
+	}
+	function prodUse(p) {
+		const def = prodOf(p.kind);
+		prodRun(p);
+		const st = prodState(p);
+		const ch = [];
+		if (st.n > 0) ch.push({ label: `Take ${st.n} × ${GEAR[def.makes].name}`, id: `v141-take-${prodKey(p)}` });
+		if (def.needs) {
+			const can = def.needs.every(([id, n]) => (player.bag.find((s) => s.id === id)?.qty ?? 0) >= n);
+			ch.push({ label: `Load it: ${def.needs.map(([id, n]) => `${n} ${GEAR[id].name}`).join(" + ")}${can ? "" : " (you're short)"}`, id: `v141-load-${prodKey(p)}` });
+		}
+		ch.push({ label: "Leave it", id: "close" });
+		const bar = def.kind === "raincollector" ? world.props.find((q) => q.kind === "rainbarrel" && Math.hypot(q.tx - p.tx, q.ty - p.ty) <= 6) : null;
+		const status = def.needs ? `Loaded for ${st.load} batch${st.load === 1 ? "" : "es"}.` : bar ? `It pours into the rain barrel next to it (${barrel141(bar).n} of ${BARREL_CAP} jugs stored there).` : def.kind === "raincollector" ? "Set a rain barrel within 6 steps to store what it makes." : "";
+		return openD13(def.name, `${def.blurb} One batch every ${def.per} hours. Ready: ${st.n} of ${def.cap}. ${status}`, ch);
+	}
+	function v141Choice(id) {
+		const m = /^v141-(take|load)-(\d+),(\d+)$/.exec(id);
+		if (!m) return false;
+		const p = world.props.find((q) => q.p14 && q.tx === +m[2] && q.ty === +m[3]);
+		if (!p) { dialogue = null; phase = "play"; return true; }
+		const def = prodOf(p.kind), st = prodState(p);
+		if (m[1] === "take") { const n = st.n; st.n = 0; giveItem(def.makes, n); pushLog(`You take ${n} × ${GEAR[def.makes].name}.`); sfx("gather"); }
+		else {
+			if (!def.needs) pushLog("Nothing to load into that.");
+			else if (!def.needs.every(([iid, n]) => (player.bag.find((s) => s.id === iid)?.qty ?? 0) >= n)) pushLog(`It wants ${def.needs.map(([iid, n]) => `${n} ${GEAR[iid].name}`).join(" and ")}.`);
+			else { for (const [iid, n] of def.needs) takeItem(iid, n); st.load += 1; if (st.load === 1) st.t = clock; pushLog(`Loaded. ${def.name} has ${st.load} batch${st.load === 1 ? "" : "es"} to go.`); sfx("build"); }
+		}
+		dialogue = null; phase = "play"; saveGame(); sync(true);
+		return true;
+	}
+	// ---- pack growth
+	function v141Use(def, stack) {
+		const lv = BAGS[def.id];
+		if (!lv) return false;
+		if ((player.bagLv ?? 0) >= lv) { pushLog("Your pack's already that big."); return true; }
+		const add = lv - (player.bagLv ?? 0);
+		player.bagLv = lv;
+		stack.qty -= 1; if (stack.qty <= 0) player.bag = player.bag.filter((s) => s !== stack);
+		pushLog(`You stitch the ${def.name.toLowerCase()} on. ${add} more row${add > 1 ? "s" : ""} in the pack.`);
+		sfx("build");
+		return true;
+	}
+	// ---- hard mode: the pack stays where you fell
+	function dropPack141() {
+		if (!w13.hard || !player) return;
+		const items = [];
+		for (const s of player.bag) { const loose = s.qty - wornCount(player, s.id); if (loose > 0) { items.push({ id: s.id, qty: loose }); s.qty -= loose; } }
+		player.bag = player.bag.filter((s) => s.qty > 0);
+		if (!items.length) return;
+		leavePile(player.x, player.y, "Your pack", items, 0, "", 0);
+		l1.drop = { map: mapId, x: player.x, y: player.y, day: curDay() };
+		pushLog("Hard mode: your pack stays where you fell. Go back for it.");
+	}
+	function dropTick() {
+		if (!l1.drop || mapId !== l1.drop.map) return;
+		const p = piles.find((q) => q.title === "Your pack");
+		if (!p || !hasLoot(p)) { l1.drop = null; pushLog("You've got your pack back."); sfx("gather"); saveGame(); sync(true); }
+	}
+	function dropHud() {
+		if (!l1.drop || !player) return "";
+		if (mapId !== l1.drop.map) return "Recover your pack: it's back where you fell.";
+		const d = Math.round(Math.hypot(l1.drop.x - player.x, l1.drop.y - player.y) / 11 / 3.28);
+		const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(Math.atan2(l1.drop.y - player.y - (l1.drop.x - player.x) * 0, l1.drop.x - player.x) / (Math.PI / 4)) % 8) + 8) % 8];
+		return `Recover your pack: ${d} m ${dir}.`;
+	}
+	// ---- storage: built chests, quick-sort, quick-stack, the farm stash
+	function storeOf(key) { return (l1.chests[key] ??= []); }
+	function openStore(p) { storeKey = prodKey(p); packOpen = false; statsOpen = false; buildOpen = false; sync(true); }
+	function stashPile() {
+		if (!player || mapId !== 0) return null;
+		return piles.find((q) => q.title === "Farm stash" && Math.hypot(q.x - player.x, q.y - player.y) < 900) ?? null;
+	}
+	function storeHud() {
+		if (!storeKey || !player) return null;
+		const items = storeOf(storeKey);
+		const loose = player.bag.filter((s) => s.qty - wornCount(player, s.id) > 0).map((s) => ({ id: s.id, name: GEAR[s.id]?.name ?? s.id, qty: s.qty - wornCount(player, s.id) }));
+		return { key: storeKey, chest: items.map((s) => ({ id: s.id, name: GEAR[s.id]?.name ?? s.id, qty: s.qty })), pack: loose, stash: !!stashPile() };
+	}
+	function storeCmd(cmd, id) {
+		if (!player) return;
+		if (cmd === "close") { storeKey = ""; sync(true); return; }
+		if (cmd === "stashAll") {
+			// stack every pack item the farm stash already holds into it (and make one if there's none yet)
+			let pile = stashPile();
+			if (!pile) { leavePile(player.x + 14, player.y + 10, "Farm stash", [], 0, "", 0); pile = piles[piles.length - 1]; if (!pile || pile.title !== "Farm stash") { pile = { id: nextPile++, x: player.x + 14, y: player.y + 10, title: "Farm stash", items: [], scrap: 0, body: "", folk: "", dir: 0, at: clock }; piles.push(pile); } }
+			// an empty stash takes every loose supply (food, stock, meds); after that only matching stacks go in
+			if (!pile.items.length) for (const s of player.bag) if (GEAR[s.id]?.kind === "supply" && s.qty - wornCount(player, s.id) > 0) pile.items.push({ id: s.id, qty: 0 });
+			const [pk, st, n] = quickStack(player.bag, pile.items, (iid) => wornCount(player, iid));
+			player.bag = pk.filter((s) => s.qty > 0); pile.items = st.filter((s) => s.qty > 0);
+			pushLog(n ? `${n} item${n > 1 ? "s" : ""} stacked into the farm stash.` : "Nothing in your pack matches what's in the stash.");
+			saveGame(); sync(true); return;
+		}
+		if (!storeKey) return;
+		const items = storeOf(storeKey);
+		if (cmd === "put") {
+			const s = player.bag.find((q) => q.id === id); if (!s) return;
+			const n = s.qty - wornCount(player, id); if (n <= 0) return;
+			s.qty -= n; player.bag = player.bag.filter((q) => q.qty > 0);
+			const c = items.find((q) => q.id === id); if (c) c.qty += n; else items.push({ id, qty: n });
+		} else if (cmd === "take") {
+			const c = items.find((q) => q.id === id); if (!c) return;
+			let n = 0; while (n < c.qty && tryGive(id, 1)) n++;
+			c.qty -= n; l1.chests[storeKey] = items.filter((q) => q.qty > 0);
+			if (n === 0) pushLog("No room in the pack.");
+		} else if (cmd === "sort") { l1.chests[storeKey] = sortStacks(items, GEAR); pushLog("Chest sorted."); }
+		else if (cmd === "stack") {
+			const [pk, st, n] = quickStack(player.bag, items, (iid) => wornCount(player, iid));
+			player.bag = pk.filter((s) => s.qty > 0); l1.chests[storeKey] = st;
+			pushLog(n ? `${n} item${n > 1 ? "s" : ""} stacked into the chest.` : "Nothing in your pack matches what's in the chest.");
+		}
+		saveGame(); sync(true);
+	}
+	// ---- one-thumb stick / keyboard, deceleration, auto-attack
+	function keyVec() {
+		let x = 0, y = 0;
+		if (held("KeyA") || held("ArrowLeft")) x -= 1;
+		if (held("KeyD") || held("ArrowRight")) x += 1;
+		if (held("KeyW") || held("ArrowUp")) y -= 1;
+		if (held("KeyS") || held("ArrowDown")) y += 1;
+		return { x, y };
+	}
+	function stickMove(pace, dt) {
+		const k = keyVec();
+		let vx = stickX + k.x, vy = stickY + k.y;
+		const mag = Math.hypot(vx, vy);
+		if (mag > .18) {
+			if (intent && intent.kind === "walk") intent = null;
+			if (intent && intent.kind !== "attack") intent = null;
+			holdWalk = false;
+			const f = Math.min(1, mag);
+			vx /= mag; vy /= mag;
+			if (!(intent && intent.kind === "attack")) moveBody(player, vx, vy, pace * f, dt);
+			coastX = vx * f; coastY = vy * f; coastT = .14;
+			return true;
+		}
+		if (coastT > 0 && !intent) {
+			// deceleration ease: glide to a stop over about 0.14 s instead of stopping dead
+			const u = coastT / .14;
+			moveBody(player, coastX, coastY, pace * u * u, dt);
+			coastT -= dt;
+			return true;
+		}
+		coastT = 0;
+		return false;
+	}
+	function autoTick() {
+		if (!l1.auto || !player || buildOpen || intent || mounted) return;
+		const swing = swingOf();
+		const reachD = isGun(GEAR[player.weaponId]?.family) ? 320 : Math.max(90, swing.range + 50);
+		let best = null, bd = reachD;
+		for (const e of world.enemies) {
+			if (e.dead || !(e.aggro && e.temper !== "timid" || e.hollow && e.aggro)) continue;
+			const d = Math.hypot(e.x - player.x, e.y - player.y);
+			if (d < bd) { bd = d; best = e; }
+		}
+		if (!best) return;
+		if (isGun(GEAR[player.weaponId]?.family) && shellCount(player) <= 0) return;
+		intent = { kind: "attack", id: best.id, who: "enemy", path: pathTo(world, player.x, player.y, best.x, best.y) ?? [] };
+		attackRepath = 0;
+	}
+	function hud141() {
+		return { crouch: l1.crouch, noise: Math.round(l1.noise), auto: l1.auto, stick: l1.stick, rows: player ? gridRows(player) : 0, bagLv: player?.bagLv ?? 0, small: !!player?.small, drop: dropHud(), store: storeHud(), hard: !!w13.hard };
 	}
 	// ======== v14 world map (hex travel between local areas) ========
 	const legacyTravel = () => typeof window !== "undefined" && !!window.__v14Skip;
@@ -4260,7 +4743,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function wmGo(q, r) {
 		const m = wmState();
 		if (phase !== "worldmap") return;
-		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); return; }
+		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); else { const lr = lootRunAt(q, r); if (lr) lootEnter(lr); } return; }
 		m.path = hexPath([m.q, m.r], [q, r], bikeBuilt());
 		sync(true);
 	}
@@ -4281,8 +4764,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const rc = WM_LOCS.find((l) => l.id === "raiders");
 		const near = Math.abs(q - rc.q) + Math.abs(r - rc.r) <= 3;
 		const roll = typeof window !== "undefined" && window.__wmEnc != null ? window.__wmEnc : Math.random();
-		if (!locAt(q, r) && roll < (near ? .22 : .07)) { m.path = []; wmEncounter(near); return; }
-		if (!m.path.length) { const l = locAt(q, r); pushLog(l ? `${l.name}. Tap it again to go in.` : "You stop and look around."); }
+		if (!locAt(q, r) && !lootRunAt(q, r) && roll < (near ? .22 : .07)) { m.path = []; wmEncounter(near); return; }
+		if (!m.path.length) { const l = locAt(q, r) ?? lootRunAt(q, r); pushLog(l ? `${l.name}. Tap it again to go in.` : "You stop and look around."); }
 		sync(true);
 	}
 	/** A raid night hits the farm while you're out: dents the walls in the save, and the world map warns you. */
@@ -4315,6 +4798,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		});
 		phase = "play";
 		travelLock = 2;
+		hollowedArea(target);
 	}
 	function wmEnter(l) {
 		const m = wmState();
@@ -4325,7 +4809,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function wmEncounter(raiders) {
 		const m = wmState();
-		const kinds = raiders ? ["raiders", "raiders", "wildlife", "road"] : ["wildlife", "road", "caravan", "migration", "raiders"];
+		const kinds = raiders ? ["raiders", "raiders", "wildlife", "road", "horde"] : ["wildlife", "road", "caravan", "migration", "raiders", "horde"];
 		const pick = typeof window !== "undefined" && window.__wmKind ? window.__wmKind : kinds[Math.floor(Math.random() * kinds.length)];
 		regions.delete(9);
 		m.enc = pick;
@@ -4333,6 +4817,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const at = (dx, dy) => ({ x: player.x + dx, y: player.y + dy });
 		if (pick === "raiders") { for (let i = 0; i < 3; i++) { spawnRaider("scout", at(260 + i * 50, -120 + i * 70)); const e = world.enemies[world.enemies.length - 1]; e.raid = false; } pushLog("Raiders on the road ahead. They've seen you."); }
 		else if (pick === "wildlife") { const n = 3 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) q10Spawn("wolf", "", "Timber wolf", at(240 + i * 40, 90 - i * 50), [22, 5, 10], "enc", true); pushLog(`A pack of ${n} timber wolves comes out of the alders.`); }
+		else if (pick === "horde") { const n = 5 + Math.floor(Math.random() * 3); spawnHollowed(n, at(420, 160), 90); pushLog(`A group of ${HOLLOWED} shuffling down the road, ${n} of them. They go where the noise is. Get low and keep quiet.`); }
 		else if (pick === "migration") { for (let i = 0; i < 5; i++) q10Spawn("deer", "", "Deer", at(-200 + i * 70, 220), [16, 2, 6], "enc", false); pushLog("A line of deer crossing the road, heading south for the yards."); }
 		else if (pick === "caravan") { openD13("Caravan", "A sledge caravan out of Skowhegan, two horses and a dog. They'll trade a little for iron.", [{ label: "Six shells — 8 iron", id: "q10-buy-shells" }, { label: "Wave them by", id: "close" }]); }
 		else startRoadEvent(pickRoadEvent(Math.random()));
@@ -4342,12 +4827,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function wmHud() {
 		if (phase !== "worldmap" || !v14.map) return null;
 		const m = v14.map;
-		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? null, clock: clockLabel(clock), bike: bikeBuilt() };
+		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? lootRunAt(m.q, m.r)?.name ?? null, loot: lootHud(), clock: clockLabel(clock), bike: bikeBuilt() };
 	}
 	// ---- workbench: repair, patch, dye
 	function benchMenu() {
 		const pieces = armorPieces();
-		if (!pieces.length) return openD13("Workbench", "You're not wearing anything worth fixing.", [{ label: "Close", id: "close" }]);
+		if (!pieces.length) return openD13("Workbench", "Nothing you've got on is worth the rivets.", [{ label: "Close", id: "close" }]);
 		const ch = [];
 		for (const id of pieces) {
 			const d = duraOf(id);
@@ -4679,13 +5164,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (id === "v13-main-talk") { const r = talkNpc?.role; const line = MAIN_TALK[w13.main.act]?.[r]; if (!line) return close13(); if (!w13.main.flags[`talk${w13.main.act}${r}`]) { w13.main.flags[`talk${w13.main.act}${r}`] = true; diary(`${talkNpc.name}: ${line.replace(/^"|"$/g, "").slice(0, 120)}`); } return openD13(talkNpc.name, line, [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-intro") { const a = mainAct(); w13.main.flags[`intro${a.n}`] = true; return openD13(a.intro[0], a.intro[1], [{ label: "Close", id: "close" }]); }
-		if (id === "v13-main-signal") { w13.main.flags.signal = true; return openD13("Cyndal", "\"Listen.\" Static, then a calm voice: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" It loops. \"Same words every hour, Dad says nobody talks that calm anymore.\"", [{ label: "Close", id: "close" }]); }
+		if (id === "v13-main-signal") { w13.main.flags.signal = true; return openD13("Cyndal", "\"Listen.\" Static, then a calm voice: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" It loops. \"Same words every hour. Dad says nobody talks that calm anymore.\"", [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-jack") {
 			w13.main.flags.jackTalk = true;
-			if ((w13.loyal.jack ?? 0) < 30) return openD13("Jack Ready", `"You're not there yet." (Jack's trust: ${w13.loyal.jack}/30. Trade with him, finish his bunker map job.)`, [{ label: "Close", id: "close" }]);
-			return openD13("Jack Ready", "He unrolls the survey maps on the hood of the truck. \"That broadcast's a trap. I've watched folks go south on it. Nobody comes back up the Kennebec.\"", [{ label: "Close", id: "close" }]);
+			if ((w13.loyal.jack ?? 0) < 30) return openD13("Jack Ready", `"You ain't there yet, bub." (Jack's trust: ${w13.loyal.jack}/30. Trade with him, finish his bunker map job.)`, [{ label: "Close", id: "close" }]);
+			return openD13("Jack Ready", "He unrolls the survey maps on the hood of the truck. \"That broadcast's bait, plain. I've watched folks go south on it. Nobody comes back up the Kennebec.\"", [{ label: "Close", id: "close" }]);
 		}
-		if (id === "v13-main-marcel") { w13.main.flags.marcel = true; return openD13("Marcel Thibodeau", "\"Caravans that answer that signal never come back. Not one. There's a man they call the Collector. Raiders work for him now.\"", [{ label: "Close", id: "close" }]); }
+		if (id === "v13-main-marcel") { w13.main.flags.marcel = true; return openD13("Marcel Thibodeau", "\"Caravans that answer that signal never come back. Not one. There's a man they call the Collector. Every raider on the river works for him now.\"", [{ label: "Close", id: "close" }]); }
 		if (id === "v13-main-choose") {
 			const avg = Math.round(COMPANIONS.reduce((n, c) => n + (w13.left[c] ? -50 : w13.loyal[c]), 0) / COMPANIONS.length);
 			const canUnite = rebuiltN() >= 1 && avg >= 20;
@@ -4851,7 +5336,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (npc.role === "cal") jackMet = true;
 			if (npc.role === "sarah") restockKitchen();
 			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002), talkState());
-			const v14x = v14Talk(npc.role);
+			const v14x = v14Talk(npc.role, npc);
 			if (v14x) { dialogue = v14x; phase = "dialogue"; sync(true); return; }
 			const q10x = q10Talk(npc.role, q10, snow >= 3, !!raid);
 			if (q10x?.replace) Object.assign(line, q10x.replace);
@@ -5840,6 +6325,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return best;
 	}
 	function mountBike(prop) {
+		l1.crouch = false;
 		if (!player || prop.kind !== "bike") return;
 		const why = rideBlock(prop);
 		if (why) { pushLog(why); intent = null; sfx("click"); sync(true); return; }
@@ -6260,6 +6746,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const family = player ? GEAR[player.weaponId]?.family : void 0;
 		const perception = Math.max(0, perc() - 1);
 		const reach = isGun(family) ? perception * 28 : 0;
+		// Bob's lever gun: one round through the gate at a time, the slowest reload of any long gun
+		if (family === "carbine" && player?.weaponId === "levergun") return {
+			range: 200 + reach,
+			wait: 1.15
+		};
 		if (family === "carbine" && player?.weaponId === "scoped") return {
 			range: 290 + reach,
 			wait: .62
@@ -6421,7 +6912,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const kept = [];
 		for (const pile of piles) {
 			// v13.1: a full-pack reward ("Dropped" / "Farm stash") waits for you; it doesn't rot away
-			const kept13 = pile.title === "Dropped" || pile.title === "Farm stash";
+			const kept13 = pile.title === "Dropped" || pile.title === "Farm stash" || pile.title === "Your pack";
 			if (!hasLoot(pile) || (!kept13 && clock - pile.at >= 720)) {
 				if (lootId === pile.id) lootId = -1;
 				if (player && hasLoot(pile) && Math.hypot(pile.x - player.x, pile.y - player.y) < 420) pushLog(pile.folk || pile.body ? "The body is gone. A day has passed." : "What was left is gone.");
@@ -6435,7 +6926,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const items = [];
 		let scrap = 0;
 		if (!player) return;
-		if (enemy.variant === "holeb") {
+		if (enemy.variant === "grok") {
+			// v14.1 balance: The Grok drops 2-3 claws and hide, so the tier 3 bench is reachable
+			addStack(items, "grokclaw", 2 + (Math.random() < .5 ? 1 : 0));
+			addStack(items, "hide", 3);
+			addStack(items, "meat", 3);
+			scrap = 5;
+		} else if (enemy.variant === "holeb") {
 			addStack(items, "antlers", 1);
 			addStack(items, "hide", 2);
 			addStack(items, "meat", 4);
@@ -6620,6 +7117,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return best;
 	}
 	function openLoot(pile) {
+		if (lrNote(pile)) return;
+		lrTrail(pile);
 		if (!hasLoot(pile)) {
 			pushLog(pile.body || pile.folk ? "Already searched." : "Nothing there.");
 			return;
@@ -6756,6 +7255,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}[aim];
 		const familyNow = GEAR[player.weaponId]?.family;
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
+		const sneak141 = l1.crouch && !enemy.aggro && enemy.temper !== "timid";
+		emitNoise(isGun(familyNow) ? NOISE.gun : NOISE.melee);
 		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
 		player.dir = facing8(enemy.x - player.x, enemy.y - player.y);
 		if (Math.random() > chance) {
@@ -6777,6 +7278,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (wasCalm) pushLog(enemy.kind === "moose" ? "The moose lowers its antlers." : enemy.kind === "deer" ? "The deer wheels and charges." : "It turns on you.");
 		}
 		let dmg = Math.max(1, Math.round(strikeDamage() * aimRow.mult));
+		if (sneak141) { dmg = Math.round(dmg * SNEAK_MULT); floater(enemy.x, enemy.y - 44, "Sneak attack"); pushLog(`Sneak attack: ${dmg}.`); train("sneak", 4); }
 		const tiny = enemy.kind === "squirrel" || enemy.kind === "rabbit";
 		if (tiny) {
 			if (enemy.hp < enemy.maxHp || Math.random() < .72) dmg = enemy.hp;
@@ -6893,6 +7395,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.hp = 0;
 			phase = "dead";
 			intent = null;
+			dropPack141();
 			closePanels();
 			parkBike(false);
 			sfx("die");
@@ -7320,12 +7823,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const wx = weather13();
 		const hardy = perk13("survival", 9) && w13.weather.id === "noreaster" ? 1 : wx.speed;
 		const pace = (mounted ? SCREEN_SPEED * 2 * Math.max(.4, wx.bike) : (player.stamina > 0 ? SCREEN_SPEED : SCREEN_SPEED * .45) * hardy * ailSpeed() * needsSpeed() * (setBonus13()?.quality === "standard" ? 1.05 : 1)) * (mounted ? 1 : shoes);
+		const pace141 = pace * (l1.crouch && !mounted ? CROUCH_SPEED : 1);
 		const fromX = player.x;
 		const fromY = player.y;
 		tickWork(dt);
+		const sticked = stickMove(pace141, dt);
+		if (!sticked) autoTick();
 		if (intent && player) {
 			if (intent.kind === "walk") {
-				intent.path = follow(player, intent.path, pace, dt, true);
+				intent.path = follow(player, intent.path, pace141, dt, true);
 				if (!intent.path.length && Math.hypot(intent.x - player.x, intent.y - player.y) < 10) intent = null;
 			} else if (intent.kind === "attack") {
 				attackRepath -= dt;
@@ -7343,7 +7849,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 								intent.path = pathTo(world, player.x, player.y, npc.x, npc.y) ?? [];
 								attackRepath = .22;
 							}
-							intent.path = follow(player, intent.path, pace, dt, true);
+							intent.path = follow(player, intent.path, pace141, dt, true);
 						}
 					}
 				} else {
@@ -7372,10 +7878,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 								intent.path = pathTo(world, player.x, player.y, target.x, target.y) ?? [];
 								attackRepath = .22;
 							}
-							intent.path = follow(player, intent.path, pace, dt, true);
+							intent.path = follow(player, intent.path, pace141, dt, true);
 							if (!intent.path.length) {
 								const screen = worldVelToScreen(target.x - player.x, target.y - player.y);
-								moveBody(player, screen.dsx, screen.dsy, pace, dt);
+								moveBody(player, screen.dsx, screen.dsy, pace141, dt);
 							}
 						}
 					}
@@ -7385,33 +7891,33 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const prop = world.props.find((p) => p.id === enterId);
 				if (!prop || !canWalkIn(prop)) intent = null;
 				else if (Math.hypot(doorPoint(prop).x - player.x, doorPoint(prop).y - player.y) <= 78) beginOpen(prop);
-				else intent.path = follow(player, intent.path, pace, dt, true);
+				else intent.path = follow(player, intent.path, pace141, dt, true);
 			} else if (intent.kind === "talk") {
 				const talkId = intent.id;
 				const npc = world.npcs.find((n) => n.id === talkId);
 				if (!npc) intent = null;
 				else if (Math.hypot(npc.x - player.x, npc.y - player.y) <= 66) openTalk(npc);
-				else intent.path = follow(player, intent.path, pace, dt, true);
+				else intent.path = follow(player, intent.path, pace141, dt, true);
 			} else if (intent.kind === "gather") {
 				const gatherId = intent.id;
 				const prop = world.props.find((p) => p.id === gatherId);
 				if (!prop || !prop.resource) intent = null;
 				else if (Math.hypot(propCenter(prop).x - player.x, propCenter(prop).y - player.y) <= 60) gather(prop);
-				else intent.path = follow(player, intent.path, pace, dt, true);
+				else intent.path = follow(player, intent.path, pace141, dt, true);
 			} else if (intent.kind === "chop" || intent.kind === "mine") {
 				const laborProp = world.props.find((p) => p.id === intent.id);
 				if (!laborProp) intent = null;
 				else if (!work || work.id !== laborProp.id) {
 					const spot = propCenter(laborProp);
 					if (Math.hypot(spot.x - player.x, spot.y - player.y) <= 70) startLabor(laborProp, intent.kind);
-					else intent.path = follow(player, intent.path, pace, dt, true);
+					else intent.path = follow(player, intent.path, pace141, dt, true);
 				} else stepLabor(dt, pace);
 			} else if (intent.kind === "loot") {
 				const lootPid = intent.id;
 				const lootTarget = piles.find((p) => p.id === lootPid);
 				if (!lootTarget || !hasLoot(lootTarget)) intent = null;
 				else if (Math.hypot(lootTarget.x - player.x, lootTarget.y - player.y) <= 64) openLoot(lootTarget);
-				else intent.path = follow(player, intent.path, pace, dt, true);
+				else intent.path = follow(player, intent.path, pace141, dt, true);
 			} else if (intent.kind === "mount") {
 				const rideId = intent.id;
 				const bike = world.props.find((p) => p.id === rideId && p.kind === "bike");
@@ -7419,7 +7925,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				else {
 					const spot = propCenter(bike);
 					if (Math.hypot(spot.x - player.x, spot.y - player.y) <= 72) mountBike(bike);
-					else intent.path = follow(player, intent.path, pace, dt, true);
+					else intent.path = follow(player, intent.path, pace141, dt, true);
 				}
 			}
 		}
@@ -7438,6 +7944,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (deal > 0) deal = Math.max(0, deal - dt);
 		const swinging = work && work.swing > 0;
 		const stepDist = Math.hypot(player.x - fromX, player.y - fromY);
+		noiseTick(dt, stepDist > .45);
+		dropTick();
+		prodTick(dt);
 		if (stepDist <= .45 && performance.now() - (player.easeT ?? 0) > 60) player.ease = 0;
 		if (stepDist > .45 && !swinging) {
 			player.dir = facing8Hys(player.dir, player.x - fromX, player.y - fromY);
@@ -7482,7 +7991,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			useHud.setState({
 				stamina: player.stamina,
 				maxStamina: player.maxStamina,
-				hp: player.hp
+				hp: player.hp,
+				v141: hud141()
 			});
 		}
 		if (tryCross()) {
@@ -7524,6 +8034,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			enemy.pathT -= dt;
 			const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
+			if (enemy.hollow) { stepHollow(enemy, dt, dist); continue; }
 			if (enemy.temper === "timid") {
 				if (dist > 340) enemy.aggro = false;
 				const spook = enemy.aggro || dist < noticeRange(78) * (1 - .06 * lv("hunting")) || v3Spook(enemy, dist);
@@ -7981,6 +8492,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v12: gw14 bandit sheets stand in for the legacy raider-* art when present. */
 	function v2Bandit(enemy) {
+		if (enemy.hollow) return images.get("v2/hollowed-walk") ? "v2/hollowed-walk" : "";
 		if (enemy.kind !== "bandit" && !(enemy.kind == null && enemy.variant)) return "";
 		const v = enemy.variant;
 		let k = "";
@@ -8094,7 +8606,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const n = raidNight;
 		// clear any stragglers so the waves start clean
 		for (const e of world.enemies) if (!e.dead && isRaider(e) && !e.quest) { e.dead = true; e.death = 0; }
-		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 90 + 15 * n, houseMax: 90 + 15 * n, warned: false, kills: 0 };
+		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 120 + 15 * n, houseMax: 120 + 15 * n, warned: false, kills: 0 };
 		if (q11.farm.wall) { raid.house += 15 * q11.farm.wall; raid.houseMax += 15 * q11.farm.wall; }
 		if (v3.up.palisade) { raid.house += 40 * v3.up.palisade; raid.houseMax += 40 * v3.up.palisade; }
 		if (v3.up.lookout) { raid.t += 6 * v3.up.lookout; pushLog("From the lookout tower you see their lanterns early, way down the road."); }
@@ -9473,7 +9985,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		draws.push({
 			z: bodyZ(player.x, player.y),
-			draw: () => {
+			draw: () => xfWrap(() => {
 				// v11.1 art hook: a dedicated hero-ride sheet (bike included) replaces the stand-in when present
 				if (mounted && images.get("v2/hero-ride") && phase !== "dead") { blit("v2/hero-ride", player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
@@ -9524,7 +10036,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
 				if (!flinch && !axeSwing && !idle && !HERO69.has(heroKey()) && !(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
 				if (swingAnim > 0 && !work && !axeSwing && !TALL_COMBAT.has(atkName)) paintSwingArc();
-			}
+			}, drawCamX, drawCamY)
 		});
 		for (const scar of scars) {
 			const t = tileOf(scar.x, scar.y);
@@ -9694,9 +10206,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const day = 1 - nightDark(clock) * .7;
 		ctx.save(); ctx.globalAlpha = day; ctx.drawImage(cv, x - cv.width / 2, y - cv.height / 2); ctx.restore();
 	}
+	// v14.1: 4-frame crossfade. While the hero draws, blit calls are recorded; when the sheet changes
+	// (idle → walk, walk → swing...) the old pose is drawn over the new one at 80/60/40/20 % for four frames.
+	let xfRec = null, xfLast = null, xf = null;
+	function xfWrap(fn, dcx, dcy) {
+		const crouch = l1.crouch && !mounted && phase !== "dead";
+		if (crouch) {
+			const f = zoomPoint(worldToScreen(player.x, player.y, dcx, dcy).sx, worldToScreen(player.x, player.y, dcx, dcy).sy);
+			ctx.save(); ctx.translate(f.sx, f.sy); ctx.scale(1.06, .78); ctx.translate(-f.sx, -f.sy);
+		}
+		xfRec = [];
+		try { fn(); } finally {
+			const calls = xfRec; xfRec = null;
+			const sig = calls.map((c) => c[0]).join("|");
+			if (xfLast && sig !== xfLast.sig && calls.length && xfLast.calls.length && !reduceMotion && phase !== "dead") xf = { calls: xfLast.calls, n: 4 };
+			if (xf && xf.n > 0) {
+				ctx.save(); ctx.globalAlpha = xf.n / 5;
+				for (const c of xf.calls) { const a = c.slice(); a[1] = player.x; a[2] = player.y; a[7] = dcx; a[8] = dcy; blit(...a); }
+				ctx.restore(); xf.n -= 1; xfStats.n += 1;
+			}
+			xfLast = { sig, calls };
+			if (crouch) ctx.restore();
+		}
+	}
+	const xfStats = { n: 0 };
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
+		if (xfRec) xfRec.push([name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge, lift, tilt, flatten, flip]);
 		const img = images.get(name);
-		if (sheet && img && /^v2\/bandit-[a-z]+-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
+		if (sheet && img && /^v2\/(bandit-[a-z]+|hollowed)-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
 		if (heroLog && /^((v2\/)?hero|pl\/)/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
@@ -9967,7 +10504,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			"Space",
 			"KeyE",
 			"KeyB",
-			"Escape"
+			"Escape",
+			"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
 		].includes(e.code)) e.preventDefault();
 		keys.add(e.code);
 		if (e.repeat) return;
@@ -9977,6 +10515,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		} else if (e.code === "Escape" && phase === "pause") {
 			phase = "play";
 			sync(true);
+		} else if (e.code === "Space" && phase === "play") {
+			edges.attack = true;
+		} else if (e.code === "KeyI" && phase === "play") {
+			packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; }
+			sync(true);
+		} else if (e.code === "KeyC" && phase === "play") {
+			if (craftOpen) craftOpen = false; else if (ok14()) craftOpen = true; else pushLog("The workbench opens once the farm is yours.");
+			sync(true);
+		} else if (e.code === "KeyX" && phase === "play") {
+			setCrouch(!l1.crouch);
 		} else if (e.code === "KeyB" && phase === "play" && !prevHeld.has("KeyB")) {
 			buildOpen = !buildOpen;
 			sfx("click");
@@ -9994,12 +10542,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function onKeyUp(e) {
 		keys.delete(e.code);
 	}
+	const tractorLerp = [];
 	function snapPrev() {
 		if (!world || !player) return;
 		player.px = player.x; player.py = player.y;
 		if (party) { party.px = party.x; party.py = party.y; }
 		for (const e of world.enemies) { e.px = e.x; e.py = e.y; }
 		for (const n of world.npcs) { n.px = n.x; n.py = n.y; }
+		// v14.1: the tractor's charge and the parked bike interpolate too
+		for (const p of world.props) if (p.kind === "tractor" || p.kind === "bike") { p.pc = p.charge || 0; p.ppx = p.x; p.ppy = p.y; }
 	}
 	function frame(now) {
 		if (!running) return;
@@ -10023,9 +10574,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			put(player); put(party);
 			for (const e of world.enemies) if (!e.dead) put(e);
 			for (const n of world.npcs) put(n);
+			for (const p of world.props) if (p.kind === "tractor" && p.pc != null && (p.charge || 0) > 0 && p.charge >= p.pc) { p.c0 = p.charge; p.charge = p.pc + (p.charge - p.pc) * alpha; tractorLerp.push(p); }
 		}
 		render();
 		for (let i = 0; i < nl; i++) { const b = lerpBodies[i]; b.x = b.sx0; b.y = b.sy0; }
+		for (const p of tractorLerp) p.charge = p.c0;
+		tractorLerp.length = 0;
 		const ms = performance.now() - t0;
 		frameMs.avg = frameMs.avg * .95 + ms * .05; frameMs.n++; frameMs.worst = Math.max(frameMs.worst * .995, ms);
 		frameMs.list.push(ms); if (frameMs.list.length > 240) frameMs.list.shift();
@@ -10397,7 +10951,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("click");
 			bootSave(data);
 		},
-		setStick(_x, _y) {},
+		setStick(x, y) { stickX = Math.max(-1, Math.min(1, x)); stickY = Math.max(-1, Math.min(1, y)); },
+		v141(cmd, arg) {
+			if (cmd === "crouch") setCrouch(arg == null ? !l1.crouch : !!arg);
+			else if (cmd === "auto") { l1.auto = arg == null ? !l1.auto : !!arg; pushLog(l1.auto ? "Auto-attack on: you'll swing at anything that comes for you." : "Auto-attack off."); sync(true); }
+			else if (cmd === "stickMode") { l1.stick = arg == null ? !l1.stick : !!arg; sync(true); }
+			else if (cmd === "store") storeCmd(arg?.[0], arg?.[1]);
+			else if (cmd === "pack") { packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; } sync(true); }
+			return hud141();
+		},
 		tap(action) {
 			edges[action] = true;
 			unlockAudio();
@@ -10805,6 +11367,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				setTrap(id === "snare" ? "snare" : "trap");
 				return;
 			}
+			if (v141Use(def, stack)) { saveGame(); sync(true); return; }
 			if (v13Use(def, stack)) { saveGame(); sync(true); return; }
 			if (def.kind === "weapon") {
 				if (player.weaponId === id) {
@@ -10906,6 +11469,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v14Use: (id) => { const p = world?.props.find((q) => q.id === id); if (p) v14Use(p); },
 		v14Hurt: (id, d) => { const p = world?.props.find((q) => q.id === id); if (p) hurtProp(p, d); },
 		v14Cmd: (cmd, arg) => api.v14(cmd, arg),
+		l141: () => ({ ...l1, rows: gridRows(player), bag: player.bag.map((s) => ({ ...s })), small: !!player.small, bagLv: player.bagLv ?? 0, xf: xfStats.n, hard: !!w13.hard, mapId, phase, x: player.x, y: player.y, piles: piles.map((p) => ({ title: p.title, n: p.items.reduce((a, b) => a + b.qty, 0), x: p.x, y: p.y })) }),
+		l141Hollow: (n, dx, dy) => spawnHollowed(n, { x: player.x + dx, y: player.y + dy }).map((e) => e.id),
+		l141Enemies: () => world.enemies.filter((e) => !e.dead).map((e) => ({ id: e.id, hollow: !!e.hollow, x: e.x, y: e.y, aggro: !!e.aggro, heard: !!e.heard, name: e.name, hp: e.hp, kind: e.kind, d: Math.hypot(e.x - player.x, e.y - player.y) })),
+		l141Noise: (n, dx = 0, dy = 0) => emitNoise(n, player.x + dx, player.y + dy),
+		l141Loot: (id) => { const r = LOOT_RUNS.find((x) => x.id === id); openWorldMap(); const m = wmState(); m.q = r.q; m.r = r.r; m.path = []; m.from = [r.q - 1, r.r]; lootEnter(r); return piles.filter((p) => p.title.startsWith(r.name)).map((p) => ({ title: p.title, items: p.items.map((i) => ({ ...i })), d: Math.round(Math.hypot(p.x - player.x, p.y - player.y)) })); },
+		l141Hours: (h) => { prodAcc = 2; prodTick(0); clock += h / 24 * DAY_LENGTH_SEC; prodAcc = 2; prodTick(0); },
+		l141Hard: (on) => { w13.hard = !!on; },
+		l141Strike: (id) => { const e = world.enemies.find((q) => q.id === id); if (!e) return null; const hp = e.hp; player.cooldown = 0; aim = "chest"; const r0 = Math.random; Math.random = () => 0; try { strikeEnemy(e); } finally { Math.random = r0; } return { before: hp, after: e.hp, dead: !!e.dead }; },
+		l141Use: (tx, ty) => { const p = world.props.find((q) => q.tx === tx && q.ty === ty); if (p) v14Use(p); return p ? p.kind : null; },
+		l141Barrels: () => world.props.filter((q) => q.kind === "rainbarrel").map((q) => ({ tx: q.tx, ty: q.ty, n: barrel141(q).n })),
+		l141Props: () => world.props.filter((q) => q.p14).map((q) => ({ kind: q.kind, tx: q.tx, ty: q.ty })),
+		l141Give: (id, n) => { const st = player.bag.find((q) => q.id === id); if (st) st.qty += n; else player.bag.push({ id, qty: n }); },
+		l141Pile: (title) => { const p = piles.find((q) => q.title === title); if (p) { player.x = p.x; player.y = p.y; openLoot(p); } return !!p; },
+		tap: (a) => api.tap(a),
+		takeLoot: (k) => api.takeLoot(k),
+		clickPack: (id) => api.clickPack(id),
+		v141: (c, a) => api.v141(c, a),
+		l141Stick: (x, y) => { stickX = x; stickY = y; },
+		l141Mats: () => { player.wood += 60; player.stone += 60; player.scrap += 60; for (const id of ["cloth", "junk", "hide"]) { const st = player.bag.find((q) => q.id === id); if (st) st.qty += 20; else player.bag.push({ id, qty: 20 }); } sync(true); },
 		v14Build: (index, tx, ty) => { recipe = index; buildOpen = true; hoverX = (tx + .5) * 64; hoverY = (ty + .5) * 64; tryBuild(); },
 		v14Report: () => { report14(raidNight); },
 		v14Defend: () => startDefend14(),
@@ -11252,7 +11834,7 @@ const TALL_COMBAT = new Set();
 const TRACTOR_ROW = 6;
 const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2/tractor-drive": 4 };
 /** v12: gw14 people (88x124 cells, 8 facing rows). */
-const V2_FOLK = /^v2\/(holt|jack|mira|nora|sarah|cyndal|loki|marcel|justin|player|boss-collector|bandit-[a-z]+)-/;
+const V2_FOLK = /^v2\/(hollowed|holt|jack|mira|nora|sarah|cyndal|loki|marcel|justin|player|boss-collector|bandit-[a-z]+)-/;
 /** v12: raider attack / death come from the gw14 action sheets under the legacy -atk / -dead names. */
 // v14: timber wolf stand-ins (tinted coyote sheets) until Grok Build art lands at v2/wolf-<action>.png
 const ART_ALIAS = { wolf: "v2/wolf-walk", "wolf-dead": "v2/wolf-dead" };
@@ -11260,6 +11842,8 @@ for (const k of ["scout", "armor", "brute", "torch", "gray", "blue"]) {
 	ART_ALIAS[`v2/bandit-${k}-walk-atk`] = k === "brute" || k === "torch" ? `v2/bandit-${k}-axe` : `v2/bandit-${k}-gun-atk`;
 	ART_ALIAS[`v2/bandit-${k}-walk-dead`] = `v2/bandit-${k}-death`;
 }
+ART_ALIAS["v2/hollowed-walk-atk"] = "v2/hollowed-axe";
+ART_ALIAS["v2/hollowed-walk-dead"] = "v2/hollowed-death";
 ART_ALIAS["v2/boss-collector-walk-atk"] = "v2/boss-collector-atk";
 ART_ALIAS["v2/boss-collector-walk-dead"] = "v2/boss-collector-death";
 function sheetRowsOf(name) {

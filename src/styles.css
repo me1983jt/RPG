@@ -90,3 +90,7 @@
   from { opacity: 0; pointer-events: none; }
   to { opacity: 1; }
 }
+
+/* v14.1: messages hold, then fade before they drop off */
+@keyframes log-fade { 0%, 72% { opacity: 1; } 100% { opacity: 0; } }
+.log-fade { animation: log-fade 4s linear forwards; }

@@ -111,6 +111,8 @@ export const NEED_RATE = { normal: { hunger: 2.2, thirst: 2.6, sleep: 2.4, hurt:
 export const FOOD_VALUE: Record<string, { hunger?: number; thirst?: number; sleep?: number }> = {
   meat: { hunger: 18 }, apple: { hunger: 10, thirst: 4 }, smokedfish: { hunger: 22 }, jerky: { hunger: 20 }, greens: { hunger: 8, thirst: 3 }, water: { thirst: 45 },
   stew: { hunger: 55, thirst: 15 }, chowder: { hunger: 50, thirst: 20 }, pie: { hunger: 40 }, coffee: { thirst: 15, sleep: 30 }, tonic: { thirst: 20 }, venisonsteak: { hunger: 45 }, mushrooms: { hunger: 9 }, berries: { hunger: 7, thirst: 4 },
+  // v14.1 balance: Sarah's kitchen, modest food plus a small stamina lift (engine.ts v13Use)
+  cider: { hunger: 6, thirst: 20 }, donut: { hunger: 14 },
 };
 
 // ---------------- cooking
@@ -208,8 +210,8 @@ export const REBUILD: { id: "store" | "school" | "clinic"; name: string; cost: {
 // ---------------- road events
 export type RoadEventId = "car" | "stranger" | "ambush" | "lostkid";
 export const ROAD_EVENTS: { id: RoadEventId; title: string; text: string }[] = [
-  { id: "car", title: "Broken-down car", text: "An old Buick nosed into the snowbank, hood up. Nobody around." },
-  { id: "stranger", title: "A stranger", text: "A man in a torn parka stands in the road with his hands where you can see them. \"Just passing through. Got anything to trade?\"" },
+  { id: "car", title: "Broken-down car", text: "An old Pemberton nosed into the snowbank, hood up. Nobody around, and no tracks." },
+  { id: "stranger", title: "A stranger", text: "A man in a torn parka stands in the road with his hands where you can see them. \"Just passin' through. Got anything to swap?\"" },
   { id: "ambush", title: "Ambush", text: "A tree down across the road. Too neat. Then the shouting starts." },
   { id: "lostkid", title: "A lost kid", text: "A boy, maybe eight, sitting on a guardrail. \"I got turned around. We live out past the Forks.\"" },
 ];
@@ -249,11 +251,11 @@ export const MAIN_ACTS: { n: number; title: string; goal: string; intro: [string
   { n: 1, title: "Cambridge Road", goal: "Fix up the farm with Justin and Sarah, and survive the first raid night.", intro: ["Sarah", "\"You'll do. Justin's splitting wood out back. We need the place tight before the snow, and they'll come at night. They always do.\""], done: "The farm held. Sarah puts the kettle on like it was any other morning." },
   { n: 2, title: "The Signal", goal: "Get Cyndal's radio working and listen to what's out there.", intro: ["Cyndal", "\"There's something on 147.3. Same voice every hour. Augusta. Fuel, medicine, order. Come and listen.\""], done: "The voice loops: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" Justin doesn't like it." },
   { n: 3, title: "Jack Ready's Bunker", goal: "Earn Jack Ready's trust (loyalty 30) for his old survey maps.", intro: ["Jack Ready", "\"Maps cost trust, and trust costs time. Trade with me. Do me a favor or two. Then we'll talk.\""], done: "Jack unrolls the survey maps. \"That broadcast? It's a trap. Nobody's come back up the Kennebec who answered it.\"" },
-  { n: 4, title: "The Kennebec", goal: "Cross the Kennebec to Skowhegan and talk to Marcel.", intro: ["Justin", "\"If you want answers, Marcel's in Skowhegan. Bridge is the only way across. Watch the bridge.\""], done: "Marcel lowers his voice. \"Caravans that answer that signal don't come back. Not one. The Collector takes them.\"" },
+  { n: 4, title: "The Kennebec", goal: "Cross the Kennebec to Skowhegan and talk to Marcel.", intro: ["Justin", "\"If you want answers, Marcel's in Skowhegan. Bridge is the only way across, and somebody's always watching it.\""], done: "Marcel lowers his voice. \"Caravans that answer that signal don't come back. Not one. The Collector takes them.\"" },
   { n: 5, title: "The Collector", goal: "Raid the Collector's camps at night and take down his lieutenants (3).", intro: ["Marcel", "\"The raiders answer to a man they call the Collector. He's got lieutenants at camps up and down the river. Hit them at night.\""], done: "The last lieutenant talks before he dies: the supply depot is north, past the Holeb woods. Past the Grok." },
   { n: 6, title: "The Grok's Woods", goal: "Go north through the Grok's territory and find the Collector's supply depot.", intro: ["Justin", "\"Only safe road north runs through the Grok's woods. Safe. That's a joke. Take shells.\""], done: "The depot: barrels of fuel, crates of medicine, and a ledger of every caravan he ever took." },
   { n: 7, title: "Choices", goal: "Decide: unite the towns, make a deal with the Collector, or go it alone.", intro: ["Sarah", "\"He'll come for the farm now. We can bring the towns in with us, or try his terms, or bar the door and hold on ourselves. Your call.\""], done: "It's decided. Winter's coming down hard, and so is he." },
-  { n: 8, title: "Siege of Harmony", goal: "Hold the farm through the Collector's winter assault and bring him down.", intro: ["Justin", "\"Lanterns on the road. Lots of them. This is it.\""], done: "The Collector is down in the snow by the woodpile. His army breaks for the road." },
+  { n: 8, title: "Siege of Harmony", goal: "Hold the farm through the Collector's winter assault and bring him down.", intro: ["Justin", "\"Lanterns on the road. A wicked lot of them. This is it.\""], done: "The Collector is down in the snow by the woodpile. His army breaks for the road." },
   { n: 9, title: "The Long Winter", goal: "See how it ends.", intro: ["Sarah", "\"Spring comes eventually. Even here.\""], done: "The end." },
 ];
 export const ENDINGS: Record<MainEnding, { title: string; slides: string[] }> = {
@@ -309,7 +311,7 @@ export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
     justin: "\"I won't tell you what to do. I'll tell you I've never seen a deal with a man like that end with both sides standing.\"",
     mira: "\"Harmony will stand with you, if you've stood with Harmony. Fix the store, help the clinic. People remember.\"",
     marcel: "\"A deal keeps my store open. I won't lie to you about that. I won't like myself for it either.\"",
-    cal: "\"Alone's how I've done it fourteen years. It works fine till it doesn't.\"",
+    cal: "\"Alone's how I've done it fourteen years. Ayuh. Works fine right up till it don't.\"",
   },
   8: {
     sarah: "\"Kids are in the root cellar with Biscuit and a lamp. Whatever happens up here, they're not coming out till it's quiet.\"",
