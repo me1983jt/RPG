@@ -127,12 +127,19 @@ export const RECIPES13: { id: string; name: string; need: [string, number][]; ma
 ];
 
 // ---------------- sickness and injuries
-export type AilId = "cold" | "bone" | "cut";
+export type AilId = "cold" | "bone" | "cut" | "blind" | "arms" | "legs";
 export const AILMENTS: Record<AilId, { name: string; text: string; cure: string; speed: number; stamina: number; hpDay: number }> = {
   cold: { name: "Winter cold", text: "Stuffed up and shivering.", cure: "Medicine, spruce tonic, or three days warm.", speed: 0.92, stamina: 0.6, hpDay: 0 },
   bone: { name: "Broken bone", text: "A cracked shin. Every step hurts.", cure: "A splint (bandage + wood) or the Harmony clinic.", speed: 0.7, stamina: 0.8, hpDay: 0 },
   cut: { name: "Infected cut", text: "Red, hot and swelling.", cure: "Medicine or the Harmony clinic.", speed: 1, stamina: 0.9, hpDay: 4 },
+  // v14.1 crippled states. They never clear on their own.
+  blind: { name: "Blinded", text: "Your eyes are swollen half shut. You can't aim and can't see far.", cure: "A doctor's bag or medkit, or rest on the farm cot with Sarah there.", speed: 1, stamina: 1, hpDay: 0 },
+  arms: { name: "Crippled arm", text: "Your arm won't take weight. Bad aim, and no two-handed weapons.", cure: "A doctor's bag or medkit, or rest on the farm cot with Sarah there.", speed: 1, stamina: 1, hpDay: 0 },
+  legs: { name: "Crippled leg", text: "You can only limp. Slow, and no running.", cure: "A doctor's bag or medkit, or rest on the farm cot with Sarah there.", speed: 0.6, stamina: 1, hpDay: 0 },
 };
+/** v14.1: the crippled injuries and their effects. */
+export const INJURIES = ["blind", "arms", "legs"] as const;
+export const INJ_FX = { blindAim: 0.45, blindSight: 0.45, armAim: 0.75, enemyBlindAim: 0.5, enemyBlindSight: 0.5 };
 
 // ---------------- armor durability, dye, sets
 export const DURA_MAX = 100;

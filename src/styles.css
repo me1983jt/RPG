@@ -117,3 +117,11 @@
   [data-hud="quest"] { max-width: 17rem; zoom: 0.84; }
   [data-hud="quest"] [data-testid="main-tracker"] .text-muted { display: none; }
 }
+
+/* v14.1: portrait phones keep at least 65% of the screen for the game: a lower, tighter button row */
+@media (orientation: portrait) and (max-width: 700px) {
+  [data-hud="actions"] { gap: 2px; }
+  [data-hud="actions"] > button { height: 2.75rem; }
+  [data-hud="actions"] svg { width: 0.9rem; height: 0.9rem; }
+  [data-hud="health-min"], [data-hud="quest-min"] { padding-top: 2px; padding-bottom: 2px; }
+}

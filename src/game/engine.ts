@@ -38,7 +38,7 @@ import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_S
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
-import { AILMENTS, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
+import { AILMENTS, INJURIES, INJ_FX, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
 import {
   HEX_CX,
   HEX_CY,
@@ -393,6 +393,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let mountId = -1;
 	let drawn = 0;
 	let aim = "chest";
+	const aim0 = () => aim;
+	/** v14.1: real-time hit locations, rolled by weight, with damage multipliers and crippling / knockdown chances. */
+	const PART141 = {
+		torso: { w: 45, label: "Torso", cripple: 0 },
+		legs: { w: 20, label: "Legs", cripple: .35 },
+		arms: { w: 20, label: "Arms", cripple: .35 },
+		head: { w: 10, label: "Head", cripple: 0 },
+		eyes: { w: 3, label: "Eyes", cripple: 1 },
+		groin: { w: 2, label: "Groin", cripple: .6 }
+	};
+	function rollPart141() {
+		let r = Math.random() * 100;
+		for (const [k, v] of Object.entries(PART141)) { r -= v.w; if (r < 0) return k; }
+		return "torso";
+	}
 	let turnBased = false;
 	// v13.4 graphics: High adds smooth sprite scaling, soft shadows, daylight tint, vignette and blended weather
 	let gfxHigh = (() => { try { return localStorage.getItem("maine-rpg-gfx") !== "low"; } catch { return true; } })();
@@ -1581,7 +1596,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const trail = skillOf("trail");
 		const home = mapId === 0 && player && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty);
 		const up = home ? 2 * (v3.up.lookout || 0) + (v3.up.solar && nightDark(clock) > .3 ? 3 : 0) : 0;
-		return Math.max(2, Math.round((5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up) * (inside ? 1 : weather13().sight)));
+		return Math.max(2, Math.round((5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up) * (inside ? 1 : weather13().sight) * (injured("blind") ? INJ_FX.blindSight : 1)));
 	}
 	function noticeRange(base) {
 		// v11.1: the motor bicycle is loud; raiders hear it coming from much farther off
@@ -1768,6 +1783,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			giveItem("cider");
 			giveItem("donut");
 			giveItem("donut");
+			giveItem("medkit");
 			const cot = world.props.find((p) => p.kind === "cot");
 			if (cot && mapId === 0) {
 				const spot = nearestRespawn(cot.tx, cot.ty, 1, 1);
@@ -3608,6 +3624,31 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const id of Object.keys(w13.ail)) m *= AILMENTS[id]?.speed ?? 1;
 		return m;
 	}
+	/** v14.1: real-time hits on the player roll a location too; crippling is rare (eyes 3% of hits, then a coin flip). */
+	function injuryRoll141(dmg) {
+		if (!player || dmg < 3) return;
+		const part = rollPart141();
+		if (part === "eyes" && Math.random() < .5) injure141("blind", "A blow catches you across the eyes.");
+		else if (part === "arms" && Math.random() < .06) injure141("arms", "Something gives in your arm.");
+		else if (part === "legs" && Math.random() < .06) injure141("legs", "Your knee buckles wrong.");
+	}
+	function injure141(id, why) {
+		if (w13.ail[id]) return false;
+		w13.ail[id] = curDay() + 1;
+		pushLog(`${AILMENTS[id].name}: ${why} ${AILMENTS[id].text} (${AILMENTS[id].cure})`);
+		diary(`${AILMENTS[id].name}.`);
+		if (id === "arms" && TWO_HANDED.has(GEAR[player.weaponId]?.family)) pushLog("You can't hold a two-handed weapon like this.");
+		sync(true);
+		return true;
+	}
+	function healInjuries141(why) {
+		let n = 0;
+		for (const id of INJURIES) if (w13.ail[id]) { delete w13.ail[id]; n++; }
+		if (n) { pushLog(why); sync(true); }
+		return n;
+	}
+	const TWO_HANDED = new Set(["carbine", "scatter", "axe", "pickaxe"]);
+	const injured = (id) => !!w13.ail?.[id];
 	function catchAil(id, why) {
 		if (quiet13() && why !== "Test.") return false;
 		if (w13.ail[id]) return false;
@@ -3863,6 +3904,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Eating, drinking and v13 cures from the pack. Returns true when it used the item. */
 	function v13Use(def, stack) {
 		const f = FOOD_VALUE[def.id];
+		if (def.family === "medkit") {
+			const order = def.id === "docbag" ? INJURIES : INJURIES.filter((i) => w13.ail[i]).slice(0, 1);
+			let n = 0; for (const id of order) if (w13.ail[id]) { delete w13.ail[id]; n++; }
+			if (!n) { pushLog("Nothing broken that it can fix."); return true; }
+			pushLog(def.id === "docbag" ? "You clean the eye, set the joint and splint it. Better." : "You strap it up out of the tin kit. Better."); train("firstaid", 8); sync(true); return false;
+		}
 		if (def.id === "medicine") { if (cureAil("cut", "The medicine knocks the infection down.") || cureAil("cold", "The medicine clears your head.") ) train("medicine", 6); return false; }
 		if (def.family === "bandage") { train("firstaid", 5); if (w13.ail.bone && countOf("wood") >= 0 && player.wood >= 1 && perk13("firstaid", 6)) { player.wood -= 1; cureAil("bone", "You splint it with a stave and a bandage."); } if (perk13("firstaid", 3) && w13.ail.cut) cureAil("cut", "Clean cut, clean bandage."); return false; }
 		if (!f) return false;
@@ -3891,6 +3938,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function sleep13() {
 		const n = w13.needs;
 		n.sleep = 100;
+		if (mapId === 0 && world?.npcs.some((q) => q.role === "sarah")) healInjuries141("Sarah sits up with you through the night: eye wash, a splint, a sling. You wake up whole.");
 		n.hunger = Math.max(0, n.hunger - 10);
 		n.thirst = Math.max(0, n.thirst - 12);
 		if (w13.ail.cold) w13.ail.cold -= 1;
@@ -4338,13 +4386,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return out;
 	}
 	function stepHollow(e, dt, dist) {
-		const sight = 125 * (l1.crouch ? CROUCH_SIGHT : 1) * (nightShade(clock) > .22 ? .8 : 1);
+		const sight = 125 * (l1.crouch ? CROUCH_SIGHT : 1) * (nightShade(clock) > .22 ? .8 : 1) * (e.blind141 ? INJ_FX.enemyBlindSight : 1);
 		if (!e.aggro && dist < sight) { e.aggro = true; e.heard = null; for (const o of world.enemies) if (o.hollow && !o.dead && !o.aggro && Math.hypot(o.x - e.x, o.y - e.y) < 160) o.aggro = true; }
 		if (e.aggro && dist > 520) e.aggro = false;
 		let moving = false;
 		if (e.aggro && dist <= 48 && e.cooldown <= 0) {
 			e.cooldown = 1.25; e.dir = facing8(player.x - e.x, player.y - e.y);
-			hurtPlayer(e.crippleArm > 0 ? 3 : e.atk, e.x, e.y);
+			if (!(e.blind141 && Math.random() > INJ_FX.enemyBlindAim)) hurtPlayer(e.crippleArm > 0 ? 3 : e.atk, e.x, e.y);
 		} else {
 			let gx = null, gy = null, sp = 62;
 			if (e.aggro) { gx = player.x; gy = player.y; sp = 74; }
@@ -4746,7 +4794,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		attackRepath = 0;
 	}
 	function hud141() {
-		return { crouch: l1.crouch, noise: Math.round(l1.noise), auto: l1.auto, stick: l1.stick, rows: player ? gridRows(player) : 0, bagLv: player?.bagLv ?? 0, small: !!player?.small, drop: dropHud(), store: storeHud(), hard: !!w13.hard };
+		return { crouch: l1.crouch, noise: Math.round(l1.noise), auto: l1.auto, stick: l1.stick, rows: player ? gridRows(player) : 0, bagLv: player?.bagLv ?? 0, small: !!player?.small, drop: dropHud(), store: storeHud(), hard: !!w13.hard, inj: INJURIES.filter((id) => injured(id)).map((id) => ({ id, name: AILMENTS[id].name, text: AILMENTS[id].text, cure: AILMENTS[id].cure })) };
 	}
 	// ======== v14 world map (hex travel between local areas) ========
 	// forced encounters (__wmEnc / __wmKind / __wmForce) always use the world map, even with __v14Skip
@@ -5291,6 +5339,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.restore();
 	}
 	function v13Running() {
+		if (injured("legs")) return false;
 		return !!player && player.stamina > 0 && (holdWalk || intent?.kind === "walk" && (intent.path?.length ?? 0) > 6);
 	}
 	function v13Hud() {
@@ -6473,6 +6522,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
+		docbag: "kit",
+		medkit: "kit",
 		berries: "apple", mushrooms: "apple", chowder: "smokedfish", venisonsteak: "meat", pie: "apple", coffee: "cider", tonic: "dandelion", trout: "smokedfish",
 		snare: "wire", grokclaw: "antlers",
 		// v14.1 stand-in icons until item art lands at public/game/items/<id>.png
@@ -7287,6 +7338,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function paySwing() {
 		if (!player || player.cooldown > 0) return false;
+		if (injured("arms") && TWO_HANDED.has(GEAR[player.weaponId]?.family)) { player.cooldown = .6; intent = null; pushLog("Your crippled arm can't hold that. Switch to a one-handed weapon or your fists."); sync(true); return false; }
 		parkBike(true);
 		const family = GEAR[player.weaponId]?.family;
 		const gun = isGun(family);
@@ -7382,6 +7434,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function strikeLand(enemy) {
 		if (!player || enemy.dead) return;
+		// v14.1: real-time hits roll their own location; the chosen part only counts in turn-based mode
+		const aim = turnBased ? aim0() : rollPart141();
 		const aimRow = {
 			head: {
 				hit: .56,
@@ -7398,13 +7452,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			leg: {
 				hit: .72,
 				mult: .82
-			}
+			},
+			torso: { hit: .9, mult: 1 },
+			legs: { hit: .9, mult: .82 },
+			arms: { hit: .9, mult: .78 },
+			eyes: { hit: .9, mult: 2.2 },
+			groin: { hit: .9, mult: 1.3 }
 		}[aim];
 		const familyNow = GEAR[player.weaponId]?.family;
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
 		const sneak141 = l1.crouch && !enemy.aggro && enemy.temper !== "timid";
 		emitNoise(isGun(familyNow) ? NOISE.gun : NOISE.melee);
-		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
+		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0)) * (injured("blind") ? INJ_FX.blindAim : 1) * (injured("arms") ? INJ_FX.armAim : 1);
 		player.dir = facing8(enemy.x - player.x, enemy.y - player.y);
 		if (Math.random() > chance) {
 			sfx("click");
@@ -7433,13 +7492,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		enemy.hp -= dmg;
 		enemy.hurt = .12;
-		if (aim === "arm" && !tiny) {
+		const fx = PART141[aim];
+		if ((aim === "arm" || aim === "arms" && Math.random() < fx.cripple) && !tiny) {
 			enemy.crippleArm = 8;
 			pushLog("The foreleg gives.");
-		} else if (aim === "leg" && !tiny) {
+		} else if ((aim === "leg" || aim === "legs" && Math.random() < fx.cripple) && !tiny) {
 			enemy.crippleLeg = 8;
 			pushLog("The leg buckles.");
 		} else if (aim === "head") pushLog("You catch the head.");
+		else if (aim === "eyes" && !tiny) { enemy.blind141 = true; enemy.stun141 = 1.6; enemy.cooldown = Math.max(enemy.cooldown || 0, 1.2); pushLog("Right in the eyes. It reels, blind."); }
+		else if (aim === "groin" && !tiny && Math.random() < fx.cripple) { enemy.cooldown = Math.max(enemy.cooldown || 0, 1.4); enemy.knock141 = 1; pushLog("A low hit. It folds over."); }
+		if (aim !== "torso" && !tiny && fx) floater(enemy.x, enemy.y - 44, fx.label);
 		sfx("hit");
 		if (!reduceMotion) shake = Math.min(8, shake + 3);
 		burst(enemy.x, enemy.y, "#c4543a", 7);
@@ -7471,11 +7534,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			leg: {
 				hit: .72,
 				mult: .82
-			}
+			},
+			torso: { hit: .9, mult: 1 },
+			legs: { hit: .9, mult: .82 },
+			arms: { hit: .9, mult: .78 },
+			eyes: { hit: .9, mult: 2.2 },
+			groin: { hit: .9, mult: 1.3 }
 		}[aim];
 		const familyNow = GEAR[player.weaponId]?.family;
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
-		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0));
+		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0)) * (injured("blind") ? INJ_FX.blindAim : 1) * (injured("arms") ? INJ_FX.armAim : 1);
 		player.dir = facing8(npc.x - player.x, npc.y - player.y);
 		if (Math.random() > chance) {
 			sfx("click");
@@ -7518,6 +7586,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const biter = world?.enemies.find((e) => !e.dead && e.kind !== "bandit" && Math.hypot(e.x - fromX, e.y - fromY) < 40);
 			if (biter && curDay() >= 2 && Math.random() < .04 * (1 - fx13().sickResist) * (perk13("firstaid", 3) ? .5 : 1)) catchAil("cut", `The ${biter.kind} got its teeth in you.`);
 			if (dmg >= player.maxHp * .3 && Math.random() < .12) catchAil("bone", "That hit cracked something.");
+			injuryRoll141(dmg);
 		}
 		player.invuln = .38;
 		player.hurt = .4;
@@ -8235,7 +8304,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				continue;
 			}
 			if (enemy.aggro && homeDist > 520 && !isRaider(enemy)) enemy.aggro = false;
-			const sight = enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 * (nightShade(clock) > .22 ? 1.5 : 1) * (seasonNow() === 3 ? 1.25 : 1) : 190;
+			const sight = (enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 * (nightShade(clock) > .22 ? 1.5 : 1) * (seasonNow() === 3 ? 1.25 : 1) : 190) * (enemy.blind141 ? INJ_FX.enemyBlindSight : 1);
 			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight)) {
 				enemy.aggro = true;
 				alertPack(enemy);
@@ -8253,6 +8322,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			} else if (enemy.aggro && dist <= bite && enemy.cooldown <= 0) {
 				enemy.cooldown = enemy.kind === "moose" ? 1.05 : enemy.elite ? .95 : .82;
 				enemy.dir = facing8(player.x - enemy.x, player.y - enemy.y);
+				if (enemy.blind141 && Math.random() > INJ_FX.enemyBlindAim) floater(player.x, player.y - 30, "miss"); else
 				hurtPlayer(enemy.crippleArm > 0 ? Math.max(1, Math.round(enemy.atk * .65)) : enemy.atk, enemy.x, enemy.y);
 			} else if (enemy.aggro) {
 				let goalX = player.x;
@@ -10240,6 +10310,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
+		// v14.1 Blinded: the world closes in, dark and smeared at the edges
+		if (injured("blind") && !inside) {
+			const r0 = Math.min(viewW, viewH) * .16, r1 = Math.max(viewW, viewH) * .55;
+			const g = ctx.createRadialGradient(viewW / 2, viewH / 2, r0, viewW / 2, viewH / 2, r1);
+			g.addColorStop(0, "rgba(10,6,4,0)"); g.addColorStop(.55, "rgba(30,10,8,.55)"); g.addColorStop(1, "rgba(12,4,4,.92)");
+			ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH); ctx.restore();
+		}
 		if (gfxHigh && !inside) paintDaylight(dark);
 		if (!inside) paintWeather13();
 		paintSeason();
@@ -11090,6 +11167,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (enemy.aggro && dist <= bite) {
 				const swingAtk = enemy.crippleArm > 0 ? Math.max(1, Math.round(enemy.atk * .65)) : enemy.atk;
 				enemy.dir = facing8(player.x - enemy.x, player.y - enemy.y);
+				if (enemy.blind141 && Math.random() > INJ_FX.enemyBlindAim) floater(player.x, player.y - 30, "miss"); else
 				hurtPlayer(swingAtk, enemy.x, enemy.y);
 			} else if (enemy.aggro) {
 				const pace = enemy.crippleLeg > 0 ? 220 * .55 : 220;
@@ -11718,6 +11796,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return "ok";
 	},
 	l141Fig: () => ({ ...figLog }),
+	l141Injure: (id) => { if (id === "none") return healInjuries141("Test heal."); return injure141(id, "Test."); },
+	l141Inj: () => ({ ail: Object.keys(w13.ail), sight: sightRadius(), run: v13Running(), speed: ailSpeed() }),
 	l141Img: (n) => { const i = images.get(n); return i ? { w: i.width, h: i.height, cols: sheetCols(i), diag4: i.diag4 } : null; },
 	l141Piles: () => piles.map((p) => ({ title: p.title, body: p.body, sheet: p.sheet, folk: p.folk, loot: hasLoot(p) })),
 	l141Doll: () => ({ player: dollLayerNames(player, "walk"), npcs: (world?.npcs ?? []).map((n) => [n.role, dollTypeOf(n), !!n.doll]) }),

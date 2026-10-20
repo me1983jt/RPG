@@ -4,7 +4,7 @@ export type LookId = "wool" | "spruce" | "linen" | "soot";
 export type GearKind = "weapon" | "coat" | "supply";
 export type Quality = "poor" | "standard" | "good" | "rare";
 export type ArmorSlot = "head" | "chest" | "legs" | "hands" | "feet" | "back";
-export type GearFamily = "carbine" | "revolver" | "scatter" | "axe" | "pickaxe" | "pry" | "knife" | "coat" | "bandage" | "lockpick" | "supply" | "trade";
+export type GearFamily = "medkit" | "carbine" | "revolver" | "scatter" | "axe" | "pickaxe" | "pry" | "knife" | "coat" | "bandage" | "lockpick" | "supply" | "trade";
 
 export interface GearDef {
   id: string;
@@ -70,6 +70,8 @@ export const GEAR: Record<string, GearDef> = {
   "bandage-std": { id: "bandage-std", name: "Field bandage", kind: "supply", family: "bandage", quality: "standard", atk: 0, def: 0, heal: 22, note: "Cleaner wrap. Use it from the pack." },
   "bandage-good": { id: "bandage-good", name: "Clean bandage", kind: "supply", family: "bandage", quality: "good", atk: 0, def: 0, heal: 34, note: "Boiled cloth. Use it from the pack." },
   shells: { id: "shells", name: "Loose shells", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "One shot each. A gun will not fire without them." },
+  docbag: { id: "docbag", name: "Doctor's bag", kind: "supply", family: "medkit", quality: "good", atk: 0, def: 0, heal: 10, note: "Clamps, gauze, eye wash, splints. Heals a blinded eye or a crippled arm or leg." },
+  medkit: { id: "medkit", name: "Medkit", kind: "supply", family: "medkit", quality: "standard", atk: 0, def: 0, heal: 6, note: "A tin first-aid kit. Heals one crippled injury." },
   levergun: { id: "levergun", name: "Bob's lever gun", kind: "weapon", family: "carbine", quality: "standard", atk: 10, def: 0, heal: 0, note: "One round at a time through the gate: the slowest reload of any long gun. For a careful shot, not a crowd. Adults only." },
   dalekey: { id: "dalekey", name: "Dale's key ring", kind: "supply", family: "trade", quality: "poor", atk: 0, def: 0, heal: 0, note: "Opens the back office at the Ervin Fuel station." },
   roycap: { id: "roycap", name: "Roy's cap", kind: "supply", family: "trade", quality: "poor", atk: 0, def: 0, heal: 0, note: "Blaze orange, frozen stiff. Bob will want it." },

@@ -250,7 +250,14 @@ export function RPG() {
   }, [toast?.n]);
   const [trackerOpen, setTrackerOpen0] = useState(() => { try { const v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); if (typeof v.track === "boolean") return !v.track; } catch { /* none */ } return typeof window === "undefined" || (window.innerHeight >= 500 && !(window.innerWidth >= 1024 && window.innerWidth > window.innerHeight)); });
   // v14 collapsible HUD: quest, track, health, aim, mini. true = collapsed. Kept in localStorage.
-  const [hcS, setHc] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); } catch { return {}; } });
+  const [hcS, setHc] = useState<Record<string, boolean>>(() => {
+    // v14.1: on portrait phones the quest panel and character panel start collapsed to one thin line each
+    const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth && window.innerWidth < 700;
+    let v: Record<string, boolean> = {};
+    try { v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); } catch { v = {}; }
+    if (portrait) { if (typeof v.quest !== "boolean") v.quest = true; if (typeof v.health !== "boolean") v.health = true; }
+    return v;
+  });
   const saveHc = (next: Record<string, boolean>) => { setHc(next); try { localStorage.setItem("maine-rpg-hud", JSON.stringify(next)); } catch { /* private mode */ } };
   const flipHc = (k: string) => saveHc({ ...hcS, [k]: !hcS[k] });
   // v14.1: build mode auto-collapses the other panels (your saved choice comes back when you close Build)
@@ -1031,19 +1038,11 @@ export function RPG() {
             </div>
 
             <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
-              <span className="px-1 text-[10px] uppercase tracking-wide text-muted">Aim</span>
-              <button type="button" data-hud-min="aim" aria-label={hc.aim ? "Expand aim" : "Minimize aim"} className="min-h-10 min-w-10 plank border border-border bg-surface px-1 text-xs font-bold text-primary" onClick={() => flipHc("aim")}>{hc.aim ? `${hud.aim} +` : "–"}</button>
-              {(hc.aim ? [] : (["head", "chest", "arm", "leg"] as const)).map((part) => (
-                <button
-                  key={part}
-                  type="button"
-                  style={{ touchAction: "manipulation" }}
-                  className={`min-h-10 min-w-12 plank border px-3 py-2 text-xs font-semibold capitalize short:px-2 short:py-1 ${hud.aim === part ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`}
-                  onClick={() => apiRef.current?.setAim(part)}
-                >
-                  {part}
-                </button>
-              ))}
+              {/* v14.1: no body-part tabs in the HUD; real-time hits roll their own location. The Fallout aimed-shot
+                  popup is for v15 turn-based combat and stays off behind AIMED_POPUP. */}
+              {AIMED_POPUP && hud.turnBased ? (["head", "chest", "arm", "leg"] as const).map((part) => (
+                <button key={part} type="button" className={`min-h-10 min-w-12 plank border px-3 py-2 text-xs font-semibold capitalize ${hud.aim === part ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.setAim(part)}>{part}</button>
+              )) : null}
               {hud.v141 ? (
                 <>
                   <button type="button" data-v141="crouch" aria-pressed={hud.v141.crouch} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-12 plank border px-2 text-xs font-semibold ${hud.v141.crouch ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v141("crouch")}>{hud.v141.crouch ? "Crouched" : "Crouch"}</button>
@@ -1070,6 +1069,8 @@ export function RPG() {
                         <div key={l} className="h-1 bg-bg" title={`${l} ${Math.round(v)}`} aria-label={l}><div className="h-full" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: c }} /></div>
                       ))}
                     </div>
+                    <span data-hud="hp-text" className="shrink-0 text-[11px] font-semibold tabular-nums text-fg">{Math.ceil(hud.hp)}/{hud.maxHp} · Lv {hud.level}</span>
+                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
                     <button type="button" className="min-h-10 px-1 text-xs text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
                     <MinBtn k="health" label="health panel" />
                   </section>
@@ -1081,6 +1082,7 @@ export function RPG() {
                       <p className="mt-1 text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
                     </div>
                     <div className="flex shrink-0 items-start">
+                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
                     <button type="button" className="-my-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
                       Pause
                     </button>
@@ -1624,6 +1626,9 @@ function Overlay({ title, children, delayed = false }: { title: string; children
     </div>
   );
 }
+
+/** v15 stub: the aimed-shot (called-shot) picker for turn-based combat. Off in v14.1. */
+const AIMED_POPUP = false;
 
 function ActionButton({
   label,
