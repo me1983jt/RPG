@@ -5147,6 +5147,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
 		townQuestsDone();
 		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[townApp(town.id)] = JSON.parse(JSON.stringify(st.extra)); l1.tx.shared = { ...(l1.tx.shared ?? {}), ...JSON.parse(JSON.stringify(st.extra)), from: townApp(town.id) }; }
+		// v15.3: the town's motor bike hands over a fast-travel pick; ride straight to that town instead of the normal exit
+		const ft = typeof msg.fastTravel === "string" ? msg.fastTravel : "";
+		if (FT15_HOURS[ft] !== undefined && ft !== townApp(town.id)) { townQuestsDone(); fastTravel15(ft); return true; }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
 		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
 		// v15.1: Skowhegan's bridge hotspot (Fur & Mask still hold it) hands over to quest-harmony's Skowhegan bridge crossing
@@ -5168,6 +5171,29 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		snapPrev();
 		saveGame(); autosave15(`Left ${tdef?.name ?? "town"}`); sync(true);
 		return true;
+	}
+	/** v15.3 fast travel: ride time in hours from any town to the named one. */
+	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5 };
+	function fastTravel15(ft) {
+		const from = townDef(town?.id ?? "")?.name ?? "town";
+		const td = townDef(ft);
+		town = null; phase = "play"; townArmed = false;
+		const hrs = FT15_HOURS[ft];
+		clock += hrs / 24 * DAY_LENGTH_SEC;
+		needsTick(hrs);
+		if (td.map !== mapId) {
+			const m = wmState(); const here = locOfMap(mapId), dest = locOfMap(td.map);
+			m.from = [here.q, here.r]; m.q = dest.q; m.r = dest.r; m.path = []; wmReveal(dest.q, dest.r);
+			wmArrive(td.map, m.from); w13.seen[dest.id] = true;
+		}
+		const sp = townSpot(td);
+		if (sp) { player.x = sp.roadX; player.y = sp.roadY; if (pointBlocked(world, player.x, player.y, RADIUS)) { player.x = sp.x + 110; player.y = sp.y + 40; } }
+		if (dogBody) { dogBody.x = player.x + 46; dogBody.y = player.y + 30; }
+		if (escortBodies) for (const e of escortBodies) { e.x = player.x + (e.ox ?? 40); e.y = player.y + (e.oy ?? 40); }
+		snapPrev();
+		pushLog(`You ride Dad's motor bike from ${from} to ${td.name}. ${hrs} hours on the road.`);
+		autosave15(`Rode to ${td.name}`);
+		openTown({ id: ft, town: ft, name: td.name });
 	}
 	/** v14.6: main quest stages for the town (DESIGN.md "Quest mapping"); all read-only on the town side. */
 	function townStoryFlags() {
@@ -12619,6 +12645,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Flags: (f) => { l1.tf = { ...(l1.tf ?? {}), ...f }; const moved = townMapFlags(l1.tf); townQuestsDone(); return { moved, main: JSON.parse(JSON.stringify(w13.main)), jack: w13.loyal.jack, mira: w13.loyal.mira, q10: { planks: q10.planks, rope: q10.rope, winch: q10.winch, ferry: q10.ferry }, grok: q11.q.grok?.s ?? 0, wolves: q11.q.wolves?.s ?? 0, freed: w13.freed, tq: (l1.tq ?? []).map((q) => q.id), unite: uniteWaived() }; },
 		v15State: () => townState(),
 		v15Open: (id, scene) => { openTown({ id, town: id, name: id, scene }); return { town: { ...town }, msg: townEnterMsg() }; },
+		v153: () => ({ clock, map: mapId, phase, town: town ? { id: town.id, src: town.src } : null, px: player?.x, py: player?.y }),
+		v153Ft: (ft) => leaveTown({ type: "leaveTown", exit: "worldmap", state: {}, fastTravel: ft }),
 		v15Leave: () => leaveTown({ type: "leaveTown", exit: "town", state: {} }),
 		v15Hit: () => { const before = player.hp; player.invuln = 0; hurtPlayer(5, player.x + 40, player.y); return { before, after: player.hp }; },
 		v15Strike: () => { const e = world.enemies.find((x) => !x.dead); if (!e) return null; const hp = e.hp; strikeEnemy(e); return { hp, after: e.hp, pending: !!pendingHit }; },

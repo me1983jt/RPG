@@ -73,6 +73,36 @@ ok(icons.every((s) => s === 200), `item icons load ${icons}`);
 await T("setSnow", 3); await T("setHour", 22); await wait(200); await T("startRaidNow"); await wait(200);
 const rs = await T("raidState");
 ok(rs && !rs.none, `raid starts ${JSON.stringify(rs)} map ${(await T("mapInfo")).id} ${JSON.stringify(await T("dbg")).slice(0, 120)}`);
+// v15.3: fast travel. In Pittsfield, tap Dad's bike, pick Skowhegan: clock moves on, map changes, Skowhegan opens
+{
+  await T("v15Open", "pittsfield"); await wait(2500);
+  const fr = page.frames().find((f) => f.url().includes("/towns/pittsfield"));
+  if (fr && !(await fr.evaluate(() => !!window.HARMONY?.state).catch(() => false))) { await fr.evaluate(() => document.querySelector('[data-c="woodsman"]')?.click()); await wait(600); }
+  await fr?.evaluate(() => { if (window.HARMONY.state.scene !== window.BIKE.scene) window.HARMONY.loadScene(window.BIKE.scene); });
+  await wait(500);
+  const b0 = await T("v153");
+  // tap the bike on the town canvas (window.BIKE.pos is in scene coords)
+  const tap = await fr?.evaluate(() => { const c = document.querySelector("#cv"), r = c.getBoundingClientRect(), [x, y] = window.BIKE.pos; return { x: r.left + x * r.width / 640, y: r.top + (y - 30) * r.height / 360 }; });
+  // clear any open town dialog (intro / welcome back) so the tap reaches the canvas
+  for (let i = 0; i < 8; i++) { const m = await fr.$("#overlay .box.msg"); if (!m) break; await m.click(); await wait(300); }
+  await wait(300);
+  const fel = await fr?.frameElement(), fb = await fel?.boundingBox();
+  for (let i = 0; i < 6 && !(await fr.$("button[data-ft]")); i++) { await page.mouse.click(fb.x + tap.x, fb.y + tap.y); await wait(1500); }
+  const menu = await fr?.evaluate(() => [...document.querySelectorAll("button[data-ft]")].map((b) => b.getAttribute("data-ft")));
+  ok(menu?.includes("skowhegan") && menu?.includes("harmony") && !menu?.includes("pittsfield"), `bike menu: ${menu}`);
+  await page.screenshot({ path: out + "v153-bike-menu.png" });
+  await fr?.evaluate(() => document.querySelector('button[data-ft="skowhegan"]').click());
+  await wait(2500);
+  const b1 = await T("v153");
+  ok(b1.clock > b0.clock, `clock advanced (${b0.clock} -> ${b1.clock})`);
+  ok(b0.map !== 2 && b1.map === 2, `map changed ${b0.map} -> ${b1.map}`);
+  ok(b1.phase === "town" && b1.town?.id === "skowhegan" && b1.town.src.includes("/towns/skowhegan/"), `Skowhegan opened (${JSON.stringify(b1.town)})`);
+  ok(!!page.frames().find((f) => f.url().includes("/towns/skowhegan")), "Skowhegan iframe loaded");
+  await T("v15Leave"); await wait(500);
+  await T("v15Open", "harmony", "kitchen"); await wait(3000);
+  await page.screenshot({ path: out + "v153-kitchen.png" });
+  await T("v15Leave"); await wait(500);
+}
 ok(!errs.some((e) => /pageerror/.test(e)), "no page errors " + errs.filter((e) => /pageerror/.test(e)).join(" | ").slice(0, 300));
 console.log(fail ? `${fail} failed` : "all passed");
 await browser.close();

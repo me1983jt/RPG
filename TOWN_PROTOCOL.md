@@ -103,3 +103,14 @@ One-way mappings added:
 Quest markers: `pittsfield-handcar` → `skow` (cleared after your first rail hop), `pittsfield-camp` → `raiders` (cleared when Saw's camp is cleared or visited), `skowhegan-meds` → `harmony` (cleared when `harmony.meds` is returned/done or the Medicine Run is turned in).
 
 Test: `scripts/v151-towns-test.mjs` enters and leaves every town and sub-entry through the real iframe.
+
+## Fast travel (v15.3)
+Each town has Dad's motor bike parked by its world-map exit. Picking another town on the bike menu sends:
+
+```js
+{ type: 'leaveTown', exit: 'worldmap', state, fastTravel: 'harmony' | 'pittsfield' | 'skowhegan' }
+```
+
+- `state` is applied as for any `leaveTown`.
+- If `fastTravel` names one of the three towns and that town isn't the one you're leaving, the RPG skips the world map. It moves the clock and needs forward by the ride time (Harmony 1.5 h, Pittsfield 2 h, Skowhegan 2.5 h), switches map if needed (Pittsfield: map 0 at [98,66]; Skowhegan: map 2 at [56,60]; Harmony: map 0 near the farm), puts the player, Goose and any escort at the town marker (`townSpot`), autosaves, and sends a fresh `enterTown` for the destination.
+- If `fastTravel` is missing, unknown, or names the current town, the plain `leaveTown` runs unchanged. (World Map on the bike menu sends no `fastTravel`.)

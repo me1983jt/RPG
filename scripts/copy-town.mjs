@@ -16,14 +16,14 @@ for (const t of towns) {
   mkdirSync(out, { recursive: true });
   let used = "stub";
   if (existsSync(t.src) && statSync(t.src).isDirectory()) {
-    cpSync(t.src, out, { recursive: true, filter: (p) => !/node_modules|\.git(\/|$)|\/(shots|tests)(\/|$)|\.py$/.test(p.slice(t.src.length)) });
+    cpSync(t.src, out, { recursive: true, filter: (p) => !/node_modules|\.git(\/|$)|\/(shots|tests)(\/|$)|\/assets\/goose\/src(\/|$)|\.py$/.test(p.slice(t.src.length)) });
     const main = ["index.html", `${t.id}.html`].find((f) => existsSync(join(t.src, f)));
     if (main && main !== "index.html") copyFileSync(join(t.src, main), join(out, "index.html"));
     used = main ? t.src : "stub";
     if (!main) copyFileSync(t.stub, join(out, "index.html"));
   } else if (existsSync(t.src)) {
     // single file: copy it plus any siblings it ships with (assets in the same folder)
-    cpSync(dirname(t.src), out, { recursive: true, filter: (p) => !/node_modules|\.git(\/|$)|\/(shots|tests)(\/|$)|\.py$/.test(p.slice(dirname(t.src).length)) });
+    cpSync(dirname(t.src), out, { recursive: true, filter: (p) => !/node_modules|\.git(\/|$)|\/(shots|tests)(\/|$)|\/assets\/goose\/src(\/|$)|\.py$/.test(p.slice(dirname(t.src).length)) });
     copyFileSync(t.src, join(out, "index.html"));
     used = t.src;
   } else copyFileSync(t.stub, join(out, "index.html"));
