@@ -1,4 +1,4 @@
-# Town layer protocol v1 (Maine RPG v14.4)
+# Town layer protocol v1 (Maine RPG v14.5)
 
 The RPG opens a town as a full-screen same-origin iframe when the player walks into its marker in the
 isometric world (Harmony village: a cluster of houses beside the road, a short walk from the Cambridge Road
@@ -39,6 +39,7 @@ All messages are plain objects sent with `postMessage(msg, "*")`. The RPG only a
   injuries: { blinded: boolean, crippledArm: boolean, crippledLeg: boolean },
   companions: [{ id: "cyndal"|"loki"|"goose", name: string, withYou: boolean }],   // read-only
   questFlags: { [key: string]: string | number | boolean },
+  stats: { strength, vigor, endurance, intellect, perception, luck, agility, grit },  // numbers, read-only (v14.5)
   day: number,        // 1-based game day, read-only
   time: string,       // "HH:MM", read-only
   extra: { ... }      // the town game's own stats/score; any JSON object, stored per town and sent back next visit ({} the first time)
@@ -52,6 +53,10 @@ Applying a returned state:
 - `hp`: rounded and clamped to 1..maxHp.
 - `injuries`: `false` heals it, `true` inflicts it; omit a key to leave it.
 - `questFlags`: merged in (string/number/boolean values only). Keys starting with `story.` are the RPG's
-  (`story.stage`, `story.gooseFound`, `story.day`) and are read-only; use your own prefix, e.g. `harmony.*`.
+  (`story.stage`, `story.gooseFound`, `story.day`, and `story.seen.<locationId>` for areas visited) and are read-only; use your own prefix, e.g. `harmony.*`.
 - `extra`: replaces the saved extra for that town.
 - The RPG saves the game right after `leaveTown` and `startQuest`.
+
+v14.5: shots/ and tests/ are not copied in. Quest markers `harmony-salt` and `harmony-lostdog` clear when
+`harmony.saltRun` is returned/done or `harmony.lostDog` is found/done (or Goose is found in the RPG).
+`extra.skills` is stored and sent back as-is; the RPG doesn't apply town skill levels yet.

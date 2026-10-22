@@ -4956,6 +4956,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.restore();
 		}
 		// town quests: an arrow at the screen edge toward the exit that leads there
+		townQuestsDone();
 		let row = 0;
 		for (const q of l1.tq ?? []) {
 			const g = questGate(q);
@@ -5001,7 +5002,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
 			],
-			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1 },
+			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
+			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => [k, Number(p?.[k]) || 1])),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
 			extra: JSON.parse(JSON.stringify(l1.tx?.[id] ?? {})),
 		};
@@ -5027,6 +5029,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			l1.tf = l1.tf ?? {};
 			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = v;
 		}
+		townQuestsDone();
 		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[town.id] = JSON.parse(JSON.stringify(st.extra)); }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
 		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
@@ -5042,6 +5045,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		saveGame(); sync(true);
 		return true;
 	}
+	/** v14.5: town quest markers go away when the town marks the quest past the "go there" stage, or the RPG finishes it. */
+	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]] };
+	function townQuestsDone() {
+		if (!l1.tq?.length) return;
+		l1.tq = l1.tq.filter((q) => {
+			const d = TOWN_QUEST_DONE[q.id];
+			if (q.id === "harmony-lostdog" && q10.dog >= 3) return false;
+			return !(d && d[1].includes(l1.tf?.[d[0]]));
+		});
+	}
 	/** {type:'startQuest', id, target, label?}: a town quest puts a marker on the world map. */
 	function townQuest(msg) {
 		if (!msg || msg.type !== "startQuest" || typeof msg.id !== "string" || !msg.id) return false;
@@ -5053,7 +5066,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const label = typeof msg.label === "string" && msg.label ? msg.label.slice(0, 40) : msg.id;
 		l1.tq.push({ id: msg.id, town: town?.id ?? "harmony", q, r, label });
 		wmReveal(q, r);
-		pushLog(`New town job: ${label}. Marked on the world map.`);
+		pushLog(`New town job: ${label}. Follow the gold arrow.`);
 		saveGame(); sync(true);
 		return true;
 	}
@@ -12017,6 +12030,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmGo: (q, r) => wmGo(q, r),
 		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
 		town144Spot: () => townSpot(ISO_TOWNS[0]),
+		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },
 		pos: () => player ? { x: player.x, y: player.y } : null,
 		town143Msg: (m) => m?.type === "leaveTown" ? leaveTown(m) : townQuest(m),
 		gates: () => world ? world.gates.map((g) => ({ tx: g.tx, ty: g.ty, side: g.side })) : [],

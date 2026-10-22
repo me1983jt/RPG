@@ -1,0 +1,53 @@
+// v14.5: the REAL Harmony town (copied from /workspace/quest-harmony): enter, stats, Salt Run + Lost Dog markers, leave.
+import { boot } from "./v4-lib.mjs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+const { browser, page, errs, T, begin } = await boot(url, { vw: 1366, vh: 768, v14: true });
+let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
+await begin(); await T("v14Set", { st: 5 });
+await page.evaluate(() => { window.__wmEnc = 1; window.__controlsTest.l141Calm?.(); window.__controlsTest.choose?.("close"); });
+const sp = await T("town144Spot");
+const enter = async () => { await T("setPos", sp.x + 420, sp.y + 200); await page.waitForTimeout(700); await T("setPos", sp.x + 30, sp.y + 20); await page.waitForTimeout(2500); };
+await enter();
+ok(await page.getByTestId("town-layer").isVisible(), "walking into the marker opens the real Harmony");
+const fr = page.frames().find((f) => f.url().includes("/towns/harmony/"));
+ok(!!fr, `iframe src is the copied town (${fr?.url()})`);
+if (await fr.locator("[data-c]").count()) await fr.locator("[data-c]").first().click();
+await page.waitForTimeout(1500);
+await page.screenshot({ path: "beta30-shots/v145-real-harmony.png" });
+const mine = (await T("town143")).state.stats;
+const theirs = await fr.evaluate(() => HARMONY.state && HARMONY.state.stats);
+ok(mine && Object.keys(mine).length === 8, `enterTown sends 8 stats ${JSON.stringify(mine)}`);
+ok(theirs && ["strength", "vigor", "intellect", "agility", "grit"].every((k) => theirs[k] === mine[k]), `town took our stats ${JSON.stringify(theirs)}`);
+// Salt Run from Hal
+await fr.evaluate(() => { HARMONY.ACT.talkHal(); });
+await fr.getByRole("button", { name: /Accept the Salt Run/ }).click();
+await page.waitForTimeout(300);
+let d = await T("town143");
+ok(d.tq.some((q) => q.id === "harmony-salt" && q.q === 8 && q.r === 7), "Salt Run marker points at Skowhegan");
+// Lost Dog via Mira
+await fr.evaluate(() => { HARMONY.state.q["harmony.lostDog"] = "heard"; HARMONY.ACT.talkMira(); });
+await page.waitForTimeout(300);
+d = await T("town143");
+ok(d.tq.some((q) => q.id === "harmony-lostdog" && q.q === 7 && q.r === 5), "Lost Dog marker points at the Kennebec");
+await fr.evaluate(() => { HARMONY.leave("worldmap"); });
+await page.waitForTimeout(800);
+d = await T("town143");
+ok(d.phase === "play" && !(await page.getByTestId("town-layer").count()), "the town's own leaveTown closes the layer (no overlay button needed)");
+ok(d.tf["harmony.saltRun"] === "away" && d.tf["harmony.lostDog"] === "trail", `quest flags saved (${d.tf["harmony.saltRun"]}, ${d.tf["harmony.lostDog"]})`);
+ok(d.tx?.harmony?.schema === "character/1" && !!d.tx.harmony.skills, "town character (class, skills) saved in extra");
+await page.waitForTimeout(400); await page.screenshot({ path: "beta30-shots/v145-quest-arrows.png" });
+// Goose found in the RPG -> marker gone, town marks Lost Dog found
+await T("town145Goose"); await page.waitForTimeout(400);
+d = await T("town143");
+ok(!d.tq.some((q) => q.id === "harmony-lostdog"), "finding Goose in the RPG clears the Lost Dog marker");
+await enter();
+const fr2 = page.frames().find((f) => f.url().includes("/towns/harmony/"));
+const lost2 = await fr2.evaluate(() => HARMONY.state.q["harmony.lostDog"]);
+ok(lost2 === "found", `town sees story.gooseFound and marks Lost Dog found (${lost2})`);
+ok(await fr2.evaluate(() => HARMONY.state.q["harmony.saltRun"]) === "away", "Salt Run state comes back on the second visit");
+await fr2.evaluate(() => { HARMONY.leave("worldmap"); }); await page.waitForTimeout(600);
+d = await T("town143");
+ok(d.tf["harmony.lostDog"] === "found" && d.tq.some((q) => q.id === "harmony-salt"), "Lost Dog found saved; Salt Run marker still up");
+ok(!errs.length, `no errors ${errs.join(" | ")}`);
+console.log(fail ? `${fail} FAILED` : "ALL PASS");
+await browser.close(); process.exit(fail ? 1 : 0);
