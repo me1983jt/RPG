@@ -53,11 +53,11 @@ export function journalEntries(quest: number, kills: number, t: TalkState & { ja
     done: t.snow >= 3,
     text:
       t.snow <= 0
-        ? "Justin is at the Cambridge Road farm. He wants a word before the snow comes in."
+        ? "Sarah is at the Cambridge Road farm. She wants a word before the snow comes in."
         : t.snow === 1
-          ? `Bring Justin ${SNOW_WOOD} armloads of wood for the stove. You have ${Math.min(t.wood, SNOW_WOOD)} of ${SNOW_WOOD}. There is a woodpile by the barn.`
+          ? `Bring Sarah ${SNOW_WOOD} armloads of wood for the stove. You have ${Math.min(t.wood, SNOW_WOOD)} of ${SNOW_WOOD}. There is a woodpile by the barn.`
           : t.snow === 2
-            ? "Justin has his wood. Go see Sarah at the farm."
+            ? "The stove has its wood. Go see Sarah in the kitchen."
             : "The Cambridge Road farm is your base. You wake on the cot under the eave, and Sarah's kitchen keeps hot cider and cider donuts.",
   });
   out.push({
@@ -183,11 +183,11 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
       ],
     };
   }
-  if (role === "justin") {
+  if (role === "sarah") {
     if (t.snow <= 0) {
       return {
         speaker: name,
-        text: "Justin. This is our ground on Cambridge Road: the farmhouse, the barn, the orchard, and the sugar maples. First snow is coming in tonight and the stove is down to kindling. Bring me three armloads of wood from the pile by the barn and you've got a place here.",
+        text: "There you are. First snow's coming in tonight and the stove's down to kindling. Bring me three armloads off the pile by the barn, would you? Then come inside and get warm.",
         choices: [
           { label: "I'll bring the wood", id: "snow-accept" },
           { label: "Another time", id: "close" },
@@ -210,8 +210,8 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
     if (t.snow === 2) {
       return {
         speaker: name,
-        text: "Stove's drawing good. Go see Sarah. She runs the kitchen and the press.",
-        choices: [{ label: "I will", id: "close" }],
+        text: "That's the stove fed. Here: hot cider in a tin cup, and cider donuts from the kitchen. Sit a minute. And come find me when you're hurt, don't be a hero about it.",
+        choices: [{ label: "Thank you, Sarah", id: "snow-done" }],
       };
     }
     if (t.raidOn) {
@@ -227,28 +227,20 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
         ],
       };
     }
-    return {
-      speaker: name,
-      text: "The stove stays lit and the cot is yours. Twelve apple trees, two rows. Leave them standing. My kids pick the low limbs, so mind them. Come find me after dark if you want to hold the farm.",
-      choices: [
-        { label: "I'll leave the rows standing", id: "close" },
-        { label: "Come hold the orchard", id: "join-justin" },
-      ],
-    };
   }
   if (role === "sarah") {
     if (t.snow === 2) {
       return {
         speaker: name,
-        text: "You got Justin his wood. Here: hot cider in a tin cup, and cider donuts from the kitchen. The cot under the eave is yours. This farm is your home now. Come back when you're hurt.",
+        text: "That's the stove fed. Here: hot cider in a tin cup, and cider donuts from the kitchen. Sit a minute. And come find me when you're hurt, don't be a hero about it.",
         choices: [{ label: "Thank you, Sarah", id: "snow-done" }],
       };
     }
     if (t.snow < 2) {
       return {
         speaker: name,
-        text: "Sarah. Justin and I run this place. I've got the kitchen and the cider press, and our two kids underfoot. First snow tonight. Help Justin with the wood, then come see me and we'll warm you up.",
-        choices: [{ label: "I'll help him", id: "close" }],
+        text: "First snow tonight, and the kids are underfoot. Kitchen and press are mine. Wood's yours. Three armloads by the stove, then come see me and I'll warm you up.",
+        choices: [{ label: "On it", id: "close" }],
       };
     }
     if (!ciderGiven) {
@@ -274,7 +266,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "cyndal") {
     return {
       speaker: name,
-      text: "Cyndal. I'm thirteen. Justin's my dad, and Loki's my little brother. I can reach the lower limbs on these two rows without a box. The high ones are Dad's. Raid nights I'm lookout from the loft window. I call the waves, then I help Mom with anyone hurt inside.",
+      text: "Hi, Dad. I can reach the lower limbs on these two rows without a box now. The high ones are yours. Raid nights I'm lookout from the loft window. I call the waves, then I help Mom with anyone hurt inside.",
       choices: [
         { label: "I'll leave the high ones", id: "close" },
         { label: "Watch from the loft tonight", id: "cyndal-lookout" },
@@ -284,7 +276,7 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
   if (role === "loki") {
     return {
       speaker: name,
-      text: "Loki. I'm nine. Justin's my dad. I stacked the kindling and fed the hens already. Dad said the press is not a ladder, so I stay in the lane. Why do the apples go brown when you bite them? If they come at night I stay inside with the door barred and bring shells and lanterns to the porch. I don't go out.",
+      text: "Dad! I stacked the kindling and fed the hens already. You said the press is not a ladder, so I stay in the lane. Why do the apples go brown when you bite them? If they come at night I stay inside with the door barred and bring shells and lanterns to the porch. I don't go out.",
       choices: [
         { label: "Good work on the chores", id: "close" },
         { label: "Stay inside if they come", id: "loki-safe" },

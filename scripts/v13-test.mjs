@@ -39,17 +39,17 @@ const body = await T("v13Body");
 check("player-body-sheets", body.walk === "pl/walk" && body.hit === "pl/hit" && body.down === "pl/down" && body.gun === "pl/gun" && body.axe === "pl/axe", body);
 check("hit-sheet-3-cols", body.cols === 3, body.cols);
 check("armor-missing-graceful", Array.isArray(body.armor) && body.armor.length === 0);
-check("justin-npc-v2", (await T("folkSheetOf", "justin")) === "v2/justin-walk");
+check("sarah-npc-v2", !!(await T("folkSheetOf", "sarah")));
 check("sarah-npc-v2", (await T("folkSheetOf", "sarah")) === "v2/sarah-walk");
 await T("setZoom", 1.7);
-const jn = await T("npcOf", "justin");
+const jn = await T("npcOf", "sarah");
 await T("setPos", jn.x + 70, jn.y + 50); await wait(900);
 await shot("04-justin-npc.png");
 
 // First Snow so the farm systems are open
 await T("talk", "justin"); await choose("snow-accept"); await T("addWood", 3); await closeDlg();
 const talk = async (role) => { await closeDlg(); const n = await T("npcOf", role); await T("setPos", n.x + 50, n.y + 50); await wait(200); await T("talk", role); await wait(200); };
-await talk("justin"); await choose("snow-wood"); await talk("sarah"); await choose("snow-done"); await closeDlg();
+await talk("sarah"); await choose("snow-wood"); await talk("sarah"); await choose("snow-done"); await closeDlg();
 
 // ---- stats + skills + perks
 await T("v13Set", {});

@@ -1097,6 +1097,7 @@ export function RPG() {
                   <p className="mt-1 truncate text-xs text-muted short:mt-0.5">
                     {Math.ceil(hud.hp)} / {hud.maxHp} · Lv {hud.level}
                     {hud.turnBased ? ` · AP ${hud.ap}/${hud.maxAp}` : ""}
+                    {hud.safe15 ? <span data-safe15="1" className="ml-1 rounded-sm border border-border px-1 text-[10px] uppercase tracking-wide text-muted opacity-80">Safe zone</span> : null}
                     {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
                   </p>
                 </section>

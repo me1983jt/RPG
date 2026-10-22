@@ -88,6 +88,7 @@ export interface V141State {
   tf?: Record<string, string | number | boolean>;
   tx?: Record<string, Record<string, unknown>>;
   tq?: { id: string; town: string; q: number; r: number; label: string }[];
+  tapplied?: Record<string, number | boolean>;
 }
 export function freshV141(): V141State {
   return { crouch: false, noise: 0, loot: {}, chests: {}, prod: {}, drop: null, stick: false, auto: false, sq: {}, sqf: {} };

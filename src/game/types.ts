@@ -451,6 +451,7 @@ export interface V113Hud {
 export interface HudSnapshot {
   v14?: any;
   wmap?: any;
+  safe15?: boolean;
   v113?: V113Hud;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   v13?: any;

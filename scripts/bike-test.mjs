@@ -14,7 +14,7 @@ const shot = (n) => page.screenshot({ path: out + n });
 
 await begin();
 await T("setZoom", 1.0);
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("justin"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
+await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
 let b = await T("bikeInfo");
 check("farmBikeExists", !!b.farmBike && !b.built, b);
 check("optionalManifestLoaded", Array.isArray(b.optional), b);
@@ -27,7 +27,7 @@ check("brokenNoRide", !(await T("bikeInfo")).mounted);
 // the quest
 await talk("cal"); await closeDlg();
 await T("addIron", 20);
-await talk("justin");
+await talk("sarah");
 await pick("q11-ask-bike"); await pick("q11-accept-bike"); await closeDlg();
 await page.getByRole("button", { name: "Journal" }).first().click(); await wait(500);
 check("journalShowsBike", (await page.locator("text=Bike Parts").count()) > 0);
@@ -48,7 +48,7 @@ while (c.s >= 1 && c.s <= c.n && guard++ < 20) {
   if (c.s === before) { fail.push(`bike stuck at ${c.s} ${c.kind} ${c.site}`); break; }
 }
 for (const p of ["carburetor", "chain", "engine", "gastank", "sparkplug", "tire"]) check(`partUsed-${p}`, (await T("countOf", p)) === 0);
-await talk("justin"); await pick("q11-done-bike"); await closeDlg();
+await talk("sarah"); await pick("q11-done-bike"); await closeDlg();
 c = await T("q11Cur", "bike");
 check("bikeQuestDone", c.s === c.n + 2, c);
 b = await T("bikeInfo");

@@ -630,8 +630,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return `Raid night ${raid.night}: ${stage}. Farmhouse ${pct}%.`;
 		}
 		if (snow < 3 && quest <= 0) {
-			if (snow <= 0) return "First Snow: talk to Justin at the Cambridge Road farm.";
-			if (snow === 1) return `First Snow: bring Justin ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
+			if (snow <= 0) return "First Snow: talk to Sarah at the Cambridge Road farm.";
+			if (snow === 1) return `First Snow: bring Sarah ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
 			return "First Snow: go see Sarah at the farm.";
 		}
 		const m11h = q11HudText();
@@ -674,6 +674,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
 			wmap: wmHud(),
+			safe15: !!(p && phase === "play" && safeAt(p.x, p.y)),
 			tb15: tbHud(),
 			town: town ? { id: town.id, src: town.src, n: town.n } : null,
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
@@ -1179,7 +1180,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else setLog("You wake on the cot under the eave. Cambridge Road. The stove in the farmhouse is warm.");
 		const tagged = SKILLS.filter((s) => player.tags.includes(s.id)).map((s) => s.name).join(", ");
 		pushLog(`Tagged skills: ${tagged}. They rise twice as fast.`);
-		pushLog(v14.st === 0 ? "Search the truck. First snow is coming." : "Justin is out by the farmhouse. First snow is coming.");
+		pushLog(v14.st === 0 ? "Search the truck. First snow is coming." : "Sarah is out by the farmhouse. First snow is coming.");
 		dialogue = null;
 		piles = [];
 		nextPile = 1;
@@ -1640,7 +1641,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const spec = PROP_SPEC[cost.kind];
 		if (buildTap14(tile)) return;
 		if (cost.v14) {
-			if (mapId !== 0 || !ok14()) { pushLog("Hold the farm first. Then Justin lets you build."); return; }
+			if (mapId !== 0 || !ok14()) { pushLog("Hold the farm first. Building can wait one night."); return; }
 			if (!inFarm(tile.tx, tile.ty)) { pushLog("Keep it inside the farm ring."); return; }
 			if (!canPay14(cost.need14)) { pushLog(`That wants ${costText(cost.need14)}.`); return; }
 			const pr = add14(cost.kind, tile.tx, tile.ty, { p14: true, flip14: buildFlip });
@@ -1723,8 +1724,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (id === "raid-ask") {
 			const n = raidNight + 1;
 			dialogue = {
-				speaker: "Justin",
-				text: `Night ${n}. If we light the yard they'll come at us in ${raidWaves(n)} waves off the road and the tree line. Sarah and I take the posts. Cyndal watches from the loft, Loki stays in with the door barred. We hold till they quit or the sun's up. Ready?`,
+				speaker: "Sarah",
+				text: `Night ${n}. If we light the yard they'll come at us in ${raidWaves(n)} waves off the road and the tree line. You and I take the posts. Cyndal watches from the loft, Loki stays in with the door barred. We hold till they quit or the sun's up. Ready?`,
 				choices: [{ label: "Light the yard. Hold the farm", id: "raid-go" }, { label: "Not tonight", id: "close" }]
 			};
 			sfx("click");
@@ -1773,12 +1774,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		} else if (id === "snow-accept" && snow <= 0) {
 			snow = 1;
-			pushLog(`Justin wants ${SNOW_WOOD} armloads of wood. The woodpile is by the barn.`);
+			pushLog(`Sarah wants ${SNOW_WOOD} armloads of wood. The woodpile is by the barn.`);
 		} else if (id === "snow-wood" && snow === 1 && player.wood >= SNOW_WOOD) {
 			player.wood -= SNOW_WOOD;
 			snow = 2;
 			grantXp(12);
-			pushLog("Justin stacks the wood by the stove. Sarah wants to see you.");
+			pushLog("You stack the wood by the stove. Sarah wants to see you.");
 		} else if (id === "snow-done" && snow === 2) {
 			snow = 3;
 			lootedChests.add(91001);
@@ -2145,7 +2146,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q10.moose === 1) add("bog", "arrive", "#d89a5a");
 		if (q10.moose === 2) { const bull = world.enemies.find((e) => e.q10 === "moose" && !e.dead); if (bull) out.push({ key: "bull", x: bull.x, y: bull.y, mode: "mark", color: "#d0644a" }); }
 		if (q10.moose === 3) { const f = farmCenter(); out.push({ key: "farm", x: f.x, y: f.y + 80, mode: "mark", color: "#d89a5a" }); }
-		if (q10.moose === 4) npc("justin", "#d89a5a");
+		if (q10.moose === 4) npc("sarah", "#d89a5a");
 		return out;
 	}
 	const Q10_SITE_TALK = {
@@ -2211,7 +2212,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			if (home < 9 * TILE) {
 				q10.moose = 4;
-				pushLog("You drag the last of the moose into the yard. Tell Justin.");
+				pushLog("You drag the last of the moose into the yard. Tell Sarah.");
 				saveGame();
 				sync(true);
 			}
@@ -2356,7 +2357,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			q10.moose = 5; q10.stores += 10;
 			q10Reward([["meat", 6], ["hide", 2], ["jerky", 4]]);
 			grantXp(44); shiftRep("ponds", 2, 8);
-			pushLog("Moose Season: done. Six quarters hanging, the hide on the barn wall. Justin cuts you a share: meat, a hide and jerky.");
+			pushLog("Moose Season: done. Six quarters hanging, the hide on the barn wall. Sarah sets aside your share: meat, a hide and jerky.");
 			sfx("level");
 		}
 		return false;
@@ -3022,7 +3023,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function q11FarmChoices(role) {
 		if (snow < 3 || raid || mode11) return [];
 		if (role === "sarah") return [{ label: "Work on the farm", id: "q11-farm" }];
-		if (role === "justin") return [{ label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
+		if (role === "sarah") return [{ label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
 		return [];
 	}
 	function q11Choice(id) {
@@ -3085,10 +3086,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			return q11Choice("q11-farm");
 		}
-		if (id === "q11-hunt" && q11.huntDay === curDay()) return openD({ speaker: "Justin", text: "We've been out once today. Let the woods settle. Tomorrow.", choices: [{ label: "All right", id: "close" }] });
-		if (id === "q11-hunt") return openD({ speaker: "Justin", text: "Short trip or long? Mind the wind. If it's at your back they'll smell you a quarter mile off.", choices: [{ label: "Deer in the cutover", id: "q11-hunt-deer" }, { label: "Moose in the alders", id: "q11-hunt-moose" }, { label: "Bear up on the ridge", id: "q11-hunt-bear" }, { label: "Not today", id: "close" }] });
+		if (id === "q11-hunt" && q11.huntDay === curDay()) return openD({ speaker: "Sarah", text: "You've been out once today. Let the woods settle. Tomorrow.", choices: [{ label: "All right", id: "close" }] });
+		if (id === "q11-hunt") return openD({ speaker: "Sarah", text: "Short trip or long? Mind the wind. If it's at your back they'll smell you a quarter mile off.", choices: [{ label: "Deer in the cutover", id: "q11-hunt-deer" }, { label: "Moose in the alders", id: "q11-hunt-moose" }, { label: "Bear up on the ridge", id: "q11-hunt-bear" }, { label: "Not today", id: "close" }] });
 		if ((m = id.match(/^q11-hunt-(deer|moose|bear)$/))) { close(); q11.huntDay = curDay(); q11HuntStart(m[1]); return true; }
-		if (id === "q11-caravan") return openD({ speaker: "Justin", text: "Bangor's a long day with the cart. Which way? Route 2's quick but there's road agents. The river road's slower and quieter. The back roads are coyote country.", choices: [...CARAVAN_ROUTES.map((r, i) => ({ label: r.label, id: `q11-car-route-${i}` })), { label: "Not today", id: "close" }] });
+		if (id === "q11-caravan") return openD({ speaker: "Sarah", text: "Bangor's a long day with the cart. Which way? Route 2's quick but there's road agents. The river road's slower and quieter. The back roads are coyote country.", choices: [...CARAVAN_ROUTES.map((r, i) => ({ label: r.label, id: `q11-car-route-${i}` })), { label: "Not today", id: "close" }] });
 		if ((m = id.match(/^q11-car-route-(\d)$/))) {
 			q11.route = Number(m[1]); q11.caravan = 1;
 			pushLog(`You hitch the cart and take ${CARAVAN_ROUTES[q11.route].label.split(" (")[0].toLowerCase()} for Bangor.`);
@@ -4081,6 +4082,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.wood = 0; player.stone = 0; player.scrap = 0;
 		player.gridPos = {};
 		refreshGear(player);
+		// v15: a new game starts you on the road just outside Harmony village; home is a short walk
+		const hv = typeof window !== "undefined" && window.__v14Camp ? null : townSpot(ISO_TOWNS[0]);
+		if (hv) {
+			const fc = farmCenter();
+			let best = null;
+			for (let a = 0; a < 360; a += 15) for (const r of [150, 190, 230]) {
+				const x = hv.x + Math.cos(a * Math.PI / 180) * r, y = hv.y + Math.sin(a * Math.PI / 180) * r;
+				if (pointBlocked(world, x, y, RADIUS)) continue;
+				const tt = tileOf(x, y); if (inFarm(tt.tx, tt.ty) || Math.hypot(tt.tx - FARM.tx, tt.ty - FARM.ty) < FARM.r + 3) continue;
+				const d = Math.hypot(x - fc.x, y - fc.y);
+				if (!best || d < best.d) best = { x, y, d };
+			}
+			if (best) {
+				player.x = best.x; player.y = best.y; player.respawnX = best.x; player.respawnY = best.y; townArmed = false;
+				v14.st = 2; giveItem("matches"); giveItem("water");
+				pushLog("You come to on the road outside Harmony village. Home's just up Cambridge Road.");
+			}
+		}
 	}
 	function v14Use(prop) {
 		if (prop.kind === "wreck") {
@@ -4104,7 +4123,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			grantXp(10); sfx("build"); saveGame(); sync(true); return;
 		}
 		if (prop.kind === "sign-farm") return pushLog("Hand-painted: FARM. KEEP TO THE ROAD. Somebody added: WE SHOOT.");
-		if (prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Justin: \"That's my bench. Earn it first.\"" : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
+		if (prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Your workbench, under a tarp. Hold the farm first; then it's back in business." : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
 		if (isGate14(prop.kind)) return toggleGate14(prop);
 		if (prop.kind === "chest") return openStore(prop), void 0;
 		if (prodOf(prop.kind)) return prodUse(prop), void 0;
@@ -4218,7 +4237,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		raid = { night: 1, wave: Math.max(0, v14.defendWave), waves: 3, phase: "lull", t: 10, left: 0, spawnT: 0, ang, house: 140, houseMax: 140, warned: false, kills: 0, defend: true };
 		defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp }));
 		raidHudPct = 20;
-		pushLog("Justin: \"Lanterns on the road. They've been back every night this week. Take the gate. Sarah's on the lookout.\"");
+		pushLog("Sarah: \"Lanterns on the road. They've been back every night this week. Take the gate. I've got the porch.\"");
 		saveGame(); sync(true);
 	}
 	function defendLost14(why) {
@@ -4231,7 +4250,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v14.defendWave = raid.wave;
 		player.hp = player.maxHp; player.invuln = 2;
 		const spot = raidHouse(); if (spot) { const r = nearestRespawn(tileOf(spot.x, spot.y).tx, tileOf(spot.x, spot.y).ty + 2, 1, 1); player.x = r.x; player.y = r.y; }
-		openD13("Defend the farm", `${why} Justin hauls you up by the coat. "Again. They'll come the same way, they always do." The wave starts over.${hurt14 ? ` The walls keep their damage: ${hurt14} piece${hurt14 === 1 ? "" : "s"} want repair (Build → Repair).` : ""}`, [{ label: "Back to the gate", id: "close" }]);
+		openD13("Defend the farm", `${why} Sarah hauls you up by the coat. "Again. They'll come the same way, they always do." The wave starts over.${hurt14 ? ` The walls keep their damage: ${hurt14} piece${hurt14 === 1 ? "" : "s"} want repair (Build → Repair).` : ""}`, [{ label: "Back to the gate", id: "close" }]);
 	}
 	function defendWon14() {
 		v14.st = 5; v14.defendWave = 0; defendSnap = null;
@@ -4242,7 +4261,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		raidsHeld += 1;
 		player.scrap += 8; grantXp(40);
 		pushLog("The last of them breaks for the road. The farm is secured. +8 iron, +40 XP.");
-		pushLog("Justin: \"You can use my bench. Build what you like inside the ring.\" The workbench and Build are open.");
+		pushLog("Sarah: \"Go on, use your bench. Build what you like inside the ring.\" The workbench and Build are open.");
 		sfx("level");
 		report14(0);
 		saveGame();
@@ -4253,8 +4272,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const t = tileOf(player.x, player.y);
 			if (inFarm(t.tx, t.ty)) {
 				v14.st = 3;
-				pushLog("A man with a carbine steps out from the stakes. \"That's far enough.\"");
-				const j = world.npcs.find((n) => n.role === "justin");
+				pushLog("Sarah steps out from the stakes with the carbine, then lowers it. \"Oh, it's you. Thank God.\"");
+				const j = world.npcs.find((n) => n.role === "sarah");
 				if (j) openTalk(j);
 				saveGame(); sync(true);
 			}
@@ -4262,9 +4281,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function v14Talk(role, npc) {
 		if (String(role).startsWith("lr-")) return lrTalk(npc);
-		if (role !== "justin" || ok14()) return null;
-		if (v14.st === 4) return { speaker: "Justin", text: "Get on the gate! Shoot what comes over the stakes.", choices: [{ label: "Going", id: "close" }] };
-		if (v14.st >= 3 && snow <= 0) return { speaker: "Justin", text: "Justin. My wife Sarah, my kids in the house. We lost hens and a gas can to the road last week, so you'll forgive the rifle. You saw the stakes. Half of them are down. First snow tonight and the stove's down to kindling. Bring three armloads of wood off the pile by the barn and we'll talk about you staying.", choices: [{ label: "I'll bring the wood", id: "snow-accept" }, { label: "I'll go", id: "close" }] };
+		if (role !== "sarah" || ok14()) return null;
+		if (v14.st === 4) return { speaker: "Sarah", text: "Get on the gate! Shoot what comes over the stakes.", choices: [{ label: "Going", id: "close" }] };
+		if (v14.st >= 3 && snow <= 0) return { speaker: "Sarah", text: "You're back. We lost hens and a gas can to the road last week, so you'll forgive the rifle. You saw the stakes. Half of them are down. First snow tonight and the stove's down to kindling. Bring three armloads of wood off the pile by the barn and I'll have something hot waiting.", choices: [{ label: "I'll bring the wood", id: "snow-accept" }, { label: "I'll go", id: "close" }] };
 		return null;
 	}
 	function hud14() {
@@ -4304,7 +4323,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const p = world.props.find((q) => q.tx === tile.tx && q.ty === tile.ty && (q.p14 || q.f14) && q.kind !== "workbench");
 		if (!p) { pushLog("Nothing of yours there."); return true; }
 		if (buildTool === "repair") { repairOne14(p); return true; }
-		if (!p.p14) { pushLog("That's part of Justin's ring. Repair it instead."); return true; }
+		if (!p.p14) { pushLog("That's part of the old ring. Repair it instead."); return true; }
 		const piece = PIECES.find((x) => x.kind === p.kind);
 		if (piece) give14(piece.cost, .5);
 		vacate(world, p); world.props = world.props.filter((q) => q !== p);
@@ -4863,7 +4882,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let hit = 0;
 		for (const k of keys) if (Math.random() < .25 && /^(wall|gate)-/.test(v14.fort[k].k)) { v14.fort[k].hp = Math.max(1, v14.fort[k].hp - 25); hit++; }
 		for (const p of v14.placed) if (Math.random() < .25) { p.hp = Math.max(1, p.hp - 20); hit++; }
-		m.warn = `Raid on the farm tonight! Lanterns on Cambridge Road. ${hit} piece${hit === 1 ? "" : "s"} of wall hit. Justin and Sarah held the house.`;
+		m.warn = `Raid on the farm tonight! Lanterns on Cambridge Road. ${hit} piece${hit === 1 ? "" : "s"} of wall hit. Sarah and the kids held the house. Nobody's thrilled about it.`;
 		pushLog(m.warn);
 	}
 	function wmArrive(target, from) {
@@ -4885,31 +4904,70 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// ======== v14.3 town layer: a separate town game in a full-screen iframe (see town.ts / TOWN_PROTOCOL.md) ========
 	let town = null, townN = 0;
+	var CAMPS13_AT = [["camp0", 50, 30], ["camp1", 30, 70], ["camp2", 30, 30]];
 	function townSrc(id) {
 		const o = typeof window !== "undefined" && window.__townSrc;
-		return (typeof o === "string" ? o : o?.[id]) || TOWN_SRC[id] || `/towns/${id}/index.html`;
+		const app = townApp(id), q = app !== id ? `?town=${id}` : "";
+		return ((typeof o === "string" ? o : o?.[app]) || TOWN_SRC[app] || `/towns/${app}/index.html`) + (q && !(typeof o === "string" ? o : o?.[app] ?? TOWN_SRC[app] ?? "").includes("?") ? q : q ? `&town=${id}` : "");
 	}
 	/** v14.4: towns live in the iso world. Harmony village sits beside the road a short walk from the farm (map 0). */
-	const ISO_TOWNS = [{ id: "harmony", name: "Harmony village", map: 0 }];
+	/** v15: Town Acts 2-5 open the same town app at a scene entry (TOWN_HANDOFF.md); at: a fixed tile, else a road spot near the farm / map middle. */
+	const ISO_TOWNS = [
+		{ id: "harmony", name: "Harmony village", map: 0 },
+		{ id: "raiders", name: "Saw's camp at the gravel pit", map: 0, at: [CAMPS13_AT[0][1], CAMPS13_AT[0][2]], act: 5 },
+		{ id: "north", name: "Hole's camp in the Holeb cut", map: 1, at: [CAMPS13_AT[1][1], CAMPS13_AT[1][2]], act: 5 },
+		{ id: "skow", name: "Skowhegan bridge", map: 2 },
+		{ id: "kennebec", name: "Kennebec Crossing", map: 4 },
+		{ id: "bunker", name: "Jack Ready's ridge", map: 6 },
+		{ id: "grokwoods", name: "The Grok's woods", map: 1, act: 6, upto: 6 },
+		{ id: "depot", name: "The Collector's depot", map: 1, at: [92, 34], act: 6, upto: 6 },
+	];
+	const townApp = (id) => (ISO_TOWNS.some((t) => t.id === id) ? "harmony" : id);
 	let townArmed = true;
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
 		world.townSpots = world.townSpots ?? {};
 		if (world.townSpots[t.id] !== undefined) return world.townSpots[t.id];
-		const fc = tileOf(farmCenter().x, farmCenter().y);
+		const fc = t.at ? { tx: t.at[0] + WORLD_OX, ty: t.at[1] + WORLD_OY } : t.map === 0 ? tileOf(farmCenter().x, farmCenter().y) : { tx: MAP_W >> 1, ty: MAP_H >> 1 };
 		let spot = null;
 		const free = (x, y) => x > 6 && y > 6 && x < MAP_W - 6 && !inFarm(x, y) && world.tiles[y * MAP_W + x] !== 2 && !pointBlocked(world, x * TILE + 32, y * TILE + 32, 40);
-		for (let r = 14; r <= 30 && !spot; r++) for (let a = 0; a < 360 && !spot; a += 8) {
+		const r0 = t.id === "harmony" ? 14 : t.at ? 3 : 0, r1 = t.id === "harmony" ? 30 : 26;
+		for (const road of [true, false]) for (let r = r0; r <= r1 && !spot; r++) for (let a = 0; a < 360 && !spot; a += 8) {
 			const x = Math.round(fc.tx + Math.cos(a * Math.PI / 180) * r), y = Math.round(fc.ty + Math.sin(a * Math.PI / 180) * r);
-			if (world.tiles[y * MAP_W + x] !== 2) continue;
+			if (road && world.tiles[y * MAP_W + x] !== 2) continue;
+			if (!road && !free(x, y)) continue;
 			for (const [dx, dy] of [[2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2]]) if (free(x + dx, y + dy) && free(x + dx + 1, y + dy) && free(x + dx, y + dy + 1)) { spot = { x: (x + dx) * TILE + 32, y: (y + dy) * TILE + 32, roadX: x * TILE + 32, roadY: y * TILE + 32 }; break; }
 		}
 		world.townSpots[t.id] = spot;
 		return spot;
 	}
+	/** v15 no-attack zones: ~10 tiles around each town marker (not the raider-camp / Grok / depot scenes) and the farmhouse. Raids and the siege ignore them. */
+	const SAFE15_R = 10 * TILE, SAFE15_SKIP = new Set(["raiders", "north", "depot", "grokwoods"]);
+	let safe15 = { key: "", zones: [] };
+	function safeZones() {
+		if (!world || inside) return [];
+		const key = `${mapId}:${w13.main?.act ?? 1}:${Object.keys(world.townSpots ?? {}).length}`;
+		if (safe15.key === key && safe15.w === world) return safe15.zones;
+		const zones = [];
+		for (const t of ISO_TOWNS) if (t.map === mapId && !SAFE15_SKIP.has(t.id) && townOpen(t)) { const sp = townSpot(t); if (sp) zones.push({ id: t.id, x: sp.x, y: sp.y, r: SAFE15_R }); }
+		if (mapId === 0) { const fh = world.props.find((p) => p.kind === "farmhouse" && inFarm(p.tx, p.ty)); const c = fh ? { x: (fh.tx + 1.5) * TILE, y: (fh.ty + 1.5) * TILE } : farmCenter(); zones.push({ id: "farm", x: c.x, y: c.y, r: SAFE15_R }); }
+		safe15 = { key, zones, w: world, said: safe15.said };
+		return zones;
+	}
+	function safeAt(x, y) { if (raid || v14.st === 4 || (typeof window !== "undefined" && window.__safeOff)) return null; return safeZones().find((z) => Math.hypot(x - z.x, y - z.y) < z.r) ?? null; }
+	function safeKeep(e) {
+		if (raid || e.raid || e.dead) return;
+		const z = safeAt(e.x, e.y);
+		if (z) { const a = Math.atan2(e.y - z.y, e.x - z.x) || Math.random() * 6.28; e.x = z.x + Math.cos(a) * (z.r + 4); e.y = z.y + Math.sin(a) * (z.r + 4); e.path = null; }
+		const h = safeAt(e.homeX, e.homeY);
+		if (h) { const a = Math.atan2(e.homeY - h.y, e.homeX - h.x) || 1; e.homeX = h.x + Math.cos(a) * (h.r + 60); e.homeY = h.y + Math.sin(a) * (h.r + 60); }
+		if (player && safeAt(player.x, player.y)) e.aggro = false;
+	}
+	function townOpen(t) { const a = w13.main?.act ?? 1; return (!t.act || a >= t.act || !!w13.seen?.[t.id]) && (!t.upto || a <= t.upto || !!w13.seen?.[t.id]); }
 	function townTick() {
 		if (!player || inside || town || phase !== "play") return;
 		for (const t of ISO_TOWNS) {
+			if (!townOpen(t)) continue;
 			const sp = townSpot(t);
 			if (!sp) continue;
 			const d = Math.hypot(player.x - sp.x, player.y - sp.y);
@@ -4936,6 +4994,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || !player || inside) return;
 		const sx = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
 		for (const t of ISO_TOWNS) {
+			if (!townOpen(t)) continue;
 			const sp = townSpot(t);
 			if (!sp) continue;
 			const m = sx(sp.x, sp.y);
@@ -4947,7 +5006,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				if (img?.naturalWidth) { const h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, m.sx + dx * zoom - w * zoom / 2, m.sy + dy * zoom - h * zoom, w * zoom, h * zoom); }
 				else { ctx.fillStyle = "#8a6a4a"; ctx.fillRect(m.sx + (dx - w / 2) * zoom, m.sy + (dy - w * .5) * zoom, w * zoom, w * .5 * zoom); ctx.fillStyle = "#5a3a2a"; ctx.beginPath(); ctx.moveTo(m.sx + (dx - w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.lineTo(m.sx + dx * zoom, m.sy + (dy - w * .9) * zoom); ctx.lineTo(m.sx + (dx + w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.fill(); }
 			};
-			house(-48, -8, 88); house(50, -4, 82); house(0, 14, 104);
+			if (t.id === "harmony") { house(-48, -8, 88); house(50, -4, 82); house(0, 14, 104); } else house(0, 10, 96);
 			const near = Math.hypot(player.x - sp.x, player.y - sp.y) < 260;
 			const label = near ? `${t.name} · walk in` : t.name;
 			ctx.globalAlpha = 1;
@@ -5000,7 +5059,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function openTown(l) {
 		w13.seen[l.id] = true;
-		town = { id: l.town, loc: l.id, src: townSrc(l.town), n: (townN = townN + 1) };
+		town = { id: l.town, loc: l.id, src: townSrc(l.town) + (l.scene ? `${townSrc(l.town).includes("?") ? "&" : "?"}scene=${l.scene}` : ""), n: (townN = townN + 1), scene: l.scene };
 		phase = "town"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
 		pushLog(`${l.name}.`);
 		saveGame(); sync(true);
@@ -5009,7 +5068,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const p = player;
 		const inj = {};
 		for (const [k, id] of INJ_MAP) inj[k] = injured(id);
-		const id = town?.id ?? "harmony";
+		const id = townApp(town?.id ?? "harmony");
 		return {
 			inventory: (p?.bag ?? []).filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty, name: GEAR[s.id]?.name ?? s.id })),
 			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
@@ -5025,7 +5084,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			extra: JSON.parse(JSON.stringify(l1.tx?.[id] ?? {})),
 		};
 	}
-	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: town.id, state: townState() } : null; }
+	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: town.id, state: { ...townState(), ...(town.scene ? { scene: town.scene } : {}) } } : null; }
 	/** Apply a {type:'leaveTown', exit, state} from the town game. Anything missing or malformed is left as it was. */
 	function leaveTown(msg) {
 		if (!town || !player || !msg || msg.type !== "leaveTown") return false;
@@ -5049,7 +5108,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const moved = townMapFlags(l1.tf);
 		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
 		townQuestsDone();
-		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[town.id] = JSON.parse(JSON.stringify(st.extra)); }
+		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[townApp(town.id)] = JSON.parse(JSON.stringify(st.extra)); }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
 		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
 		const sp = tdef ? townSpot(tdef) : null;
@@ -5066,7 +5125,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v14.6: main quest stages for the town (DESIGN.md "Quest mapping"); all read-only on the town side. */
 	function townStoryFlags() {
-		const o = { "story.act": w13.main?.act ?? 1, "story.snow": snow, "story.raids": raidNight };
+		const o = { "story.act": w13.main?.act ?? 1, "story.snow": snow, "story.raids": raidNight, "story.jackLoyal": w13.loyal?.jack ?? 20 };
+		const mf = w13.main?.flags ?? {};
+		o["story.main.signal"] = !!mf.signal; o["story.main.jackTalk"] = !!mf.jackTalk; o["story.main.marcel"] = !!mf.marcel; o["story.main.ltKills"] = w13.main?.ltKills ?? 0;
 		for (const k of ["seed", "ferry", "dog", "radio", "moose"]) o[`story.q10.${k}`] = q10[k] ?? 0;
 		(q10.parts ?? []).forEach((v, i) => { o[`story.q10.radioPart${i}`] = !!v; });
 		for (const q of Q11) o[`story.q11.${q.id}`] = q11.q[q.id]?.s ?? 0;
@@ -5101,15 +5162,69 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (f?.["harmony.radioTube"] === true || f?.["harmony.radioTube"] === "got") fwd("radio", 1, 0);
 		if (moved.some((m) => m.startsWith("dog"))) { if (q10.dog >= 2) q10PlaceDog(); }
+		townActFlags(f, moved);
 		return moved;
 	}
+	/** v15: Town Acts 2-5 (TOWN_HANDOFF.md). Forward only; numbers apply the change since last time. harmony.jt.* / harmony.mt.* are ignored. */
+	function townActFlags(f, moved) {
+		if (!f || !w13?.main) return;
+		const mf = w13.main.flags, v = (k) => f[k], ap = (l1.tapplied = l1.tapplied ?? {});
+		const set = (k, why) => { if (!mf[k]) { mf[k] = true; moved.push(why); } };
+		if (["heard", "debated"].includes(v("harmony.signal"))) set("signal", "signal");
+		if (["met", "inside", "maps"].includes(v("harmony.jack"))) set("jackTalk", "jack");
+		const jt = Number(v("harmony.jackTrust"));
+		if (Number.isFinite(jt) && jt > (ap.jackTrust ?? 0)) { w13.loyal.jack = Math.min(100, (w13.loyal.jack ?? 20) + jt - (ap.jackTrust ?? 0)); ap.jackTrust = jt; moved.push("jack trust"); }
+		if (v("harmony.jackMaps") === true && (w13.loyal.jack ?? 0) >= 30) { mf.jackTalk = true; if (w13.main.act === 3) { mainAdvance(); moved.push("act 3 done"); } }
+		if (["met", "briefed"].includes(v("harmony.marcel"))) set("marcel", "marcel");
+		for (const k of ["planks", "rope", "winch"]) if (v(`harmony.ferry${k[0].toUpperCase()}${k.slice(1)}`) === true && !q10[k]) { q10[k] = true; moved.push(`ferry ${k}`); }
+		const fe = v("harmony.ferry"), fn = fe === "fixed" ? 3 : fe === "given" ? 1 : 0;
+		if (fn && (q10.ferry ?? 0) < fn) { q10.ferry = fn; moved.push(`ferry ${fn}`); }
+		for (const [k, camp] of [["harmony.ltGravel", "camp0"], ["harmony.ltHoleb", "camp1"], ["harmony.ltMill", "camp2"]]) {
+			if (!["down", "gone"].includes(v(k)) || ap[k]) continue;
+			ap[k] = true; w13.main.ltKills += 1; w13.camps[camp] = { ...(w13.camps[camp] ?? {}), lt: true, cleared: true }; moved.push(`lieutenant ${camp}`);
+		}
+		const pr = Number(v("harmony.prisoners"));
+		if (Number.isFinite(pr) && pr > (ap.prisoners ?? 0)) { const d = pr - (ap.prisoners ?? 0); ap.prisoners = pr; w13.freed = (w13.freed ?? 0) + d; w13.loyal.mira = Math.min(100, (w13.loyal.mira ?? 20) + 2 * d); moved.push(`prisoners +${d}`); }
+		if (v("harmony.collector") === "paid" && !ap.collectorPaid) { ap.collectorPaid = true; pushLog("Word is Harmony paid the Collector. Their larder's thinner for it."); }
+		// v15: Town Acts 6-7
+		const gk = v("harmony.grok"), grokQ = Q11.find((x) => x.id === "grok");
+		if (gk === "dead" && grokQ) { const st = q11St("grok"); if (st.s <= grokQ.steps.length) { st.s = grokQ.steps.length + 1; st.left = 0; q11Begin(grokQ); moved.push("grok dead"); } set("grokPath", "grok path"); }
+		if (v("harmony.grokClaw") === true && !ap.grokClaw) { ap.grokClaw = true; giveItem("grokclaw"); moved.push("grok claw"); }
+		if (["snuck", "tricked", "friend"].includes(gk)) set("grokPath", "grok path");
+		if (v("harmony.grokFriend") === true) set("grokFriend", "grok friend");
+		const wolvesQ = Q11.find((x) => x.id === "wolves");
+		if (["leader", "driven"].includes(v("harmony.wolves")) && wolvesQ) { const st = q11St("wolves"); if (st.s <= wolvesQ.steps.length) { st.s = wolvesQ.steps.length + 1; st.left = 0; q11Begin(wolvesQ); moved.push("wolves"); } }
+		const dp = v("harmony.depot");
+		if (["shared", "taken", "burned"].includes(dp) && !mf.depot) {
+			mf.depot = true; mf.depotHow = dp; moved.push(`depot ${dp}`);
+			if (dp === "shared") { for (const c of ["sarah", "mira", "marcel"]) w13.loyal[c] = Math.min(100, (w13.loyal[c] ?? 20) + 5); }
+			if (dp === "taken") { giveItem("gas", 3); giveItem("medicine", 2); }
+			if (w13.main.act === 6) mainAdvance();
+		}
+		if (v("harmony.ledger") === true) set("ledger", "ledger");
+		const sup = Number(v("harmony.support"));
+		if (Number.isFinite(sup)) mf.support = Math.max(mf.support ?? 0, sup);
+		const ch = v("harmony.choice");
+		if (["unite", "deal", "alone"].includes(ch) && !w13.main.choice) {
+			w13.main.choice = ch; moved.push(`choice ${ch}`);
+			loyalty(ch === "deal" ? "deal-collector" : ch);
+			if (ch === "deal") { const full = v("harmony.dealTerms") === "full"; player.scrap = Math.max(0, player.scrap - (full ? 30 : 20)); w13.main.siege = 2; w13.main.won = true; mf.toll = full ? 30 : 20; }
+			if (w13.main.act === 7) mainAdvance();
+		}
+		const fam = v("harmony.family");
+		if (["stay", "north"].includes(fam) && !mf.family) { mf.family = fam; moved.push(`family ${fam}`); }
+		if (v("harmony.signalVerdict") === "split" && !ap.split) { ap.split = true; pushLog("Earl and two others went south after the signal."); }
+	}
 	/** v14.5: town quest markers go away when the town marks the quest past the "go there" stage, or the RPG finishes it. */
-	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]], "harmony-meds": ["harmony.meds", ["returned", "done"]], "harmony-dog": ["harmony.dog", ["found", "done"]], "harmony-radio": ["harmony.radio", ["done"]] };
+	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]], "harmony-meds": ["harmony.meds", ["returned", "done"]], "harmony-dog": ["harmony.dog", ["found", "done"]], "harmony-radio": ["harmony.radio", ["done"]], "harmony-grok": ["harmony.grok", ["dead", "snuck", "tricked", "friend"]], "harmony-choice": ["harmony.choice", ["unite", "deal", "alone"]], "harmony-siege": ["harmony.siegeDone", [true, "done", "won", "lost"]] };
 	function townQuestsDone() {
 		if (!l1.tq?.length) return;
 		l1.tq = l1.tq.filter((q) => {
 			const d = TOWN_QUEST_DONE[q.id];
 			if ((q.id === "harmony-lostdog" || q.id === "harmony-dog") && q10.dog >= 3) return false;
+			if (q.id === "harmony-choice" && w13.main?.choice) return false;
+			if (q.id === "harmony-siege" && w13.main?.siege === 2) return false;
+			if (q.id === "harmony-grok" && (w13.main?.act ?? 1) > 6) return false;
 			return !(d && d[1].includes(l1.tf?.[d[0]]));
 		});
 	}
@@ -5351,11 +5466,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	function v13SideQuestDone(id) {
-		const feed = { bunker: ["jack", 20], meds: ["marcel", 10], mill: ["marcel", 6], garden: ["mira", 12], school: ["sarah", 10], grok: ["justin", 10], radio: ["sarah", 4], fuel: ["justin", 6], bike: ["justin", 8], lighthouse: ["sarah", 6], wolves: ["sarah", 6] };
+		const feed = { bunker: ["jack", 20], meds: ["marcel", 10], mill: ["marcel", 6], garden: ["mira", 12], school: ["sarah", 10], grok: ["sarah", 10], radio: ["sarah", 4], fuel: ["sarah", 6], bike: ["sarah", 8], lighthouse: ["sarah", 6], wolves: ["sarah", 6] };
 		const f = feed[id];
 		if (f && !w13.left[f[0]]) { w13.loyal[f[0]] = Math.min(100, (w13.loyal[f[0]] ?? 20) + f[1]); pushLog(`${COMPANION_NAME[f[0]]} thinks better of you (+${f[1]}).`); }
 		if (id === "grok") w13.main.flags.grokPath = true;
 	}
+	/** v15: Harmony's ledger, or four towns behind you (harmony.support >= 4), clears the unite requirement. */
+	function uniteWaived() { const f = w13.main?.flags ?? {}; return !!f.ledger || (f.support ?? 0) >= 4; }
 	function v13SiegeStart() {
 		if (w13.main.act !== 8 || w13.main.siege) return;
 		w13.main.siege = 1;
@@ -5365,6 +5482,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		raid.siege = true;
 		raid.waves = 5;
 		raid.collector = false;
+		// v15: the depot burned, so the Collector's men are short a cache: one wave fewer
+		if (w13.main.flags.depotHow === "burned") { raid.waves = 4; pushLog("They're short since the depot burned. Fewer of them on the road tonight."); }
+		if (w13.main.flags.grokFriend) pushLog("Something big moves in the treeline behind the barn. It isn't after you.");
 		const allies = siegeAllies();
 		raid.house += 30 * allies; raid.houseMax += 30 * allies;
 		pushLog(`Siege of Harmony. ${allies ? `${allies} allies on the walls with you.` : "Nobody's coming. It's you and the farm."}`);
@@ -5415,7 +5535,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (mapId === 0) out.push({ label: "Turn in and sleep till morning", id: "v13-sleep" });
 			if ((v3.up.bench ?? 0) >= 1) out.push({ label: "Use the workbench (repair, patch, dye)", id: "v13-bench" });
 			out.push({ label: "Rebuild Harmony", id: "v13-rebuild" });
-			if (a === 7 && !w13.main.choice) out.push({ label: "The Long Winter: decide what we do about the Collector", id: "v13-main-choose" });
+			if (a === 7 && !w13.main.choice) out.push({ label: "The Long Winter: decide what we do about the Collector", id: "v13-main-choose" }, { label: "Talk it over in the kitchen", id: "v15-kitchen" });
 		}
 		if (role === "cyndal" && a === 2) out.push({ label: "The Long Winter: what's on the radio?", id: "v13-main-signal" });
 		if (role === "cal") {
@@ -5426,7 +5546,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			out.push({ label: "Bounty board", id: "v13-bounty" });
 			if (a === 4) out.push({ label: "The Long Winter: the Augusta broadcast", id: "v13-main-marcel" });
 		}
-		if (role === "justin") {
+		if (role === "sarah") {
 			out.push({ label: "Caravan on the road?", id: "v13-caravan" });
 			if (a === 8 && !w13.main.siege) out.push({ label: "The Long Winter: we're ready for them", id: "v13-main-siege" });
 		}
@@ -5499,9 +5619,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return openD13("Jack Ready", "He unrolls the survey maps on the hood of the truck. \"That broadcast's bait, plain. I've watched folks go south on it. Nobody comes back up the Kennebec.\"", [{ label: "Close", id: "close" }]);
 		}
 		if (id === "v13-main-marcel") { w13.main.flags.marcel = true; return openD13("Marcel Thibodeau", "\"Caravans that answer that signal never come back. Not one. There's a man they call the Collector. Every raider on the river works for him now.\"", [{ label: "Close", id: "close" }]); }
+		if (id === "v15-kitchen") { close13(); openTown({ id: "harmony", town: "harmony", name: "The farmhouse kitchen", scene: "kitchen" }); return true; }
 		if (id === "v13-main-choose") {
 			const avg = Math.round(COMPANIONS.reduce((n, c) => n + (w13.left[c] ? -50 : w13.loyal[c]), 0) / COMPANIONS.length);
-			const canUnite = rebuiltN() >= 1 && avg >= 20;
+			const canUnite = (rebuiltN() >= 1 && avg >= 20) || uniteWaived();
 			return openD13("Sarah", MAIN_ACTS[6].intro[1], [
 				{ label: canUnite ? "Unite the towns" : `Unite the towns (needs a rebuilt Harmony building and loyalty: avg ${avg}/20)`, id: canUnite ? "v13-main-unite" : "v13-main-choose" },
 				{ label: "Make a deal with the Collector", id: "v13-main-deal" },
@@ -6674,7 +6795,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Why this bike can't be ridden right now, or "". Adults only: the kids never ride. */
 	function rideBlock(prop) {
 		if (inside) return "You can't ride indoors.";
-		if (prop.farmBike && !bikeBuilt()) return "The old motor bicycle is missing half its parts. Justin knows what she needs.";
+		if (prop.farmBike && !bikeBuilt()) return "Your dad's old motor bicycle is missing half its parts. Sarah has a list.";
 		if (escortBodies) return "Not with the kids along. You walk them.";
 		if (!carrying("gas")) return "Dry tank. You need a can of gas.";
 		return "";
@@ -7626,8 +7747,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		swingAnim = .48;
 		return true;
 	}
+	function safeNoFight() { if (!player || !safeAt(player.x, player.y)) return false; if (clock - (safe15.said ?? -99) > 3) { safe15.said = clock; pushLog("Not here. This is a safe zone."); } return true; }
 	function strikeEnemy(enemy) {
 		if (!player || enemy.dead) return;
+		if (safeNoFight()) return;
 		if (!paySwing()) return;
 		// v14.1 melee: punch, kick and weapon swings land on their hit frame, not on the click
 		const mv = meleeStart();
@@ -7770,6 +7893,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function strikeNpc(npc) {
 		if (!player || !world) return;
+		if (safeNoFight()) return;
 		// swinging at the Warden starts the fight (he is not a townsman)
 		if (npc.id === WARDEN_NPC_ID) {
 			wardenChoice("warden-fight");
@@ -7836,6 +7960,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const other of world.enemies) if (other.pack === enemy.pack && !other.dead) other.aggro = true;
 	}
 	function hurtPlayer(amount, fromX, fromY) {
+		if (player && safeAt(player.x, player.y)) return;
 		if (!player || player.invuln > 0 || phase !== "play") return;
 		const dmg = Math.max(1, amount - player.def);
 		player.hp -= dmg;
@@ -7861,7 +7986,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.hp = Math.max(1, Math.ceil(player.maxHp * .5));
 			player.invuln = 2;
 			sfx("die");
-			endRaid(false, "You go down by the porch. Justin drags you inside and they bar the door. The raiders take what they can carry and go.");
+			endRaid(false, "You go down by the porch. Sarah drags you inside and they bar the door. The raiders take what they can carry and go.");
 			sync(true);
 			return;
 		}
@@ -8515,6 +8640,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			enemy.crippleLeg = Math.max(0, enemy.crippleLeg - dt);
 			enemy.slow = Math.max(0, (enemy.slow || 0) - dt);
 			enemy.pathT -= dt;
+			safeKeep(enemy);
 			const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
 			if (enemy.hollow) { stepHollow(enemy, dt, dist); continue; }
@@ -8563,7 +8689,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			if (enemy.aggro && homeDist > 520 && !isRaider(enemy)) enemy.aggro = false;
 			const sight = (enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 * (nightShade(clock) > .22 ? 1.5 : 1) * (seasonNow() === 3 ? 1.25 : 1) : 190) * (enemy.blind141 ? INJ_FX.enemyBlindSight : 1);
-			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight)) {
+			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight) && !safeAt(player.x, player.y)) {
 				enemy.aggro = true;
 				alertPack(enemy);
 			}
@@ -9101,7 +9227,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (v3.up.palisade) { raid.house += 40 * v3.up.palisade; raid.houseMax += 40 * v3.up.palisade; }
 		if (v3.up.lookout) { raid.t += 6 * v3.up.lookout; pushLog("From the lookout tower you see their lanterns early, way down the road."); }
 		raidHudPct = 20;
-		pushLog(`Raid night ${n}. Justin and Sarah take the posts. Hold the farm.`);
+		pushLog(`Raid night ${n}. You and Sarah take the posts. Hold the farm.`);
 		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
 		sfx("click");
 		saveGame();
@@ -9156,7 +9282,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (raid.house <= 0 && raid.defend) { defendLost14("They break the farmhouse door."); return; }
 		if (raid.house <= 0) {
-			endRaid(false, "The farmhouse door splinters. Justin fires the last shells and they scatter with the woodpile and a sack of apples.");
+			endRaid(false, "The farmhouse door splinters. Sarah fires the last shells and they scatter with the woodpile and a sack of apples.");
 			return;
 		}
 		if (inside) return;
@@ -9298,7 +9424,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (shade < .05) radioWarned = false;
 		if (dark && onFarm && !nightLatch && !raid) {
 			nightLatch = true;
-			if (snow >= 3 && mapId === 0) pushLog("Night on Cambridge Road. Talk to Justin when you're ready to hold the farm.");
+			if (snow >= 3 && mapId === 0) pushLog("Night on Cambridge Road. Talk to Sarah when you're ready to hold the farm.");
 		}
 		if (!dark) {
 			nightLatch = false;
@@ -9991,6 +10117,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					}
 				}
 			}
+		}
+		// v15 map scan: the frozen stream along the west edge of the farm lot (walkable ice)
+		if (world.stream?.length) for (const [sx, sy] of world.stream) {
+			if (sx < tx0 - 1 || sx > tx1 + 1 || sy < ty0 - 1 || sy > ty1 + 1 || explored[sy * 156 + sx] !== 1) continue;
+			ctx.globalAlpha = visible[sy * 156 + sx] === 1 ? .9 : .4;
+			ctx.fillStyle = "#8fa9b8"; ctx.fillRect(sx * 64 - 6, sy * 64 - 6, 76, 76);
+			ctx.fillStyle = "#c9dbe4"; ctx.fillRect(sx * 64 + 14, sy * 64 + 18, 36, 10);
 		}
 		ctx.globalAlpha = 1;
 	}
@@ -11427,7 +11560,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (body.path) body.path = [];
 	}
 	function tbCanStart() {
-		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !inside && !raid && v14.st !== 4 && phase === "play" && player && world && !mounted;
+		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !(player && safeAt(player.x, player.y)) && !inside && !raid && v14.st !== 4 && phase === "play" && player && world && !mounted;
 	}
 	function tbStart(foes) {
 		const roll = () => 1 + Math.floor(Math.random() * 6);
@@ -11751,7 +11884,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (fh) { const d = doorPoint(fh); player.x = d.x; player.y = d.y + 48; }
 			const span = DAY_LENGTH_SEC;
 			clock = Math.floor(clock / span) * span + (21.5 / 24) * span;
-			setLog("Raid Mode. One night at Cambridge Road. Justin and Sarah take the posts; Cyndal watches from the loft, Loki runs shells.");
+			setLog("Raid Mode. One night at Cambridge Road. You and Sarah take the posts; Cyndal watches from the loft, Loki runs shells.");
 			startRaid();
 			if (!raid) { raidMode = false; phase = "menu"; }
 			camX = player.x - player.y - viewW / 2;
@@ -12395,6 +12528,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		tb15Force: (on) => { tbAuto = !!on; window.__tbOff = !on; },
 		town146: () => ({ snow, dog: q10.dog, radio: q10.radio, parts: [...q10.parts], meds: q11.q.meds?.s ?? 0, school: q11.q.school?.s ?? 0, bike: q11.q.bike?.s ?? 0, story: townStoryFlags(), stats: townState().stats }),
 		town146Set: (o) => { if (o.snow != null) snow = o.snow; if (o.dog != null) q10.dog = o.dog; for (const k of ["meds", "school", "bike"]) if (o[k] != null) q11St(k).s = o[k]; },
+		v15Safe: () => ({ zones: safeZones().map((z) => ({ ...z })), here: safeAt(player.x, player.y)?.id ?? null, hud: !!safeAt(player.x, player.y) }),
+		v15Spot: (id) => { const t = ISO_TOWNS.find((x) => x.id === id); return t ? { map: t.map, open: townOpen(t), spot: t.map === mapId ? townSpot(t) : null } : null; },
+		v15Towns: () => ISO_TOWNS.map((t) => ({ id: t.id, map: t.map, act: t.act ?? 0, src: townSrc(t.id) })),
+		v15Flags: (f) => { l1.tf = { ...(l1.tf ?? {}), ...f }; const moved = townMapFlags(l1.tf); townQuestsDone(); return { moved, main: JSON.parse(JSON.stringify(w13.main)), jack: w13.loyal.jack, mira: w13.loyal.mira, q10: { planks: q10.planks, rope: q10.rope, winch: q10.winch, ferry: q10.ferry }, grok: q11.q.grok?.s ?? 0, wolves: q11.q.wolves?.s ?? 0, freed: w13.freed, tq: (l1.tq ?? []).map((q) => q.id), unite: uniteWaived() }; },
+		v15State: () => townState(),
+		v15Open: (id, scene) => { openTown({ id, town: id, name: id, scene }); return { town: { ...town }, msg: townEnterMsg() }; },
+		v15Leave: () => leaveTown({ type: "leaveTown", exit: "town", state: {} }),
+		v15Hit: () => { const before = player.hp; player.invuln = 0; hurtPlayer(5, player.x + 40, player.y); return { before, after: player.hp }; },
+		v15Strike: () => { const e = world.enemies.find((x) => !x.dead); if (!e) return null; const hp = e.hp; strikeEnemy(e); return { hp, after: e.hp, pending: !!pendingHit }; },
+		v15Spawn: (dx, dy) => { spawnRaider("scout", { x: player.x + dx, y: player.y + dy }, null); const e = world.enemies[world.enemies.length - 1]; if (e) { e.aggro = true; e.temper = "hostile"; e.raid = false; } return e ? { id: e.id, x: e.x, y: e.y } : null; },
+		v15Enemy: (id) => { const e = world.enemies.find((x) => x.id === id); return e ? { x: e.x, y: e.y, aggro: !!e.aggro, dead: !!e.dead } : null; },
+		v15Tp: (x, y) => { player.x = x; player.y = y; snapPrev(); sync(true); },
+		v15Talk: (role) => { const n = world.npcs.find((x) => x.role === role); if (!n) return null; openTalk(n); return dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => c.label) } : null; },
+		v15Npcs: () => world.npcs.map((n) => n.role),
+		v15Start: () => ({ x: player.x, y: player.y, st: v14.st, harmony: townSpot(ISO_TOWNS[0]), farm: farmCenter() }),
 		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },
 		pos: () => player ? { x: player.x, y: player.y } : null,
 		town143Msg: (m) => m?.type === "leaveTown" ? leaveTown(m) : townQuest(m),

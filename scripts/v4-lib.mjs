@@ -2,12 +2,16 @@ import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 const require = createRequire(existsSync("/workspace/maine-rpg/run/node_modules/playwright") ? "/workspace/maine-rpg/run/package.json" : "/workspace/maine-rpg/v11/package.json");
 const { chromium } = require("playwright");
-export async function boot(url, { role = "Hunter", vw = 1280, vh = 800, clear = true, live = false } = {}) {
+export async function boot(url, { role = "Hunter", vw = 1280, vh = 800, clear = true, live = false, v14 = false, safe = false } = {}) {
   const browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
   const ctx = await browser.newContext({ viewport: { width: vw, height: vh } });
   const page = await ctx.newPage();
   // v13: older suites run with the random v13 systems (weather, needs, sickness, foraging, road events) held still.
   if (!live) await page.addInitScript(() => { window.__v13Quiet = true; });
+  // v14: older suites keep the old farm start (cot at Cambridge Road); v14-test.mjs passes v14: true
+  if (!v14) await page.addInitScript(() => { window.__v14Skip = true; });
+  // v15: older suites fight at the farm; the no-attack zones are on only for v15b-test.mjs (safe: true)
+  if (!safe) await page.addInitScript(() => { window.__safeOff = true; });
   const errs = [];
   page.on("console", m => { if (m.type() === "error" || m.type() === "warning") errs.push(m.type() + ": " + m.text()); });
   page.on("pageerror", e => errs.push("pageerror: " + e.message));

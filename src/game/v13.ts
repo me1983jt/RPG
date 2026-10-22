@@ -255,14 +255,14 @@ export function travelGas(a: { map: number; tx: number; ty: number }, b: { map: 
 // ---------------- main quest: The Long Winter
 export type MainEnding = "union" | "deal" | "alone" | "fallen";
 export const MAIN_ACTS: { n: number; title: string; goal: string; intro: [string, string]; done: string }[] = [
-  { n: 1, title: "Cambridge Road", goal: "Fix up the farm with Justin and Sarah, and survive the first raid night.", intro: ["Sarah", "\"You'll do. Justin's splitting wood out back. We need the place tight before the snow, and they'll come at night. They always do.\""], done: "The farm held. Sarah puts the kettle on like it was any other morning." },
-  { n: 2, title: "The Signal", goal: "Get Cyndal's radio working and listen to what's out there.", intro: ["Cyndal", "\"There's something on 147.3. Same voice every hour. Augusta. Fuel, medicine, order. Come and listen.\""], done: "The voice loops: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" Justin doesn't like it." },
+  { n: 1, title: "Cambridge Road", goal: "Fix up the farm with Sarah and the kids, and survive the first raid night.", intro: ["Sarah", "\"Split wood, mend stakes, kiss your wife. In that order, apparently. We need the place tight before the snow, and they'll come at night. They always do.\""], done: "The farm held. Sarah puts the kettle on like it was any other morning." },
+  { n: 2, title: "The Signal", goal: "Get Cyndal's radio working and listen to what's out there.", intro: ["Cyndal", "\"There's something on 147.3. Same voice every hour. Augusta. Fuel, medicine, order. Come and listen.\""], done: "The voice loops: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" You don't like it. Nobody sounds that rested anymore." },
   { n: 3, title: "Jack Ready's Bunker", goal: "Earn Jack Ready's trust (loyalty 30) for his old survey maps.", intro: ["Jack Ready", "\"Maps cost trust, and trust costs time. Trade with me. Do me a favor or two. Then we'll talk.\""], done: "Jack unrolls the survey maps. \"That broadcast? It's a trap. Nobody's come back up the Kennebec who answered it.\"" },
-  { n: 4, title: "The Kennebec", goal: "Cross the Kennebec to Skowhegan and talk to Marcel.", intro: ["Justin", "\"If you want answers, Marcel's in Skowhegan. Bridge is the only way across, and somebody's always watching it.\""], done: "Marcel lowers his voice. \"Caravans that answer that signal don't come back. Not one. The Collector takes them.\"" },
+  { n: 4, title: "The Kennebec", goal: "Cross the Kennebec to Skowhegan and talk to Marcel.", intro: ["Sarah", "\"If you want answers, Marcel's in Skowhegan. Bridge is the only way across, and somebody's always watching it. Go careful.\""], done: "Marcel lowers his voice. \"Caravans that answer that signal don't come back. Not one. The Collector takes them.\"" },
   { n: 5, title: "The Collector", goal: "Raid the Collector's camps at night and take down his lieutenants (3).", intro: ["Marcel", "\"The raiders answer to a man they call the Collector. He's got lieutenants at camps up and down the river. Hit them at night.\""], done: "The last lieutenant talks before he dies: the supply depot is north, past the Holeb woods. Past the Grok." },
-  { n: 6, title: "The Grok's Woods", goal: "Go north through the Grok's territory and find the Collector's supply depot.", intro: ["Justin", "\"Only safe road north runs through the Grok's woods. Safe. That's a joke. Take shells.\""], done: "The depot: barrels of fuel, crates of medicine, and a ledger of every caravan he ever took." },
+  { n: 6, title: "The Grok's Woods", goal: "Go north through the Grok's territory and find the Collector's supply depot.", intro: ["Loki", "\"Jack says the only safe road north goes through the Grok's woods. Safe! That's a joke, right? Take lots of shells, Dad.\""], done: "The depot: barrels of fuel, crates of medicine, and a ledger of every caravan he ever took." },
   { n: 7, title: "Choices", goal: "Decide: unite the towns, make a deal with the Collector, or go it alone.", intro: ["Sarah", "\"He'll come for the farm now. We can bring the towns in with us, or try his terms, or bar the door and hold on ourselves. Your call.\""], done: "It's decided. Winter's coming down hard, and so is he." },
-  { n: 8, title: "Siege of Harmony", goal: "Hold the farm through the Collector's winter assault and bring him down.", intro: ["Justin", "\"Lanterns on the road. A wicked lot of them. This is it.\""], done: "The Collector is down in the snow by the woodpile. His army breaks for the road." },
+  { n: 8, title: "Siege of Harmony", goal: "Hold the farm through the Collector's winter assault and bring him down.", intro: ["Cyndal", "\"Dad. Lanterns on the road. A wicked lot of them. This is it.\""], done: "The Collector is down in the snow by the woodpile. His army breaks for the road." },
   { n: 9, title: "The Long Winter", goal: "See how it ends.", intro: ["Sarah", "\"Spring comes eventually. Even here.\""], done: "The end." },
 ];
 export const ENDINGS: Record<MainEnding, { title: string; slides: string[] }> = {
@@ -284,8 +284,8 @@ export function pickEnding(choice: "unite" | "deal" | "alone" | "", sieged: bool
 type Who = "justin" | "sarah" | "cyndal" | "loki" | "cal" | "marcel" | "mira";
 export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
   1: {
-    justin: "\"Stack the wood on the north side, it's a windbreak and it's dry. They come at night with torches. They want the hens and the stove more than they want us. Make it cost 'em.\"",
-    cyndal: "\"Dad says the first raid's the worst one, because you don't know what it sounds like yet. I'm keeping Loki in the root cellar.\"",
+    sarah: "\"Stack the wood on the north side, it's a windbreak and it's dry. They come at night with torches. They want the hens and the stove more than they want us. Make it cost 'em.\"",
+    cyndal: "\"You said the first raid's the worst one, because you don't know what it sounds like yet. I'm keeping Loki in the root cellar.\"",
     loki: "\"Can Goose sleep inside? He's scared of the dark.\" He is not asking about the dog.",
   },
   2: {
@@ -327,7 +327,7 @@ export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
   },
 };
 export const MAIN_JOURNAL: Record<number, string[]> = {
-  1: ["Justin and Sarah took me in at the Cambridge Road farm. Wood, walls, and a long first night."],
+  1: ["Home to the Cambridge Road farm before the snow. Wood, walls, and a long first night."],
   2: ["Cyndal's radio picked up a broadcast from Augusta: fuel, medicine, order. Same words every hour."],
   3: ["Jack Ready has old survey maps of the river. He'll share them when he trusts me."],
   4: ["Jack thinks the broadcast is bait. Marcel in Skowhegan counts the sleds on the river. Go ask him."],

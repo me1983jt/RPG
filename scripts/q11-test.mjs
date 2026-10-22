@@ -49,7 +49,7 @@ async function runQuest(id, giver, shotAt) {
 await begin();
 await T("setZoom", 1.0);
 // First Snow so the farm opens up
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("justin"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
+await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
 check("firstSnow", (await T("questState")).snow === 3);
 await closeDlg();
 await page.getByRole("button", { name: "Journal" }).first().click(); await wait(500);
@@ -59,7 +59,7 @@ await page.getByRole("button", { name: "Journal" }).first().click(); await wait(
 await runQuest("ice", "sarah");
 await runQuest("fuel", "justin");
 await runQuest("sick", "sarah", { s: 1, file: "03-sick-neighbor-pharmacy.png" });
-await runQuest("maple", "justin");
+await runQuest("maple", "loki");
 await runQuest("bridge", "justin");
 await runQuest("wolves", "sarah");
 await runQuest("school", "sarah", { s: 3, file: "04-school-escort.png" });
@@ -73,7 +73,7 @@ await page.evaluate(() => window.__controlsTest.questState());
 await talk("cal"); await closeDlg();
 await runQuest("caches", "cal");
 // Grok hunt: cross the ferry, hunt across the river, come home
-await talk("justin"); await pick("q11-ask-grok"); await pick("q11-accept-grok"); await closeDlg();
+await talk("sarah"); await pick("q11-ask-grok"); await pick("q11-accept-grok"); await closeDlg();
 const fs = await T("q10Spot", "ferry"); await away(); await T("setPos", fs.x, fs.y); await wait(700); await pick("q10-ferry-cross"); await wait(900);
 check("grok-map1", (await T("mapInfo")).id === 1);
 for (let i = 0; i < 3; i++) {
@@ -88,7 +88,7 @@ for (let i = 0; i < 3; i++) {
 }
 const mi = await T("mapInfo"); const gt = mi.gates[0]; await T("setPos", gt.tx * 64 + 32, gt.ty * 64 + 32); await wait(2500);
 check("grok-home", (await T("mapInfo")).id === 0);
-await talk("justin"); await pick("q11-done-grok"); await closeDlg();
+await talk("sarah"); await pick("q11-done-grok"); await closeDlg();
 let gc = await T("q11Cur", "grok"); // v13.1: a full pack puts the reward on the ground / farm stash instead of losing it
 const clawPile = (await T("pilesNow")).some((p) => p.items.some((i) => i.startsWith("grokclaw")));
 check("q-grok", gc.s === gc.n + 2 && ((await T("countOf", "grokclaw")) === 1 || clawPile), { gc, clawPile });
@@ -109,7 +109,7 @@ check("craft-bench", (await T("countOf", "snare")) >= 2 && (await T("countOf", "
 await T("invUse", "snare"); s11 = await T("q11State"); check("snare-set", s11.traps.length === 1, s11.traps);
 await T("togglePack"); await wait(500); await shot("06-crafting-bench.png"); await T("togglePack"); await wait(200);
 // hunting trip
-await talk("justin"); await pick("q11-hunt"); await pick("q11-hunt-deer"); await wait(300);
+await talk("sarah"); await pick("q11-hunt"); await pick("q11-hunt-deer"); await wait(300);
 s11 = await T("q11State"); const prey = (await T("enemies")).find((e) => !e.dead && e.id >= 97000 && e.kind === "deer");
 check("hunt-start", !!s11.hunt && !!prey, { hunt: s11.hunt });
 if (prey) await T("strike", prey.id, 9999); await wait(300);
@@ -122,7 +122,7 @@ await pick("q11-fish-hook"); s11 = await T("q11State"); check("fishing", s11.fis
 await T("q11Force", { fish: null });
 // trade caravan with a forced ambush both ways
 await T("q11Force", { caravan: true });
-await talk("justin"); await pick("q11-caravan"); await pick("q11-car-route-0"); await wait(300);
+await talk("sarah"); await pick("q11-caravan"); await pick("q11-car-route-0"); await wait(300);
 check("caravan-ambush", (await T("q11State")).caravan === 2);
 await killQ(); await wait(300);
 check("caravan-market", (await T("q11State")).caravan === 3 && !!(await T("dialogueNow")));

@@ -146,7 +146,7 @@ export const Q11: Q11Quest[] = [
     after: "Lowelltown's coughing less. Mira's pharmacy shelf has bottles on it again.",
   },
   {
-    id: "mill", title: "The Woolen Mill", giver: "justin", offer: "Belting off the Skowhegan mill",
+    id: "mill", title: "The Woolen Mill", giver: "sarah", offer: "Belting off the Skowhegan mill",
     ask: "The old woolen mill in Skowhegan's got leather drive belts and bearings. I need them for a saw rig. Mind, there's a crew holed up in there.",
     accept: "I'll strip the mill",
     steps: [
@@ -155,11 +155,11 @@ export const Q11: Q11Quest[] = [
     ],
     done: "That's real leather. The saw rig will run off the tractor now. Good work.",
     doneLabel: "Hand over the belting", reward: [["shells", 8]], iron: 14, xp: 50,
-    after: "Justin's saw rig howls on the tractor's power take-off.",
+    after: "Your saw rig howls on the tractor's power take-off. Music, of a sort.",
   },
   {
     id: "bike", title: "Bike Parts", giver: "sarah", offer: "That old motor bike by the barn",
-    ask: "That's Justin's dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
+    ask: "That's your dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
     accept: "I'll find the parts",
     steps: [
       { kind: "take", site: "farmBike", hud: "look over the old motor bicycle by the barn.", log: "Rust, mouse nests and a good frame. A list of parts in your head.", take: { speaker: "Old motor bicycle", text: "A balloon-tire bicycle with a little engine bolted in the frame. Seized, gutted and flat, but straight.", label: "Make a list of what she needs" } },
@@ -188,7 +188,7 @@ export const Q11: Q11Quest[] = [
     after: "The root cellar is packed with pond ice under sawdust.",
   },
   {
-    id: "fuel", title: "Fuel Run", giver: "justin", offer: "Tractor's near dry",
+    id: "fuel", title: "Fuel Run", giver: "sarah", offer: "Tractor's near dry",
     ask: "The tractor's down to fumes. There's trucks dead in the ditch all along Route 2. Take the hose and a couple of cans and siphon what's left. Don't swallow any, it'll ruin your whole week.",
     accept: "I'll get the gas",
     steps: [
@@ -214,20 +214,20 @@ export const Q11: Q11Quest[] = [
     after: "Walt Hersey is up and around. Ruth sends doughnuts.",
   },
   {
-    id: "maple", title: "Maple Season", giver: "justin", offer: "Sap's running",
-    ask: "Days are warm and nights are freezing, so the sap's running. Tap the sugar bush out west, haul the buckets to the shack and boil it down. Forty gallon of sap for one of syrup. Keep the fire going after dark, the coyotes come in for the smell.",
+    id: "maple", title: "Maple Season", giver: "loki", offer: "Sap's running",
+    ask: "Dad! Days are warm and nights are freezing, so the sap's running! Can we tap the sugar bush out west? You haul the buckets to the shack and boil it down. Mom says it's forty gallons of sap for one of syrup. Keep the fire going after dark, the coyotes come in for the smell.",
     accept: "I'll make syrup",
     steps: [
       { kind: "take", site: "sugarbush", hud: "tap the maples in the sugar bush.", log: "Spiles in, buckets hung. It's running good.", take: { speaker: "Sugar bush", text: "Big old rock maples, some of them tapped before your grandfather was born. The old spile holes are still there.", label: "Drive the spiles, hang the buckets" } },
       { kind: "take", site: "sugarshack", hud: "boil the sap down at the sugar shack.", log: "Steam rolls out of the shack all afternoon. By dark you've got syrup the color of a good fiddle.", take: { speaker: "Sugar shack", text: "The evaporator pan's rusty but it holds. There's a cord of dry wood stacked under the eaves.", label: "Fire the arch and boil" } },
       { kind: "ambush", site: "sugarshack", hud: "coyotes after the shack. Drive them off.", log: "Yips in the dark all around the shack. The coyotes smelled the sugar.", foes: [["coyote", null, "Coyote", 13, 4, 6], ["coyote", null, "Coyote", 13, 4, 6], ["coyote", null, "Coyote", 13, 4, 6]] },
     ],
-    done: "Look at that color. That's Grade A, ayuh. Keep two jars and I'll trade the rest down the road for iron.",
+    done: "Look at that color! Mom says that's Grade A. She'll keep two jars and trade the rest down the road for iron. Can I lick the spoon?",
     doneLabel: "Trade it", reward: [["syrup", 2]], iron: 14, xp: 30,
     after: "Syrup in the pantry, and iron from the trade.",
   },
   {
-    id: "grok", title: "The Grok Hunt", giver: "justin", offer: "About The Grok", needs: "ferry",
+    id: "grok", title: "The Grok Hunt", giver: "sarah", offer: "About The Grok", needs: "ferry",
     ask: "Now the ferry runs, I've been hearing things from across the river. Tracks as long as your forearm. Spruce scraped bark-bare eight foot up. They call it The Grok. It's slow, but it don't stop, and it hits like a skidder. If you go, keep your distance and keep shooting. Bring back a claw and I'll see you outfitted proper.",
     accept: "I'll hunt The Grok",
     steps: [
@@ -240,7 +240,7 @@ export const Q11: Q11Quest[] = [
     after: "The Grok is dead in the north woods. Its claw hangs over the farmhouse door.",
   },
   {
-    id: "bridge", title: "Bridge Out", giver: "justin", offer: "The Sebasticook bridge",
+    id: "bridge", title: "Bridge Out", giver: "sarah", offer: "The Sebasticook bridge",
     ask: "Somebody blew the Sebasticook bridge, the one on the road east. Cuts us off from half the county. You can't ford it in this. But Hartland sawmill's got timbers, and a span's just timbers and bolts. Go look at it, then get the beams.",
     accept: "I'll look at the bridge",
     steps: [
@@ -357,7 +357,7 @@ export function q11Journal(st: Q11State, c: Q11Ctx): { id: string; title: string
   return out;
 }
 
-export const GIVER_NAME: Record<string, string> = { sarah: "Sarah", justin: "Justin", cyndal: "Cyndal", cal: "Jack Ready", mira: "Mira" };
+export const GIVER_NAME: Record<string, string> = { sarah: "Sarah", loki: "Loki", cyndal: "Cyndal", cal: "Jack Ready", mira: "Mira" };
 
 export function q11Hud(st: Q11State): string {
   for (const q of Q11) {

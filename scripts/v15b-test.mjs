@@ -1,0 +1,102 @@
+// v15 part 2: new start outside Harmony, no-attack zones, Justin-as-player dialogue, town Acts 2-7 entries and flag mappings.
+import { boot } from "./v4-lib.mjs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
+{ // 1) new game: outside Harmony village
+  const { browser, page, errs, T, begin } = await boot(url, { v14: true, safe: true });
+  await begin(); await page.waitForTimeout(800);
+  const s = await T("v15Start"); console.log(JSON.stringify(s));
+  const dh = Math.hypot(s.x - s.harmony.x, s.y - s.harmony.y);
+  ok(s.harmony && dh > 70 && dh < 300, `new game starts just outside the Harmony village marker (${Math.round(dh)} px)`);
+  ok(s.st === 2, "the walk home is the next step (Sarah meets you at the stakes)");
+  const sf = await T("v15Safe");
+  ok(sf.here === "harmony" && await page.locator("[data-safe15]").isVisible(), "the Safe zone tag shows by Harmony");
+  ok(!(await T("v15Npcs")).includes("justin"), "no Justin NPC: you are Justin");
+  ok(!errs.length, `no errors (new start) ${errs.join(" | ")}`);
+  await browser.close();
+}
+const { browser, page, errs, T, begin } = await boot(url, { safe: true });
+await begin(); await T("v14Set", { st: 5 });
+await page.evaluate(() => window.__controlsTest.choose?.("close"));
+// 2) safe zones
+let sf = await T("v15Safe");
+ok(sf.zones.some((z) => z.id === "farm") && sf.zones.some((z) => z.id === "harmony"), `zones on the farm map: ${sf.zones.map((z) => z.id).join(", ")}`);
+ok(sf.zones.every((z) => Math.abs(z.r - 640) < 1), "about 10 tiles each");
+const farm = sf.zones.find((z) => z.id === "farm");
+await T("v15Tp", farm.x, farm.y + 80); await page.waitForTimeout(300);
+ok((await T("v15Safe")).here === "farm" && await page.locator("[data-safe15]").isVisible(), "Safe zone tag at the farm house");
+const foe = await T("v15Spawn", 120, 0); await page.waitForTimeout(600);
+const fe = await T("v15Enemy", foe.id);
+ok(Math.hypot(fe.x - farm.x, fe.y - farm.y) >= 640 && !fe.aggro, "a hostile inside the zone is moved to its edge and loses interest");
+const hit = await T("v15Hit");
+ok(hit.after === hit.before, "nothing hurts you inside a safe zone");
+const st = await T("v15Strike");
+ok(st && st.after === st.hp && !st.pending, "you can't attack inside a safe zone");
+ok(!(await T("tb15")).on, "turn-based combat doesn't start inside the zone");
+await page.waitForTimeout(1500);
+const fe2 = await T("v15Enemy", foe.id);
+ok(Math.hypot(fe2.x - farm.x, fe2.y - farm.y) >= 630, "the hostile stays out");
+// walk out of the zone: fights work again
+let away = null;
+for (const [dx, dy] of [[1400, 300], [-1400, 300], [0, 1500], [0, -1500], [1500, -900], [-1500, -900], [1500, 1200]]) { const x = farm.x + dx, y = farm.y + dy; if (sf.zones.every((z) => Math.hypot(x - z.x, y - z.y) > 720)) { away = { x, y }; break; } }
+await T("v15Tp", away.x, away.y); await page.waitForTimeout(200);
+ok(!(await T("v15Safe")).here, "outside the zone: no tag");
+const hit2 = await T("v15Hit");
+ok(hit2.after < hit2.before, "outside the zone you can be hurt again");
+// 3) dialogue: First Snow from Sarah; rifle line held
+await T("v15Tp", farm.x, farm.y + 80);
+await page.evaluate(() => { const c = window.__controlsTest; c.town146Set({ snow: 0 }); });
+const d = await T("v15Talk", "sarah");
+ok(d && /First snow's coming in tonight/.test(d.text) && d.speaker === "Sarah", "First Snow is Sarah's now");
+const d2 = await T("v15Talk", "loki");
+ok(d2 && /^Dad!/.test(d2.text), `Loki talks to you as Dad: ${d2?.text.slice(0, 40)}`);
+const src = await page.evaluate(async () => (await (await fetch("/src/game/quests11.ts")).text()));
+ok(src.includes("My good rifle, and Sarah's had a coat put by") && !src.includes("grandfather's good rifle"), "grandfather's rifle line held (original wording)");
+ok(/giver:\s*"loki"/.test(src) && !/giver:\s*"justin"/.test(src), "quest givers moved to Sarah/Loki");
+// 4) town entries
+const towns = await T("v15Towns");
+for (const id of ["harmony", "bunker", "kennebec", "skow", "raiders", "north", "grokwoods", "depot"]) ok(towns.some((t) => t.id === id && t.src.includes("/towns/harmony/") && (id === "harmony" || t.src.includes(`town=${id}`))), `town entry ${id}`);
+ok((await T("v15Spot", "raiders")).spot, "Saw's camp marker sits on the farm map by the gravel pit");
+const op = await T("v15Open", "bunker");
+ok(op.msg.town === "bunker" && op.msg.state.questFlags["story.jackLoyal"] != null && "story.main.signal" in op.msg.state.questFlags && "story.main.ltKills" in op.msg.state.questFlags, "enterTown sends town id + story.jackLoyal + story.main.*");
+await T("v15Leave");
+const ki = await T("v15Open", "harmony", "kitchen");
+ok(ki.msg.state.scene === "kitchen" && ki.town.src.includes("scene=kitchen"), "Act 7 kitchen scene entry");
+await T("v15Leave");
+// 5) flag mappings (forward only)
+await T("v13Act", 2);
+let r = await T("v15Flags", { "harmony.signal": "heard" });
+ok(r.main.flags.signal, "harmony.signal heard -> main.flags.signal");
+r = await T("v15Flags", { "harmony.jack": "met", "harmony.jackTrust": 6 });
+const j0 = r.jack;
+r = await T("v15Flags", { "harmony.jackTrust": 10 });
+ok(r.main.flags.jackTalk && r.jack === j0 + 4, `jackTrust applies only the change (${j0} -> ${r.jack})`);
+r = await T("v15Flags", { "harmony.jackTrust": 10 });
+ok(r.jack === j0 + 4, "same value twice: no double count");
+r = await T("v15Flags", { "harmony.marcel": "briefed", "harmony.ferryPlanks": true, "harmony.ferryRope": true, "harmony.ferry": "given" });
+ok(r.main.flags.marcel && r.q10.planks && r.q10.rope && !r.q10.winch && r.q10.ferry >= 1, "marcel + ferry parts");
+const lt0 = r.main.ltKills;
+r = await T("v15Flags", { "harmony.ltGravel": "down", "harmony.ltHoleb": "gone" });
+r = await T("v15Flags", { "harmony.ltGravel": "down" });
+ok(r.main.ltKills === lt0 + 2 && r.main.ltKills <= lt0 + 2, "lieutenants count once each");
+r = await T("v15Flags", { "harmony.prisoners": 3 });
+ok(r.freed >= 3, "prisoners freed");
+r = await T("v15Flags", { "harmony.jt.test": "x", "harmony.mt.test": "y" });
+ok(r.moved.length === 0, "harmony.jt.* / harmony.mt.* ignored");
+r = await T("v15Flags", { "harmony.grok": "dead", "harmony.wolves": "driven" });
+ok(r.main.flags.grokPath && r.grok > 0 && r.wolves > 0, "grok dead / wolves driven finish those quests");
+await T("v13Act", 6);
+r = await T("v15Flags", { "harmony.depot": "burned" });
+ok(r.main.flags.depot && r.main.flags.depotHow === "burned" && r.main.act === 7, "depot burned -> act 7");
+ok(!r.unite, "unite not waived yet");
+r = await T("v15Flags", { "harmony.support": 4 });
+ok(r.unite, "harmony.support >= 4 clears the unite requirement");
+r = await T("v15Flags", { "harmony.choice": "unite", "harmony.family": "stay" });
+ok(r.main.choice === "unite" && r.main.act === 8 && r.main.flags.family === "stay", "choice unite -> act 8");
+await T("town146Set", { snow: 3 });
+const sg = await T("v13Siege");
+ok(sg && sg.waves === 4, `burned depot: siege has one wave fewer (${sg?.waves})`);
+await T("v13SiegeEnd", true);
+ok(!errs.length, `no errors ${errs.join(" | ")}`);
+console.log(fail ? `${fail} FAILED` : "ALL PASS");
+await browser.close(); process.exit(fail ? 1 : 0);

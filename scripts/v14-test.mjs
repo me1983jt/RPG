@@ -2,6 +2,8 @@
 import { boot } from "./v4-lib.mjs";
 const url = process.argv[2] || "http://127.0.0.1:8112/";
 const { browser, page, errs, T, begin } = await boot(url, { vw: 412, vh: 860, v14: true });
+// v15: new games start outside Harmony; this suite plays the older roadside-camp opening
+await page.addInitScript(() => { window.__v14Camp = true; }); await page.reload({ waitUntil: "networkidle" }); await page.waitForTimeout(2000);
 let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
 await begin();
 let s = await T("v14");

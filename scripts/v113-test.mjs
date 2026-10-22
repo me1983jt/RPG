@@ -1,4 +1,4 @@
-// v11.3: Skowhegan, achievements, trade skills, farm upgrades, hunting/trapping, Goose
+// v11.3: Skowhegan, achievements, trade skills, farm upgrades, hunting/trapping, Biscuit
 import { boot } from "./v4-lib.mjs";
 const url = process.argv[2] || "http://127.0.0.1:8112/";
 const out = process.env.V113OUT || "/workspace/maine-rpg/beta21-shots/";
@@ -18,7 +18,7 @@ const unjournal = async () => { await page.getByRole("button", { name: "Journal"
 
 await begin();
 await T("setZoom", 1.0);
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("justin"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
+await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
 
 // ---- trade skills
 await T("v3Train", "barter", 80);
@@ -107,7 +107,7 @@ if (calm) {
 } else check("wind-spooks-game", false, "no calm animal");
 // noise: a gunshot scares game nearby (checked via shoot path in engine; covered by no-errors)
 
-// ---- Goose
+// ---- Biscuit
 await T("q10Set", { dog: 4 }); await wait(600);
 v = await V();
 check("biscuit-joins", !!v.ach.biscuit && v.dog.mode === "follow", v.dog);

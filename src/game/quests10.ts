@@ -85,7 +85,7 @@ export function q10Journal(q: Q10State, snowDone: boolean): { id: string; title:
       title: "Kennebec Crossing",
       done: q.ferry >= 3,
       text:
-        q.ferry <= 0 ? "Justin says the old Kennebec ferry could run again. Talk to him."
+        q.ferry <= 0 ? "Sarah thinks the old Kennebec ferry could run again. Talk to her."
         : q.ferry === 1 ? `Fix the old ferry: planks from the Lowelltown sawpile${q.planks ? " (got)" : ""}, rope from the Attean boathouse${q.rope ? " (got)" : ""}, and a winch pawl off the wrecked log truck${q.winch ? " (got)" : ""}.`
         : q.ferry === 2 ? "You've got planks, rope and the winch part. Take them to the ferry landing on the Kennebec, north of the farm."
         : "The ferry runs again. Pole across at the landing to reach the north woods, where they say The Grok walks.",
@@ -118,11 +118,11 @@ export function q10Journal(q: Q10State, snowDone: boolean): { id: string; title:
       title: "Moose Season",
       done: q.moose >= 5,
       text:
-        q.moose <= 0 ? "Justin wants meat in the shed before the snow gets deep. Ask him about a moose."
+        q.moose <= 0 ? "Sarah wants meat in the shed before the snow gets deep. Ask her about a moose."
         : q.moose === 1 ? "Walk to the Heald Stream bog, south of the farm. A big bull's been feeding there mornings."
         : q.moose === 2 ? "The bull is in the bog. Take him down."
         : q.moose === 3 ? "The bull is down and quartered. Haul the meat home to the farm. Keep your eyes open, it's bear country."
-        : q.moose === 4 ? "You're back with the meat. Tell Justin."
+        : q.moose === 4 ? "You're back with the meat. Tell Sarah."
         : `A winter's worth of moose is hanging in the shed and the hide's stretched on the barn wall. Winter stores: ${q.stores}.`,
     });
   return out;
@@ -134,7 +134,7 @@ export function q10Hud(q: Q10State): string {
   if (q.dog === 2) return `Lost Dog: follow the paw prints. ${Math.min(q.dogStep + 1, DOG_TRAIL.length)} of ${DOG_TRAIL.length}.`;
   if (q.dog === 3) return "Lost Dog: walk Goose home to Loki.";
   if (q.seed >= 1 && q.seed <= 4) return ["", "Seed Run: walk to the Pittsfield co-op.", `Seed Run: clear the co-op. ${q.seedLeft} left.`, "Seed Run: search the seed bins.", "Seed Run: bring the seed to Sarah."][q.seed]!;
-  if (q.moose >= 1 && q.moose <= 4) return ["", "Moose Season: walk to the Heald Stream bog.", "Moose Season: take the bull.", "Moose Season: haul the meat home.", "Moose Season: tell Justin."][q.moose]!;
+  if (q.moose >= 1 && q.moose <= 4) return ["", "Moose Season: walk to the Heald Stream bog.", "Moose Season: take the bull.", "Moose Season: haul the meat home.", "Moose Season: tell Sarah."][q.moose]!;
   if (q.ferry === 1) return `Kennebec Crossing: planks${q.planks ? " ✓" : ""}, rope${q.rope ? " ✓" : ""}, winch part${q.winch ? " ✓" : ""}.`;
   if (q.ferry === 2) return "Kennebec Crossing: fix the ferry at the landing.";
   if (q.radio === 1) return `Cyndal's Radio: ${q.parts.filter(Boolean).length} of 3 parts.`;
@@ -158,13 +158,13 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return { add: [{ label: "You look worried, Sarah", id: "q10-seed-ask" }] };
     return null;
   }
-  if (role === "justin") {
+  if (role === "sarah") {
     if (q.moose === 4 || q.moose === 3)
       return {
         replace: {
-          speaker: "Justin",
+          speaker: "Sarah",
           text: q.moose === 4
-            ? "Now that's a moose. Must dress out at six hundred pounds. We'll hang the quarters in the shed and I'll stretch the hide on the barn wall. That's the winter handled, ayuh."
+            ? "Now that's a moose. Must dress out at six hundred pounds. Quarters go in the shed, hide goes on the barn wall. That's the winter handled, ayuh."
             : "You got him? Good. Get the meat the rest of the way up to the yard and we'll hang it.",
           choices: q.moose === 4 ? [{ label: "Hang it up", id: "q10-moose-done" }] : [{ label: "Bringing it", id: "close" }],
         },
@@ -179,7 +179,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return {
         replace: {
           speaker: "Loki",
-          text: "Goose ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, Dad said. You can follow his paw prints. They're in the mud by the trees. Please?",
+          text: "Goose ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, you said so. You can follow his paw prints. They're in the mud by the trees. Please?",
           choices: [{ label: "I'll find him, bud", id: "q10-dog-accept" }],
         },
       };
@@ -187,7 +187,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return {
         replace: {
           speaker: "Loki",
-          text: "BISCUIT! You found him! He smells like a swamp. Good boy, good boy. Thank you. You can have my maple candy. Don't tell Mom.",
+          text: "GOOSE! You found him! He smells like a swamp. Good boy, good boy. Thanks, Dad. You can have my maple candy. Don't tell Mom.",
           choices: [{ label: "Keep him close, bud", id: "q10-dog-done" }],
         },
       };
@@ -218,18 +218,18 @@ export const Q10_TEXT = {
     choices: [{ label: "I'll get your seed", id: "q10-seed-accept" }, { label: "Not today", id: "close" }],
   },
   ferryAsk: {
-    speaker: "Justin",
-    text: "The old Kennebec ferry up north of here. It's a cable barge, nothing fancy, but the deck's rotted and the winch is froze. Get me planks from the Lowelltown sawpile, a good coil of rope from the boathouse at Attean, and a winch pawl off that log truck in the ditch east of here. Fix her up and we've got a way into the north woods. Folks say The Grok walks up there. I'd want to know.",
+    speaker: "Sarah",
+    text: "The old Kennebec ferry up north of here. It's a cable barge, nothing fancy, but the deck's rotted and the winch is froze. Get planks from the Lowelltown sawpile, a good coil of rope from the boathouse at Attean, and a winch pawl off that log truck in the ditch east of here. Fix her up and we've got a way into the north woods. Folks say The Grok walks up there. I'd rather know than wonder.",
     choices: [{ label: "I'll fix the ferry", id: "q10-ferry-accept" }, { label: "Another time", id: "close" }],
   },
   mooseAsk: {
-    speaker: "Justin",
+    speaker: "Sarah",
     text: "A big bull's been feeding mornings in the Heald Stream bog, south of here. One moose is most of a winter for this family. Take him clean, quarter him, and haul him home. And watch yourself coming back. The bears haven't gone down yet.",
     choices: [{ label: "I'll get the moose", id: "q10-moose-accept" }, { label: "Not yet", id: "close" }],
   },
   radioAsk: {
     speaker: "Cyndal",
-    text: "Dad found it in the barn. It's a ham set, like before. Last night I swear I heard somebody talking, really faint. It needs a tube, a coil and a battery. Mr. Kinney said the grange hall in Lowelltown had a radio, and there's an old fire tower shed by Attean, and a camp road down by Holeb with junk in the ditches. Can you look? I can't go that far, Mom won't let me.",
+    text: "You found it in the barn, Dad. It's a ham set, like before. Last night I swear I heard somebody talking, really faint. It needs a tube, a coil and a battery. Mr. Kinney said the grange hall in Lowelltown had a radio, and there's an old fire tower shed by Attean, and a camp road down by Holeb with junk in the ditches. Can you look? I can't go that far, Mom won't let me.",
     choices: [{ label: "I'll find the parts", id: "q10-radio-accept" }, { label: "Maybe later", id: "close" }],
   },
 } satisfies Record<string, Dialogue>;
