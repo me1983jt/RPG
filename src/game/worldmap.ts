@@ -22,6 +22,9 @@ export const WM_LOCS: WmLoc[] = [
   { id: "north", name: "North Woods · The Grok's woods", q: 5, r: 1, map: 1, blurb: "Chain of Ponds and deep timber." },
   { id: "raiders", name: "Raider Country", q: 10, r: 3, map: 5, blurb: "Camps along the ridge. Stay off the skyline." },
   { id: "bunker", name: "The Bunker", q: 3, r: 7, map: 6, blurb: "A hatch under the birches." },
+  // v15.1: Quest RPG town games. Pittsfield lies south-east of Harmony on the rail line, Skowhegan west and south-west down the Kennebec.
+  { id: "pittsfield", name: "Pittsfield", q: 6, r: 7, map: 0, town: "pittsfield", blurb: "Railroad town. Rusty Maine Central rails, a water tower, the farmers' co-op." },
+  { id: "skowhegan", name: "Skowhegan · Water Street", q: 3, r: 6, map: 2, town: "skowhegan", blurb: "Redington hospital, the woolen mill, Marcel's store." },
 ];
 /** Room for future loot spots: hexes that will open as small maps later. */
 export const LOOT_SPOTS: { q: number; r: number; name: string; open: boolean }[] = [

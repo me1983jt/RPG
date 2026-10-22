@@ -1,10 +1,16 @@
-// v14.3: put the town game at public/towns/<id>/index.html before dev/build.
+// v14.3: put the town games at public/towns/<id>/index.html before dev/build (harmony, pittsfield, skowhegan).
 // Real town: TOWN_HARMONY_SRC (a .html file or a folder with index.html/harmony.html), default /workspace/quest-harmony.
 // If it's not there, the stub in towns-stub/harmony.html is used. The source is only read, never changed.
 import { cpSync, copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 const root = resolve(dirname(new URL(import.meta.url).pathname), "..");
-const towns = [{ id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/quest-harmony", stub: join(root, "towns-stub/harmony.html") }];
+// v15.1: Pittsfield and Skowhegan town games (Quest RPG) ride along the same way; each falls back to the Harmony stub.
+const stubOf = (id) => (existsSync(join(root, `towns-stub/${id}.html`)) ? join(root, `towns-stub/${id}.html`) : join(root, "towns-stub/harmony.html"));
+const towns = [
+  { id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/quest-harmony" },
+  { id: "pittsfield", src: process.env.TOWN_PITTSFIELD_SRC || "/workspace/quest-pittsfield" },
+  { id: "skowhegan", src: process.env.TOWN_SKOWHEGAN_SRC || "/workspace/quest-skowhegan" },
+].map((t) => ({ ...t, stub: stubOf(t.id) }));
 for (const t of towns) {
   const out = join(root, "public/towns", t.id);
   mkdirSync(out, { recursive: true });

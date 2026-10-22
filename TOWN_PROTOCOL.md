@@ -67,3 +67,39 @@ Returned `harmony.*` flags move our quests forward only (unknown values ignored)
 firstSnow given|wood -> snow 1, done -> snow 2; dog ranOff 1, tracks 2, found 3, done 4; radio offered -> radio 1, tube|done (or
 `harmony.radioTube: true`) -> radio 1 + part 1; meds away|returned|done -> Medicine Run step 1; school offered -> 1, cleared -> 2;
 bike seen -> 1, looked -> 2. Markers `harmony-meds`, `harmony-dog`, `harmony-radio` clear when the town marks them returned/found/done.
+
+## v15.1: three town games (Harmony, Pittsfield, Skowhegan)
+
+`scripts/copy-town.mjs` copies each Quest RPG folder into `public/towns/<id>/` (skipping `shots/`, `tests/`, `*.py`, `node_modules`, `.git`):
+
+| app | source (env override) | entry ids (`enterTown.town`) | RPG markers (`ISO_TOWNS`) |
+|---|---|---|---|
+| harmony | `/workspace/quest-harmony` (`TOWN_HARMONY_SRC`) | harmony, bunker, kennebec, skow, raiders, north, grokwoods, depot, barnyard, sugarbush (`?scene=`) | as before |
+| pittsfield | `/workspace/quest-pittsfield` (`TOWN_PITTSFIELD_SRC`) | pittsfield (scene main), coop, depot | `pittsfield` (farm map, south-east of Harmony past the co-op), `pf-coop` (at the Seed Run co-op), `pf-depot` |
+| skowhegan | `/workspace/quest-skowhegan` (`TOWN_SKOWHEGAN_SRC`) | skowhegan (scene main), hospital, mill, marcelstore | `skowhegan` (map 2, Water St between the hospital and mill), `sk-hospital`, `sk-mill`, `sk-marcel` |
+
+- World map hexes: `pittsfield` (6,7), south-east of Harmony; `skowhegan` (3,6), west/south-west. Tapping one walks you to its marker and opens the town.
+- Safe zones: the `pittsfield` and `skowhegan` markers get Harmony's 10-tile no-attack zone; the sub-entries (`sub: true`) do not, so the co-op, hospital and mill fights still happen.
+- A marker's `entry` is what the town gets in `enterTown.town` and `?town=`; `pf-depot` sends `depot` to Pittsfield, not Harmony's Collector depot.
+- **Flags:** `questFlags` carries every town's flags (`harmony.*`, `pittsfield.*`, `skowhegan.*`) to every town, plus the read-only `story.*`.
+- **Extra:** each town still gets its own last `extra` back, with `schema/cls/skills/stats` from the most recent town on top, so the class and skills carry between towns. The full shared copy also rides as `state.sharedExtra`.
+- **Bridge:** `leaveTown{exit:'bridge'}` from Skowhegan opens quest-harmony at `town:'skow'` (the bridge crossing) right away.
+- **Autosave:** entering or leaving any town writes the autosave (`maine-rpg-save-v2-auto`).
+- `startQuest` target `harmony` is an alias for the farm hex.
+
+One-way mappings added:
+
+| town flag | RPG effect |
+|---|---|
+| `pittsfield.seed` arrived / cleared / found | q10 `seed` 2 / 3 (seedLeft 0) / 4 |
+| `skowhegan.meds` found | q11 `meds` at step 4 (back to Mira) |
+| `skowhegan.mill` cleared / stripped | q11 `mill` steps 1 / 1+2 done |
+| `pittsfield.beaulieu` ally | `main.flags.beaulieu`: +2 siege allies (farmhouse +60 HP) |
+| `pittsfield.handcar` running | `main.flags.handcar`: world-map rail hop Pittsfield ↔ Skowhegan (1 hour) |
+| `harmony.gooseGuard` true (or `gooseBark` done) | `main.flags.gooseGuard`: raids give 8 s more warning and you act first in turn-based raid fights |
+| `harmony.fence` done | `main.flags.fence`: one raider fewer per wave |
+| `harmony.gooseTricks` done / `harmony.tricks` | `main.flags.gooseHelps`: when Goose is with you, 30% per foe turn he costs it 2 AP |
+
+Quest markers: `pittsfield-handcar` → `skow` (cleared after your first rail hop), `pittsfield-camp` → `raiders` (cleared when Saw's camp is cleared or visited), `skowhegan-meds` → `harmony` (cleared when `harmony.meds` is returned/done or the Medicine Run is turned in).
+
+Test: `scripts/v151-towns-test.mjs` enters and leaves every town and sub-entry through the real iframe.

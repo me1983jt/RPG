@@ -4855,6 +4855,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const m = wmState();
 		if (phase !== "worldmap") return;
 		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); else { const lr = lootRunAt(q, r); if (lr) lootEnter(lr); } return; }
+		// v15.1: with the Pittsfield handcar running, Pittsfield <-> Skowhegan is one rail hop
+		const here = locAt(m.q, m.r), there = locAt(q, r), rail = ["pittsfield", "skowhegan", "skow"];
+		if (w13.main?.flags?.handcar && here && there && here.id !== there.id && rail.includes(here.id) && rail.includes(there.id) && (here.id === "pittsfield" || there.id === "pittsfield")) {
+			m.from = [m.q, m.r]; m.q = q; m.r = r; m.path = []; clock += DAY_LENGTH_SEC / 24; needsTick(1); wmReveal(q, r);
+			w13.main.flags.railRidden = true; townQuestsDone();
+			pushLog(`You pump the handcar down the Maine Central line to ${there.name}. An hour, and your arms know it. Tap it again to go in.`);
+			sync(true); return;
+		}
 		m.path = hexPath([m.q, m.r], [q, r], bikeBuilt());
 		sync(true);
 	}
@@ -4916,8 +4924,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	var CAMPS13_AT = [["camp0", 50, 30], ["camp1", 30, 70], ["camp2", 30, 30]];
 	function townSrc(id) {
 		const o = typeof window !== "undefined" && window.__townSrc;
-		const app = townApp(id), q = app !== id ? `?town=${id}` : "";
-		return ((typeof o === "string" ? o : o?.[app]) || TOWN_SRC[app] || `/towns/${app}/index.html`) + (q && !(typeof o === "string" ? o : o?.[app] ?? TOWN_SRC[app] ?? "").includes("?") ? q : q ? `&town=${id}` : "");
+		const app = townApp(id), ent = townEntry(id), q = app !== ent ? `?town=${ent}` : "";
+		return ((typeof o === "string" ? o : o?.[app]) || TOWN_SRC[app] || `/towns/${app}/index.html`) + (q && !(typeof o === "string" ? o : o?.[app] ?? TOWN_SRC[app] ?? "").includes("?") ? q : q ? `&town=${ent}` : "");
 	}
 	/** v14.4: towns live in the iso world. Harmony village sits beside the road a short walk from the farm (map 0). */
 	/** v15: Town Acts 2-5 open the same town app at a scene entry (TOWN_HANDOFF.md); at: a fixed tile, else a road spot near the farm / map middle. */
@@ -4930,8 +4938,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		{ id: "bunker", name: "Jack Ready's ridge", map: 6 },
 		{ id: "grokwoods", name: "The Grok's woods", map: 1, act: 6, upto: 6 },
 		{ id: "depot", name: "The Collector's depot", map: 1, at: [92, 34], act: 6, upto: 6 },
+		// v15.1: Quest RPG's Pittsfield (southeast of Harmony, by the co-op on the farm map) and Skowhegan (Water St, between the hospital and mill on map 2).
+		// app: which town game; entry: the enterTown.town id it gets. Sub-entries open the same game at a scene and have no safe zone of their own.
+		{ id: "pittsfield", name: "Pittsfield", map: 0, at: [98, 66], app: "pittsfield", entry: "pittsfield", scene: "main" },
+		{ id: "pf-coop", name: "Pittsfield co-op", map: 0, at: [Q10_SITES.coop.tx, Q10_SITES.coop.ty + 3], app: "pittsfield", entry: "coop", sub: true },
+		{ id: "pf-depot", name: "Pittsfield depot", map: 0, at: [104, 60], app: "pittsfield", entry: "depot", sub: true },
+		{ id: "skowhegan", name: "Skowhegan · Water Street", map: 2, at: [56, 60], app: "skowhegan", entry: "skowhegan", scene: "main" },
+		{ id: "sk-hospital", name: "Redington hospital", map: 2, at: [Q11_SITES.skowHospital.tx, Q11_SITES.skowHospital.ty + 3], app: "skowhegan", entry: "hospital", sub: true },
+		{ id: "sk-mill", name: "Woolen mill floor", map: 2, at: [Q11_SITES.skowMill.tx, Q11_SITES.skowMill.ty + 3], app: "skowhegan", entry: "mill", sub: true },
+		{ id: "sk-marcel", name: "Marcel's store", map: 2, at: [62, 64], app: "skowhegan", entry: "marcelstore", sub: true },
 	];
-	const townApp = (id) => (ISO_TOWNS.some((t) => t.id === id) ? "harmony" : id);
+	const townDef = (id) => ISO_TOWNS.find((t) => t.id === id);
+	const townApp = (id) => { const t = townDef(id); return t ? t.app ?? "harmony" : id; };
+	/** The enterTown.town id for a marker: harmony entries are their own id, Pittsfield/Skowhegan markers name their scene entry. */
+	const townEntry = (id) => townDef(id)?.entry ?? id;
 	let townArmed = true;
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
@@ -4958,7 +4978,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const key = `${mapId}:${w13.main?.act ?? 1}:${Object.keys(world.townSpots ?? {}).length}`;
 		if (safe15.key === key && safe15.w === world) return safe15.zones;
 		const zones = [];
-		for (const t of ISO_TOWNS) if (t.map === mapId && !SAFE15_SKIP.has(t.id) && townOpen(t)) { const sp = townSpot(t); if (sp) zones.push({ id: t.id, x: sp.x, y: sp.y, r: SAFE15_R }); }
+		for (const t of ISO_TOWNS) if (t.map === mapId && !SAFE15_SKIP.has(t.id) && !t.sub && townOpen(t)) { const sp = townSpot(t); if (sp) zones.push({ id: t.id, x: sp.x, y: sp.y, r: SAFE15_R }); }
 		if (mapId === 0) { const fh = world.props.find((p) => p.kind === "farmhouse" && inFarm(p.tx, p.ty)); const c = fh ? { x: (fh.tx + 1.5) * TILE, y: (fh.ty + 1.5) * TILE } : farmCenter(); zones.push({ id: "farm", x: c.x, y: c.y, r: SAFE15_R }); }
 		safe15 = { key, zones, w: world, said: safe15.said };
 		return zones;
@@ -5068,6 +5088,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function openTown(l) {
 		w13.seen[l.id] = true;
+		// v15.1: Pittsfield/Skowhegan main markers name their Main St scene, so a class carried over in the shared extra has a scene to start in
+		if (!l.scene && townDef(l.town)?.scene) l = { ...l, scene: townDef(l.town).scene };
 		town = { id: l.town, loc: l.id, src: townSrc(l.town) + (l.scene ? `${townSrc(l.town).includes("?") ? "&" : "?"}scene=${l.scene}` : ""), n: (townN = townN + 1), scene: l.scene };
 		phase = "town"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
 		pushLog(`${l.name}.`);
@@ -5090,10 +5112,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => [k, Number(p?.[k]) || 1])),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
-			extra: JSON.parse(JSON.stringify(l1.tx?.[id] ?? {})),
+			// v15.1: one character carries between towns: the town's own extra, with the latest class/skills/stats from any town on top
+			extra: JSON.parse(JSON.stringify({ ...(l1.tx?.[id] ?? {}), ...sharedTownExtra() })),
+			sharedExtra: JSON.parse(JSON.stringify(l1.tx?.shared ?? {})),
 		};
 	}
-	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: town.id, state: { ...townState(), ...(town.scene ? { scene: town.scene } : {}) } } : null; }
+	function sharedTownExtra() {
+		const sh = l1.tx?.shared;
+		if (!sh || typeof sh !== "object") return {};
+		const o = {};
+		for (const k of ["schema", "cls", "skills", "stats"]) if (sh[k] !== undefined) o[k] = sh[k];
+		return o;
+	}
+	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: townEntry(town.id), state: { ...townState(), ...(town.scene ? { scene: town.scene } : {}) } } : null; }
 	/** Apply a {type:'leaveTown', exit, state} from the town game. Anything missing or malformed is left as it was. */
 	function leaveTown(msg) {
 		if (!town || !player || !msg || msg.type !== "leaveTown") return false;
@@ -5117,9 +5148,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const moved = townMapFlags(l1.tf);
 		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
 		townQuestsDone();
-		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[townApp(town.id)] = JSON.parse(JSON.stringify(st.extra)); }
+		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[townApp(town.id)] = JSON.parse(JSON.stringify(st.extra)); l1.tx.shared = { ...(l1.tx.shared ?? {}), ...JSON.parse(JSON.stringify(st.extra)), from: townApp(town.id) }; }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
 		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
+		// v15.1: Skowhegan's bridge hotspot (Fur & Mask still hold it) hands over to quest-harmony's Skowhegan bridge crossing
+		if (exit === "bridge" && townApp(town.id) === "skowhegan") {
+			townQuestsDone();
+			town = null; phase = "play"; townArmed = false;
+			autosave15("Left Skowhegan");
+			openTown({ id: "skow", town: "skow", name: "Skowhegan bridge" });
+			return true;
+		}
 		const sp = tdef ? townSpot(tdef) : null;
 		town = null;
 		phase = "play"; townArmed = false;
@@ -5150,6 +5189,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		"harmony.meds": { away: ["q11:meds", 1], returned: ["q11:meds", 1], done: ["q11:meds", 1] },
 		"harmony.school": { offered: ["q11:school", 1], cleared: ["q11:school", 2] },
 		"harmony.bike": { seen: ["q11:bike", 1], looked: ["q11:bike", 2] },
+		// v15.1: Pittsfield / Skowhegan (their docs/TOWN_HANDOFF.md)
+		"pittsfield.seed": { arrived: ["seed", 2], cleared: ["seed", 3], found: ["seed", 4] },
+		"skowhegan.meds": { found: ["q11:meds", 4] },
+		"skowhegan.mill": { cleared: ["q11:mill", 2], stripped: ["q11:mill", 3] },
 	};
 	function townMapFlags(f) {
 		const moved = [];
@@ -5223,6 +5266,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const fam = v("harmony.family");
 		if (["stay", "north"].includes(fam) && !mf.family) { mf.family = fam; moved.push(`family ${fam}`); }
 		if (v("harmony.signalVerdict") === "split" && !ap.split) { ap.split = true; pushLog("Earl and two others went south after the signal."); }
+		// v15.1: Pittsfield, Skowhegan and the barnyard/Goose flags
+		if (["cleared", "found"].includes(v("pittsfield.seed")) && q10.seed >= 3) q10.seedLeft = 0;
+		if (v("pittsfield.beaulieu") === "ally") set("beaulieu", "Beaulieus ally");
+		if (v("pittsfield.handcar") === "running") set("handcar", "handcar running");
+		if (v("harmony.gooseGuard") === true || v("harmony.gooseBark") === "done") set("gooseGuard", "Goose guards");
+		if (v("harmony.fence") === "done") set("fence", "fence mended");
+		if (v("harmony.gooseTricks") === "done" || (Array.isArray(v("harmony.tricks")) && v("harmony.tricks").length) || v("harmony.tricks") === "done") set("gooseHelps", "Goose helps");
 	}
 	/** v14.5: town quest markers go away when the town marks the quest past the "go there" stage, or the RPG finishes it. */
 	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]], "harmony-meds": ["harmony.meds", ["returned", "done"]], "harmony-dog": ["harmony.dog", ["found", "done"]], "harmony-radio": ["harmony.radio", ["done"]], "harmony-grok": ["harmony.grok", ["dead", "snuck", "tricked", "friend"]], "harmony-choice": ["harmony.choice", ["unite", "deal", "alone"]], "harmony-siege": ["harmony.siegeDone", [true, "done", "won", "lost"]] };
@@ -5234,6 +5284,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (q.id === "harmony-choice" && w13.main?.choice) return false;
 			if (q.id === "harmony-siege" && w13.main?.siege === 2) return false;
 			if (q.id === "harmony-grok" && (w13.main?.act ?? 1) > 6) return false;
+			// v15.1 markers: handcar line -> Skowhegan bridge, Pittsfield's raider camp -> Raider Country, medicine -> back to Harmony
+			if (q.id === "pittsfield-handcar" && w13.main?.flags?.railRidden) return false;
+			if (q.id === "pittsfield-camp" && (w13.camps?.camp0?.cleared || w13.seen?.raiders)) return false;
+			if (q.id === "skowhegan-meds" && (["returned", "done"].includes(l1.tf?.["harmony.meds"]) || q11St("meds").s > Q11.find((x) => x.id === "meds").steps.length + 1)) return false;
 			return !(d && d[1].includes(l1.tf?.[d[0]]));
 		});
 	}
@@ -5241,7 +5295,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function townQuest(msg) {
 		if (!msg || msg.type !== "startQuest" || typeof msg.id !== "string" || !msg.id) return false;
 		const t = msg.target;
-		const loc = typeof t === "string" ? WM_LOCS.find((l) => l.id === t) ?? LOOT_RUNS.find((l) => l.id === t) : null;
+		const tid = typeof t === "string" ? ({ harmony: "farm" })[t] ?? t : t;
+		const loc = typeof tid === "string" ? WM_LOCS.find((l) => l.id === tid) ?? LOOT_RUNS.find((l) => l.id === tid) : null;
 		const q = loc ? loc.q : Number(t?.q), r = loc ? loc.r : Number(t?.r);
 		if (!Number.isInteger(q) || !Number.isInteger(r) || q < 0 || r < 0 || q > 11 || r > 8) return false;
 		l1.tq = (l1.tq ?? []).filter((x) => x.id !== msg.id);
@@ -5257,6 +5312,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		m.warn = "";
 		wmArrive(l.map, m.from);
 		w13.seen[l.id] = true;
+		// v15.1: a town hex walks you to its marker and opens the town game
+		const td = l.town ? townDef(l.town) : null, sp = td ? townSpot(td) : null;
+		if (td && sp) { player.x = sp.roadX; player.y = sp.roadY; snapPrev(); townArmed = false; openTown({ id: td.id, town: td.id, name: td.name }); return; }
 		saveGame(); sync(true);
 	}
 	function wmEncounter(raiders) {
@@ -5495,6 +5553,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (w13.main.flags.depotHow === "burned") { raid.waves = 4; pushLog("They're short since the depot burned. Fewer of them on the road tonight."); }
 		if (w13.main.flags.grokFriend) pushLog("Something big moves in the treeline behind the barn. It isn't after you.");
 		const allies = siegeAllies();
+		if (w13.main.flags.beaulieu) pushLog("The Beaulieus came up from Pittsfield with two deer rifles. They take the barn loft.");
 		raid.house += 30 * allies; raid.houseMax += 30 * allies;
 		pushLog(`Siege of Harmony. ${allies ? `${allies} allies on the walls with you.` : "Nobody's coming. It's you and the farm."}`);
 		diary("The Collector came for the farm.");
@@ -5503,7 +5562,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function siegeAllies() {
 		const comps = COMPANIONS.filter((c) => !w13.left[c] && (w13.loyal[c] ?? 0) >= 10).length;
 		const towns = w13.main.choice === "unite" ? 1 + rebuiltN() + (perk13("leadership", 9) ? 2 : 0) : 0;
-		return comps + towns + (q10.dog >= 4 && v3.dog.down < 0 ? 1 : 0);
+		return comps + towns + (q10.dog >= 4 && v3.dog.down < 0 ? 1 : 0) + (w13.main?.flags?.beaulieu ? 2 : 0);
 	}
 	function v13SiegeTick(dt) {
 		if (!raid?.siege) return;
@@ -9235,6 +9294,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q11.farm.wall) { raid.house += 15 * q11.farm.wall; raid.houseMax += 15 * q11.farm.wall; }
 		if (v3.up.palisade) { raid.house += 40 * v3.up.palisade; raid.houseMax += 40 * v3.up.palisade; }
 		if (v3.up.lookout) { raid.t += 6 * v3.up.lookout; pushLog("From the lookout tower you see their lanterns early, way down the road."); }
+		if (w13.main?.flags?.gooseGuard) { raid.t += 8; raid.gooseWarn = true; pushLog("Goose is up and growling at the road long before the lanterns show. You get the posts manned early."); }
 		raidHudPct = 20;
 		pushLog(`Raid night ${n}. You and Sarah take the posts. Hold the farm.`);
 		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
@@ -9309,6 +9369,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				raid.wave += 1;
 				raid.phase = "wave";
 				raid.left = Math.min(7, 1 + raid.wave + Math.floor(raid.night / 2)); // v15.1: one fewer per wave, cap 7 (turn-based fights)
+				if (w13.main?.flags?.fence && raid.left > 1) { raid.left -= 1; if (raid.wave === 1) pushLog("The mended fence turns some of them back into the dark."); }
 				if (raid.defend) { v14.defendWave = raid.wave - 1; defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp })); }
 				raid.spawnT = 0;
 				pushLog(`Wave ${raid.wave} of ${raid.waves}.`);
@@ -11581,6 +11642,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const order = [{ id: "p", init: perc() + agil15() * 2 + roll() }];
 		for (const e of foes) { snap15(e); order.push({ id: e.id, init: (e.kind === "wolf" || e.kind === "coyote" ? 6 : 4) + roll() }); }
 		order.sort((a, b) => b.init - a.init);
+		if (raid?.gooseWarn) { const me = order.findIndex((o) => o.id === "p"); if (me > 0) order.unshift(...order.splice(me, 1)); }
 		tb = { order, turn: 0, round: 1, moveQ: [], anim: null, eAp: 0, eT: 0, popup: null, mag: {}, log: [] };
 		pushLog(`Combat! Turn order: ${order.map((o) => o.id === "p" ? "you" : tbFoe(o.id)?.name ?? bodyTitle(tbFoe(o.id)?.kind ?? "foe")).join(", ")}.`);
 		tbBeginTurn();
@@ -11598,7 +11660,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cur = tbCur();
 		if (!cur) return;
 		if (cur.id === "p") { ap = apMax; apWalk = 0; tb.popup = null; }
-		else { const e = tbFoe(cur.id); tb.eAp = e ? tbEnemyAp(e) : 0; tb.eT = .35; }
+		else {
+			const e = tbFoe(cur.id); tb.eAp = e ? tbEnemyAp(e) : 0; tb.eT = .35;
+			// v15.1: Goose's tricks (harmony.gooseTricks): when he's with you he sometimes darts in and costs a foe two AP
+			if (e && w13.main?.flags?.gooseHelps && dogBody && q10.dog >= 4 && v3.dog.mode !== "stay" && !(v3.dog.down >= 0) && Math.hypot(dogBody.x - e.x, dogBody.y - e.y) < 6 * TILE && Math.random() < .3) {
+				tb.eAp = Math.max(0, tb.eAp - 2); pushLog(`Goose darts in and snaps at the ${e.name ?? bodyTitle(e.kind)}. It loses a step.`);
+			}
+		}
 		sync(true);
 	}
 	function tbNext() {
