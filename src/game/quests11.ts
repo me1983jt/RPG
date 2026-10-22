@@ -235,7 +235,7 @@ export const Q11: Q11Quest[] = [
       { kind: "go", site: "grokScrape", hud: "follow the tracks to the scraped spruce.", log: "A spruce scraped bare way over your head. Long grooves, and a smell like a wet dog the size of a barn." },
       { kind: "fight", site: "grokDen", hud: "The Grok is at the blowdown. Keep your distance and bring it down.", log: "The blowdown heaves and The Grok stands up. It's slow. It doesn't stop.", foes: [["bandit", "grok", "The Grok", 220, 15, 90]] },
     ],
-    done: "That's... I'll be. That claw's longer than my hand. Here. My good rifle, and Sarah's had a coat put by for whoever earned it. You did.",
+    done: "That's... I'll be. That claw's longer than my hand. Here. Your grandfather's good rifle, cleaned and oiled, and I've had a coat put by for whoever earned it. You did.",
     doneLabel: "Hand over the claw", reward: [["winchester", 1], ["coat-good", 1], ["grokclaw", 1]], xp: 90,
     after: "The Grok is dead in the north woods. Its claw hangs over the farmhouse door.",
   },

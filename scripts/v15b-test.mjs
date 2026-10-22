@@ -51,7 +51,7 @@ ok(d && /First snow's coming in tonight/.test(d.text) && d.speaker === "Sarah", 
 const d2 = await T("v15Talk", "loki");
 ok(d2 && /^Dad!/.test(d2.text), `Loki talks to you as Dad: ${d2?.text.slice(0, 40)}`);
 const src = await page.evaluate(async () => (await (await fetch("/src/game/quests11.ts")).text()));
-ok(src.includes("My good rifle, and Sarah's had a coat put by") && !src.includes("grandfather's good rifle"), "grandfather's rifle line held (original wording)");
+ok(src.includes("Your grandfather's good rifle, cleaned and oiled") && !src.includes("My good rifle"), "v15.1: Grok Hunt reward is your grandfather's rifle");
 ok(/giver:\s*"loki"/.test(src) && !/giver:\s*"justin"/.test(src), "quest givers moved to Sarah/Loki");
 for (const [act, role] of [[6, "loki"], [8, "cyndal"], [4, "sarah"]]) {
   await T("v13Act", act); await page.evaluate(() => window.__controlsTest.choose?.("close"));
