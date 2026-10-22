@@ -14,7 +14,7 @@ const shot = (n) => page.screenshot({ path: out + n });
 
 await begin();
 await T("setZoom", 1.0);
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
+await T("talk", "sarah"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
 let b = await T("bikeInfo");
 check("farmBikeExists", !!b.farmBike && !b.built, b);
 check("optionalManifestLoaded", Array.isArray(b.optional), b);

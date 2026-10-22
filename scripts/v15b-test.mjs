@@ -53,6 +53,12 @@ ok(d2 && /^Dad!/.test(d2.text), `Loki talks to you as Dad: ${d2?.text.slice(0, 4
 const src = await page.evaluate(async () => (await (await fetch("/src/game/quests11.ts")).text()));
 ok(src.includes("My good rifle, and Sarah's had a coat put by") && !src.includes("grandfather's good rifle"), "grandfather's rifle line held (original wording)");
 ok(/giver:\s*"loki"/.test(src) && !/giver:\s*"justin"/.test(src), "quest givers moved to Sarah/Loki");
+for (const [act, role] of [[6, "loki"], [8, "cyndal"], [4, "sarah"]]) {
+  await T("v13Act", act); await page.evaluate(() => window.__controlsTest.choose?.("close"));
+  const t = await T("v15Talk", role);
+  ok(t && t.choices.some((c) => /^The Long Winter: /.test(c) && !/what do you make/.test(c)), `act ${act} intro is ${role}'s`);
+}
+await T("v13Act", 1); await page.evaluate(() => window.__controlsTest.choose?.("close"));
 // 4) town entries
 const towns = await T("v15Towns");
 for (const id of ["harmony", "bunker", "kennebec", "skow", "raiders", "north", "grokwoods", "depot"]) ok(towns.some((t) => t.id === id && t.src.includes("/towns/harmony/") && (id === "harmony" || t.src.includes(`town=${id}`))), `town entry ${id}`);

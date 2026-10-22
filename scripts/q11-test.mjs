@@ -49,7 +49,7 @@ async function runQuest(id, giver, shotAt) {
 await begin();
 await T("setZoom", 1.0);
 // First Snow so the farm opens up
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
+await T("talk", "sarah"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
 check("firstSnow", (await T("questState")).snow === 3);
 await closeDlg();
 await page.getByRole("button", { name: "Journal" }).first().click(); await wait(500);
@@ -57,10 +57,10 @@ await shot("02-quest-log.png");
 await page.getByRole("button", { name: "Journal" }).first().click(); await wait(200);
 
 await runQuest("ice", "sarah");
-await runQuest("fuel", "justin");
+await runQuest("fuel", "sarah");
 await runQuest("sick", "sarah", { s: 1, file: "03-sick-neighbor-pharmacy.png" });
 await runQuest("maple", "loki");
-await runQuest("bridge", "justin");
+await runQuest("bridge", "sarah");
 await runQuest("wolves", "sarah");
 await runQuest("school", "sarah", { s: 3, file: "04-school-escort.png" });
 await runQuest("garden", "mira");

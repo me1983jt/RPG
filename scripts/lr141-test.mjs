@@ -18,7 +18,7 @@ ok(!/(^|[^$])\{HOLLOWED\}/.test(v141 + eng), "no raw {HOLLOWED} placeholders lef
 ok(!/Irving|Buick|Briggs|[Pp]elican case/.test(eng + src("v13.ts") + src("quests11.ts") + src("content.ts") + v141), "brand swaps applied (no Irving, Buick, Briggs, pelican case)");
 const { browser, page, errs, T, begin } = await boot(url, { vw: 412, vh: 860 });
 await begin(); await T("setHour", 12); for (let i = 0; i < 4; i++) await T("choose", "close");
-const talk = async (role) => page.evaluate((r) => { const t = window.__controlsTest; return t.lrTalk(r); }, role);
+const talk = async (role) => page.evaluate((r) => { const t = window.__controlsTest; t.l141Calm(); return t.lrTalk(r); }, role);
 const text = () => page.evaluate(() => document.body.innerText);
 // ---- Dale's Key
 await T("l141Loot", "gas");

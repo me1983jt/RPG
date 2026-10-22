@@ -15,7 +15,7 @@ const killTag = async (pred) => { for (const e of await T("enemies")) if (!e.dea
 
 await begin();
 // --- regression: First Snow + Mira still work
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
+await T("talk", "sarah"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done");
 check("firstSnow", (await T("questState")).snow === 3);
 await talk("mira"); await pick("accept"); check("miraAccept", (await T("questState")).quest === 1);
 await T("setQuest", 0);

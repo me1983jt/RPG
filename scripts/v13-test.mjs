@@ -47,7 +47,7 @@ await T("setPos", jn.x + 70, jn.y + 50); await wait(900);
 await shot("04-justin-npc.png");
 
 // First Snow so the farm systems are open
-await T("talk", "justin"); await choose("snow-accept"); await T("addWood", 3); await closeDlg();
+await T("talk", "sarah"); await choose("snow-accept"); await T("addWood", 3); await closeDlg();
 const talk = async (role) => { await closeDlg(); const n = await T("npcOf", role); await T("setPos", n.x + 50, n.y + 50); await wait(200); await T("talk", role); await wait(200); };
 await talk("sarah"); await choose("snow-wood"); await talk("sarah"); await choose("snow-done"); await closeDlg();
 

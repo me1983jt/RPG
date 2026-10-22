@@ -24,7 +24,7 @@ const allErrs = [];
   const keys = await page.evaluate(() => Object.keys(localStorage));
   check("slot2-saved-own-key", keys.includes("maine-rpg-save-v2-s2") && !keys.includes("maine-rpg-save-v2"), keys);
   // quest tracker
-  await T("talk", "justin"); await pick("snow-accept"); await closeDlg(); await wait(300);
+  await T("talk", "sarah"); await pick("snow-accept"); await closeDlg(); await wait(300);
   check("tracker-visible", await page.getByTestId("quest-tracker").isVisible());
   await shot("02-quest-tracker.png");
   // map with fog
@@ -39,7 +39,7 @@ const allErrs = [];
   const au = await T("audio");
   check("audio-hooks", Array.isArray(au.files) && ["day", "night", "raid"].includes(au.track), au);
   // balance: one hunt a day, three fish a day
-  await T("talk", "justin"); await closeDlg();
+  await T("talk", "sarah"); await closeDlg();
   await T("q10Set", {}).catch(() => {});
   const s = await T("questState");
   await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();

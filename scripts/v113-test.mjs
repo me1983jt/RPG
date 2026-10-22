@@ -18,7 +18,7 @@ const unjournal = async () => { await page.getByRole("button", { name: "Journal"
 
 await begin();
 await T("setZoom", 1.0);
-await T("talk", "justin"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
+await T("talk", "sarah"); await pick("snow-accept"); await T("addWood", 3); await talk("sarah"); await pick("snow-wood"); await talk("sarah"); await pick("snow-done"); await closeDlg();
 
 // ---- trade skills
 await T("v3Train", "barter", 80);
