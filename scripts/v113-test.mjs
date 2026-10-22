@@ -1,4 +1,4 @@
-// v11.3: Skowhegan, achievements, trade skills, farm upgrades, hunting/trapping, Biscuit
+// v11.3: Skowhegan, achievements, trade skills, farm upgrades, hunting/trapping, Goose
 import { boot } from "./v4-lib.mjs";
 const url = process.argv[2] || "http://127.0.0.1:8112/";
 const out = process.env.V113OUT || "/workspace/maine-rpg/beta21-shots/";
@@ -107,7 +107,7 @@ if (calm) {
 } else check("wind-spooks-game", false, "no calm animal");
 // noise: a gunshot scares game nearby (checked via shoot path in engine; covered by no-errors)
 
-// ---- Biscuit
+// ---- Goose
 await T("q10Set", { dog: 4 }); await wait(600);
 v = await V();
 check("biscuit-joins", !!v.ach.biscuit && v.dog.mode === "follow", v.dog);

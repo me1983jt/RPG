@@ -286,7 +286,7 @@ export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
   1: {
     justin: "\"Stack the wood on the north side, it's a windbreak and it's dry. They come at night with torches. They want the hens and the stove more than they want us. Make it cost 'em.\"",
     cyndal: "\"Dad says the first raid's the worst one, because you don't know what it sounds like yet. I'm keeping Loki in the root cellar.\"",
-    loki: "\"Can Biscuit sleep inside? He's scared of the dark.\" He is not asking about the dog.",
+    loki: "\"Can Goose sleep inside? He's scared of the dark.\" He is not asking about the dog.",
   },
   2: {
     sarah: "\"Calm voice. Too calm. Folks on the radio these days sound tired. That one sounds like he's reading a grocery list.\"",
@@ -321,7 +321,7 @@ export const MAIN_TALK: Record<number, Partial<Record<Who, string>>> = {
     cal: "\"Alone's how I've done it fourteen years. Ayuh. Works fine right up till it don't.\"",
   },
   8: {
-    sarah: "\"Kids are in the root cellar with Biscuit and a lamp. Whatever happens up here, they're not coming out till it's quiet.\"",
+    sarah: "\"Kids are in the root cellar with Goose and a lamp. Whatever happens up here, they're not coming out till it's quiet.\"",
     cyndal: "\"I'm calling the towns on the radio every ten minutes. If anyone's coming, they'll know where.\"",
     mira: "\"Lanterns on the Lowelltown road. Ours, I think. I hope.\"",
   },

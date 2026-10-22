@@ -14,7 +14,7 @@ export interface Q10State {
   planks: boolean;
   rope: boolean;
   winch: boolean;
-  /** Lost Dog: 0 dog home, 1 dog ran off (see Loki), 2 follow the tracks, 3 bring Biscuit home, 4 done. */
+  /** Lost Dog: 0 dog home, 1 dog ran off (see Loki), 2 follow the tracks, 3 bring Goose home, 4 done. */
   dog: number;
   dogStep: number;
   /** Cyndal's Radio: 0 not offered, 1 find 3 parts, 2 bring them to Cyndal, 3 done (trader on the radio). */
@@ -55,7 +55,7 @@ export const Q10_SITES = {
 } as const;
 export type Q10Site = keyof typeof Q10_SITES;
 
-/** Where Biscuit's tracks run: a bent line out of the orchard into the spruce, ending where he's holed up. */
+/** Where Goose's tracks run: a bent line out of the orchard into the spruce, ending where he's holed up. */
 export const DOG_TRAIL: [number, number][] = [
   [42, 20], [45, 23], [47, 27], [46, 31], [49, 34], [52, 36], [55, 35], [57, 38],
 ];
@@ -96,10 +96,10 @@ export function q10Journal(q: Q10State, snowDone: boolean): { id: string; title:
       title: "Lost Dog",
       done: q.dog >= 4,
       text:
-        q.dog === 1 ? "Loki's dog Biscuit bolted during the raid. Loki's upset. Go see him at the farm."
-        : q.dog === 2 ? `Follow Biscuit's paw prints out past the orchard into the spruce. Track ${Math.min(q.dogStep + 1, DOG_TRAIL.length)} of ${DOG_TRAIL.length}.`
-        : q.dog === 3 ? "You found Biscuit. Walk him home to Loki."
-        : "Biscuit is home, muddy and pleased with himself. Loki hasn't let go of him since.",
+        q.dog === 1 ? "Loki's dog Goose bolted during the raid. Loki's upset. Go see him at the farm."
+        : q.dog === 2 ? `Follow Goose's paw prints out past the orchard into the spruce. Track ${Math.min(q.dogStep + 1, DOG_TRAIL.length)} of ${DOG_TRAIL.length}.`
+        : q.dog === 3 ? "You found Goose. Walk him home to Loki."
+        : "Goose is home, muddy and pleased with himself. Loki hasn't let go of him since.",
     });
   if (q.radio > 0 || snowDone)
     out.push({
@@ -132,7 +132,7 @@ export function q10Journal(q: Q10State, snowDone: boolean): { id: string; title:
 export function q10Hud(q: Q10State): string {
   if (q.dog === 1) return "Lost Dog: Loki's dog ran off. Talk to Loki.";
   if (q.dog === 2) return `Lost Dog: follow the paw prints. ${Math.min(q.dogStep + 1, DOG_TRAIL.length)} of ${DOG_TRAIL.length}.`;
-  if (q.dog === 3) return "Lost Dog: walk Biscuit home to Loki.";
+  if (q.dog === 3) return "Lost Dog: walk Goose home to Loki.";
   if (q.seed >= 1 && q.seed <= 4) return ["", "Seed Run: walk to the Pittsfield co-op.", `Seed Run: clear the co-op. ${q.seedLeft} left.`, "Seed Run: search the seed bins.", "Seed Run: bring the seed to Sarah."][q.seed]!;
   if (q.moose >= 1 && q.moose <= 4) return ["", "Moose Season: walk to the Heald Stream bog.", "Moose Season: take the bull.", "Moose Season: haul the meat home.", "Moose Season: tell Justin."][q.moose]!;
   if (q.ferry === 1) return `Kennebec Crossing: planks${q.planks ? " ✓" : ""}, rope${q.rope ? " ✓" : ""}, winch part${q.winch ? " ✓" : ""}.`;
@@ -179,7 +179,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
       return {
         replace: {
           speaker: "Loki",
-          text: "Biscuit ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, Dad said. You can follow his paw prints. They're in the mud by the trees. Please?",
+          text: "Goose ran off when the shooting started! He went right under the fence and out past the orchard. I'm not allowed to go after him, Dad said. You can follow his paw prints. They're in the mud by the trees. Please?",
           choices: [{ label: "I'll find him, bud", id: "q10-dog-accept" }],
         },
       };

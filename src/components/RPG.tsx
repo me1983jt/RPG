@@ -568,7 +568,7 @@ export function RPG() {
             ) : null}
             {hud.v113?.dog && hud.phase === "play" ? (
               <div className="pointer-events-auto flex items-center gap-1 self-center" data-testid="dog-cmds">
-                <span className="px-1 text-xs font-semibold text-fg">Biscuit {hud.v113.dog.down ? "(laid up)" : `${hud.v113.dog.hp}/30`}</span>
+                <span className="px-1 text-xs font-semibold text-fg">Goose {hud.v113.dog.down ? "(laid up)" : `${hud.v113.dog.hp}/30`}</span>
                 {(["stay", "follow", "track"] as const).map((m) => (
                   <button key={m} type="button" data-testid={`dog-${m}`} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-14 plank border px-2 text-xs font-semibold capitalize ${hud.v113?.dog?.mode === m ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.dogCommand(m)}>
                     {m}

@@ -2020,7 +2020,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let q10 = freshQ10();
 	let q10Spots = new Map();
 	const q10Latch = new Set();
-	/** Biscuit, Loki's dog: drawn with the existing coyote sheet, never an enemy. */
+	/** Goose, Loki's dog: drawn with the existing coyote sheet, never an enemy. */
 	let dogBody = null;
 	function q10Tile(rtx, rty) {
 		if (!world) return { x: 0, y: 0 };
@@ -2157,10 +2157,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		part1: () => ({ speaker: "Attean fire tower shed", text: "The ranger's shed at the foot of the tower. On the bench, under mouse leavings, a spool of enamel copper wire.", choices: [{ label: "Take the spool", id: "q10-part-1" }, { label: "Leave it", id: "close" }] }),
 		part2: () => ({ speaker: "Holeb camp road", text: "A camp truck in the ditch, its hood up. A big square lantern battery sits on the seat. You touch it to your tongue. It still kicks.", choices: [{ label: "Take the battery", id: "q10-part-2" }, { label: "Leave it", id: "close" }] }),
 	};
-	Q10_SITE_TALK[`trail${DOG_TRAIL.length - 1}`] = () => ({ speaker: "Biscuit", text: "Under a blowdown in the spruce, a muddy brown dog with one ear up. He thumps his tail and won't come out. He's shaking.", choices: [{ label: "Come on, Biscuit. Let's go home", id: "q10-dog-found" }, { label: "Give him a minute", id: "close" }] });
+	Q10_SITE_TALK[`trail${DOG_TRAIL.length - 1}`] = () => ({ speaker: "Goose", text: "Under a blowdown in the spruce, a muddy brown dog with one ear up. He thumps his tail and won't come out. He's shaking.", choices: [{ label: "Come on, Goose. Let's go home", id: "q10-dog-found" }, { label: "Give him a minute", id: "close" }] });
 	function q10Step(dt) {
 		if (!world || !player || mapId !== 0 || inside || phase !== "play") return;
-		// Biscuit tags along once found
+		// Goose tags along once found
 		if (dogBody && q10.dog === 3) {
 			const tx = player.x + 46, ty = player.y + 30;
 			const d = Math.hypot(tx - dogBody.x, ty - dogBody.y);
@@ -2245,11 +2245,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		} else if (enemy.q10 === "bear") pushLog("The bear's down. The meat's still yours.");
 		sync(true);
 	}
-	/** A story raid night just ended: Biscuit bolted during the shooting. */
+	/** A story raid night just ended: Goose bolted during the shooting. */
 	function q10AfterRaid() {
 		if (q10.dog !== 0 || raidMode) return;
 		q10.dog = 1;
-		pushLog("Loki's yelling from the porch. Biscuit went under the fence when the shooting started.");
+		pushLog("Loki's yelling from the porch. Goose went under the fence when the shooting started.");
 	}
 	function q10Reward(items) {
 		for (const [id, n] of items) giveItem(id, n);
@@ -2306,8 +2306,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sfx("build");
 		}
 		else if (id === "q10-ferry-cross" && q10.ferry >= 3) { dialogue = null; phase = "play"; q10FerryCross(); sync(true); return true; }
-		else if (id === "q10-dog-accept" && q10.dog === 1) { q10.dog = 2; q10.dogStep = 0; q10PlaceDog(); pushLog("Lost Dog: Biscuit's paw prints start in the mud by the orchard."); }
-		else if (id === "q10-dog-found" && q10.dog === 2) { q10.dog = 3; q10PlaceDog(); pushLog("Biscuit crawls out and leans on your leg. Walk him home to Loki."); }
+		else if (id === "q10-dog-accept" && q10.dog === 1) { q10.dog = 2; q10.dogStep = 0; q10PlaceDog(); pushLog("Lost Dog: Goose's paw prints start in the mud by the orchard."); }
+		else if (id === "q10-dog-found" && q10.dog === 2) { q10.dog = 3; q10PlaceDog(); pushLog("Goose crawls out and leans on your leg. Walk him home to Loki."); }
 		else if (id === "q10-dog-done" && q10.dog === 3) {
 			q10.dog = 4; q10PlaceDog();
 			q10Reward([["maple", 1]]);
@@ -2358,7 +2358,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return false;
 	}
-	/** Ground rings under every objective and Biscuit's paw prints; drawn flat on the ground plane. */
+	/** Ground rings under every objective and Goose's paw prints; drawn flat on the ground plane. */
 	function q10All() {
 		return [...(mapId === 0 ? q10Targets() : []), ...q11Targets()];
 	}
@@ -2429,7 +2429,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ctx.restore();
 	}
-	/** Floating diamonds over objectives (and over the person to talk to) plus Biscuit, depth-sorted with the world. */
+	/** Floating diamonds over objectives (and over the person to talk to) plus Goose, depth-sorted with the world. */
 	function q10Draws(draws, dcx, dcy) {
 		if (!world) return;
 		const t = performance.now() / 1000;
@@ -3110,7 +3110,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return false;
 	}
 	// ================================================================ v11.3: achievements, trade skills, farm upgrades,
-	// Skowhegan travel, tracks/wind/noise, traps + field dressing, Biscuit the dog.
+	// Skowhegan travel, tracks/wind/noise, traps + field dressing, Goose the dog.
 	function freshV3() {
 		const skills = {};
 		for (const s of TRADE_SKILLS) skills[s.id] = { lv: 0, xp: 0 };
@@ -3212,7 +3212,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (got.length) pushLog(`Farm works: ${got.join(", ")}.`);
 		if (v3.windDay !== day) { v3.windDay = day; v3.wind = Math.floor(Math.random() * 8); }
 		if (curDay() - (q11.seasonDay || 0) >= SEASON_DAYS * 4) achieve("winter");
-		if (v3.dog.down >= 0 && day >= v3.dog.down) { v3.dog.down = -1; v3.dog.hp = 30; v3.dog.mode = "stay"; pushLog("Biscuit's up and wagging at the farm again. Tell him to follow when you're ready."); if (mapId === 0) q10PlaceDog(); }
+		if (v3.dog.down >= 0 && day >= v3.dog.down) { v3.dog.down = -1; v3.dog.hp = 30; v3.dog.mode = "stay"; pushLog("Goose's up and wagging at the farm again. Tell him to follow when you're ready."); if (mapId === 0) q10PlaceDog(); }
 	}
 	// -------- Skowhegan travel (map 2)
 	function travelTo(target, arriveAt) {
@@ -3320,7 +3320,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v3.stats.catches += 1; v3.stats.dressed += 1;
 		train("trapping", 8); train("hunting", 3);
 		const name = what === "rabbit" ? "snowshoe hare" : what;
-		pushLog(fetched ? `Biscuit trots back with the ${name} from your ${trap.kind === "trap" ? "trap" : "snare"}, proud as anything. Dressed out: meat, ${what === "rabbit" ? "" : "pelt, "}bone.` : `A ${name} in the ${trap.kind === "trap" ? "trap" : "snare"}. You dress it out on the spot: ${what === "rabbit" ? "meat and bone" : "pelt, meat and bone"}.`);
+		pushLog(fetched ? `Goose trots back with the ${name} from your ${trap.kind === "trap" ? "trap" : "snare"}, proud as anything. Dressed out: meat, ${what === "rabbit" ? "" : "pelt, "}bone.` : `A ${name} in the ${trap.kind === "trap" ? "trap" : "snare"}. You dress it out on the spot: ${what === "rabbit" ? "meat and bone" : "pelt, meat and bone"}.`);
 		achieve(what === "rabbit" ? "snare" : "trap");
 		if (what === "rabbit" && trap.kind === "trap") achieve("snare");
 		achieve("dress");
@@ -3334,7 +3334,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (dogBody && q10.dog >= 4 && v3.dog.mode === "follow" && Math.hypot(trap.x - player.x, trap.y - player.y) < 15 * TILE) checkTrap(trap, true);
 		}
 	}
-	// -------- Biscuit
+	// -------- Goose
 	let barkT = 0, dogHitT = 0, pointAt = null;
 	function dogWith() {
 		return q10.dog >= 4 && v3.dog.down < 0 && v3.dog.mode !== "stay";
@@ -3358,7 +3358,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const lead = Math.min(d - 140, 260);
 				tx = player.x + (best.x - player.x) / d * Math.max(40, lead); ty = player.y + (best.y - player.y) / d * Math.max(40, lead);
 				pointAt = best;
-				if (best !== v3DogTick.last) { v3DogTick.last = best; pushLog(`Biscuit's nose goes down. He's on a ${best.kind}, off to the ${compassTo(best.x - player.x, best.y - player.y)}.`); }
+				if (best !== v3DogTick.last) { v3DogTick.last = best; pushLog(`Goose's nose goes down. He's on a ${best.kind}, off to the ${compassTo(best.x - player.x, best.y - player.y)}.`); }
 			}
 		}
 		if (v3.dog.mode !== "stay") {
@@ -3374,7 +3374,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// bark at raiders
 		barkT -= dt;
 		const raider = world.enemies.find((e) => !e.dead && e.kind === "bandit" && !e.aggro && Math.hypot(e.x - dogBody.x, e.y - dogBody.y) < 13 * TILE);
-		if (raider && barkT <= 0 && v3.dog.mode !== "stay") { barkT = 25; v3.barks = (v3.barks || 0) + 1; pushLog(`Biscuit stiffens and growls toward the ${compassTo(raider.x - player.x, raider.y - player.y)}. Raiders, close.`); sfx("hurt"); }
+		if (raider && barkT <= 0 && v3.dog.mode !== "stay") { barkT = 25; v3.barks = (v3.barks || 0) + 1; pushLog(`Goose stiffens and growls toward the ${compassTo(raider.x - player.x, raider.y - player.y)}. Raiders, close.`); sfx("hurt"); }
 		// he can get hurt
 		dogHitT -= dt;
 		if (dogHitT <= 0) {
@@ -3389,8 +3389,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v3.dog.down = curDay() + 1;
 			v3.dog.mode = "stay";
 			dogBody = null;
-			pushLog("Biscuit yelps and goes down, then drags himself off toward home. He'll be at the farm, licking it better. Give him a day.");
-		} else pushLog(`Biscuit's hurt (${v3.dog.hp}/30). A bandage would fix him up.`);
+			pushLog("Goose yelps and goes down, then drags himself off toward home. He'll be at the farm, licking it better. Give him a day.");
+		} else pushLog(`Goose's hurt (${v3.dog.hp}/30). A bandage would fix him up.`);
 		sync(true);
 	}
 	function dogHeal() {
@@ -3400,15 +3400,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takeItem(id, 1);
 		v3.dog.hp = Math.min(30, v3.dog.hp + Math.round(15 * (1 + .08 * lv("medicine"))));
 		train("medicine", 6);
-		pushLog(`You wrap Biscuit's leg. He licks your hand (${v3.dog.hp}/30).`);
+		pushLog(`You wrap Goose's leg. He licks your hand (${v3.dog.hp}/30).`);
 		sync(true); return true;
 	}
 	function dogCommand(mode) {
 		if (q10.dog < 4) return;
-		if (v3.dog.down >= 0) { pushLog("Biscuit's laid up at the farm until tomorrow."); return; }
+		if (v3.dog.down >= 0) { pushLog("Goose's laid up at the farm until tomorrow."); return; }
 		v3.dog.mode = mode;
 		if (mode !== "stay" && !dogBody && player) dogBody = { x: player.x + 46, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
-		pushLog(mode === "stay" ? "\"Stay, Biscuit.\" He lies down with a sigh." : mode === "track" ? "\"Find 'em, Biscuit.\" His nose goes to the ground." : "\"Come on, Biscuit.\" He falls in at your heel.");
+		pushLog(mode === "stay" ? "\"Stay, Goose.\" He lies down with a sigh." : mode === "track" ? "\"Find 'em, Goose.\" His nose goes to the ground." : "\"Come on, Goose.\" He falls in at your heel.");
 		sfx("click"); sync(true);
 	}
 	// -------- main tick + hud
