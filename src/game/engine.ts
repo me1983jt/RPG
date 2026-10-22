@@ -31,7 +31,7 @@ import {
 } from "@/game/progress";
 import { facing8Hys } from "@/game/iso";
 import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
-import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
+import { autoInfo, b64ToBytes, bytesToB64, getSlot, hasSave, restoreAutosave, setSlot, slotInfos, writeAutosave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
@@ -104,6 +104,7 @@ export interface GameApi {
   dismount: () => void;
   mount: () => void;
   setSlot: (n: number) => void;
+  loadAutosave: () => void;
   dogCommand: (mode: "stay" | "follow" | "track") => void;
   dogHeal: () => void;
   drawMap: (c: HTMLCanvasElement) => void;
@@ -655,6 +656,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			hasSave: hasSave(),
 			slot: getSlot(),
 			slots: slotInfos(),
+			auto: autoInfo(),
 			name: p?.name ?? "Packer",
 			hp: p?.hp ?? 44,
 			maxHp: p?.maxHp ?? 44,
@@ -1408,6 +1410,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		};
 		const spec = PROP_SPEC[home.kind];
 		return nearestRespawn(home.tx, home.ty, spec.w, spec.h);
+	}
+	/** v15.1: town doors write the autosave too (after saveGame put the same state in the slot). */
+	function autosave15(where) {
+		if (!world || !player || raidMode || mode11) return;
+		const d = readSave();
+		if (!d) return;
+		writeAutosave(d, where);
+		pushLog("Autosaved.");
 	}
 	function saveGame() {
 		if (!world || !player || raidMode || mode11) return;
@@ -5061,7 +5071,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		town = { id: l.town, loc: l.id, src: townSrc(l.town) + (l.scene ? `${townSrc(l.town).includes("?") ? "&" : "?"}scene=${l.scene}` : ""), n: (townN = townN + 1), scene: l.scene };
 		phase = "town"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
 		pushLog(`${l.name}.`);
-		saveGame(); sync(true);
+		saveGame(); autosave15(`Entered ${l.name}`); sync(true);
 	}
 	function townState() {
 		const p = player;
@@ -5119,7 +5129,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (dest) { const m = wmState(); const here = locOfMap(mapId); m.from = [here.q, here.r]; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
 		else pushLog(`You walk out of ${tdef?.name ?? "town"} onto the road.`);
 		snapPrev();
-		saveGame(); sync(true);
+		saveGame(); autosave15(`Left ${tdef?.name ?? "town"}`); sync(true);
 		return true;
 	}
 	/** v14.6: main quest stages for the town (DESIGN.md "Quest mapping"); all read-only on the town side. */
@@ -11452,13 +11462,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ready: true,
 			hasSave: hasSave(),
 			slot: getSlot(),
-			slots: slotInfos()
+			slots: slotInfos(),
+			auto: autoInfo()
 		});
 	});
 	useHud.setState({
 		hasSave: hasSave(),
 		slot: getSlot(),
 		slots: slotInfos(),
+		auto: autoInfo(),
 		ready: false
 	});
 	function craft(id) {
@@ -12178,6 +12190,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (phase !== "menu") return;
 			setSlot(n);
 			useHud.setState({ slot: getSlot(), slots: slotInfos(), hasSave: hasSave() });
+		},
+		loadAutosave() {
+			if (phase !== "menu" || !restoreAutosave()) return;
+			useHud.setState({ slot: getSlot(), slots: slotInfos(), hasSave: hasSave(), auto: autoInfo() });
+			api.continueGame();
 		},
 		drawMap(c) {
 			drawWorldMap(c);

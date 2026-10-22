@@ -1464,6 +1464,17 @@ export function RPG() {
                       ))}
                     </div>
                   ) : null}
+                  {hud.auto && step === "trade" ? (
+                    <button
+                      type="button"
+                      data-testid="slot-auto"
+                      className="min-h-12 plank border border-dashed border-accent bg-surface-2 px-3 py-2 text-left text-xs"
+                      onClick={() => apiRef.current?.loadAutosave()}
+                    >
+                      <span className="block font-semibold">Autosave · Slot {hud.auto.slot}{hud.auto.where ? ` · ${hud.auto.where}` : ""}</span>
+                      <span className="block truncate text-muted">{hud.auto.label} · tap to load</span>
+                    </button>
+                  ) : null}
                   {hud.hasSave && step === "trade" ? (
                     <button
                       type="button"

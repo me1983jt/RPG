@@ -51,6 +51,42 @@ export function slotInfos(): SlotInfo[] {
   }
   return out;
 }
+/** v15.1: one autosave, written when you walk into or out of a town. It never overwrites a slot by itself. */
+const AUTO_KEY = `${SAVE_KEY}-auto`;
+export interface AutoInfo { slot: number; label: string; where: string }
+export function writeAutosave(data: SaveData, where: string): void {
+  try {
+    localStorage.setItem(AUTO_KEY, JSON.stringify({ ...data, savedAt: Date.now(), autoSlot: slot, autoWhere: where }));
+  } catch {
+    /* storage full or private mode */
+  }
+}
+export function autoInfo(): AutoInfo | null {
+  try {
+    const raw = localStorage.getItem(AUTO_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as { name?: string; level?: number; savedAt?: number; autoSlot?: number; autoWhere?: string };
+    const when = d.savedAt ? new Date(d.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    return { slot: Math.min(SAVE_SLOTS, Math.max(1, Number(d.autoSlot) || 1)), where: d.autoWhere || "", label: `${d.name || "Packer"} · Lv ${d.level ?? 1}${when ? " · " + when : ""}` };
+  } catch {
+    return null;
+  }
+}
+/** Copy the autosave back into the slot it came from and select that slot, so Continue picks it up. */
+export function restoreAutosave(): boolean {
+  try {
+    const raw = localStorage.getItem(AUTO_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw) as SaveData & { autoSlot?: number; autoWhere?: string };
+    if (!d || d.v !== 1 || !Array.isArray(d.removed)) return false;
+    setSlot(Number(d.autoSlot) || 1);
+    const { autoSlot: _a, autoWhere: _w, ...rest } = d;
+    localStorage.setItem(keyOf(slot), JSON.stringify(rest));
+    return true;
+  } catch {
+    return false;
+  }
+}
 /** Storage key used by beta v1 and the Grok Build exports; read once and moved to SAVE_KEY. */
 const OLD_SAVE_KEY = "tote-road-save-v2";
 

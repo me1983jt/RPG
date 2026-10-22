@@ -460,6 +460,7 @@ export interface HudSnapshot {
   hasSave: boolean;
   slot?: number;
   slots?: { slot: number; used: boolean; label: string }[];
+  auto?: { slot: number; label: string; where: string } | null;
   name: string;
   hp: number;
   maxHp: number;
