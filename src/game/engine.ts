@@ -8683,25 +8683,27 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			body._hp = body.hp;
 		}
 		const has = (a) => !!images.get(`v2/${k}-${a}`);
+		// v14.2: frame counts come from each sheet, so 10/14-frame sheets play their whole cycle
+		const nf = (a) => sheetCols(images.get(`v2/${k}-${a}`));
 		const dir = (body.dir || 0) % 8;
 		const seed = (body.id ?? body.homeId ?? 0) * 137;
 		let act = "walk";
 		let frame = 0;
 		if (body.hp != null && body.hp <= 0 && has("down")) { act = "down"; frame = 3; }
-		else if (body._hitT && now - body._hitT < 360 && has("hit")) { act = "hit"; frame = Math.min(2, Math.floor((now - body._hitT) / 120)); }
+		else if (body._hitT && now - body._hitT < 360 && has("hit")) { act = "hit"; frame = Math.min(nf("hit") - 1, Math.floor((now - body._hitT) / 360 * nf("hit"))); }
 		else if (guarding && !kid && has("gun")) {
 			const firing = (body.cooldown || 0) > .2;
 			if (firing && has("gun-atk")) { act = "gun-atk"; frame = Math.min(3, Math.floor((1 - Math.min(1, body.cooldown)) * 4)); }
 			else { act = "gun"; frame = Math.floor((now + seed) / 420) % 4; }
 		}
-		else if (kid && dangerNear(body) && has("crouch")) { act = "crouch"; frame = Math.floor((now + seed) / 420) % 4; }
+		else if (kid && dangerNear(body) && has("crouch")) { act = "crouch"; frame = Math.floor((now + seed) / 420) % nf("crouch"); }
 		else if (body.still === false) {
 			const far = player && body.ox != null && Math.hypot(player.x + body.ox - body.x, player.y + body.oy - body.y) > 160;
 			act = far && has("run") ? "run" : kid && body.ox != null && has("carry") ? "carry" : "walk";
-			frame = ((body.frame || 0) % 4) * 2 + (Math.floor((now + seed) / 110) & 1);
+			frame = Math.floor((now + seed) / (act === "run" ? ANIM_MS.run : ANIM_MS.walk)) % nf(act);
 		}
 		else if (k === "marcel" && talkNpc === body && dialogue && has("talk")) { act = "talk"; frame = Math.floor(now / 260) % 4; }
-		else if (has("idle")) { act = "idle"; frame = Math.floor((now + seed) / 340) % 4; }
+		else if (has("idle")) { act = "idle"; frame = Math.floor((now + seed) / ANIM_MS.idle) % nf("idle"); }
 		blit(`v2/${k}-${act}`, body.x, body.y, folkHeight(body), true, frame, dir, camX, camY);
 		paintDoll(body, act, frame, dir, body.x, body.y, folkHeight(body), camX, camY);
 		return true;
