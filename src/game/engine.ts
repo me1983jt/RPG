@@ -674,6 +674,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
 			wmap: wmHud(),
+			tb15: tbHud(),
 			town: town ? { id: town.id, src: town.src, n: town.n } : null,
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
@@ -4360,6 +4361,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	function noiseTick(dt, moving) {
+		tbTick(dt);
 		earlyWolves(dt);
 		townTick();
 		const target = l1.crouch ? (moving ? NOISE.crouch : NOISE.still) : mounted ? NOISE.bike : work && work.swing > 0 ? NOISE.chop : moving ? NOISE.walk : NOISE.still;
@@ -4758,6 +4760,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { x, y };
 	}
 	function stickMove(pace, dt) {
+		if (tb) return false;
 		const k = keyVec();
 		let vx = stickX + k.x, vy = stickY + k.y;
 		const mag = Math.hypot(vx, vy);
@@ -4782,7 +4785,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return false;
 	}
 	function autoTick() {
-		if (!l1.auto || !player || buildOpen || intent || mounted) return;
+		if (!l1.auto || !player || buildOpen || intent || mounted || tb) return;
 		const swing = swingOf();
 		const reachD = isGun(GEAR[player.weaponId]?.family) ? 320 : Math.max(90, swing.range + 50);
 		let best = null, bd = reachD;
@@ -7604,7 +7607,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 			return false;
 		}
-		if (turnBased) {
+		if (turnBased && !tbPaid) {
 			const cost = gun ? 5 : 3;
 			if (ap < cost) {
 				player.cooldown = .35;
@@ -7717,7 +7720,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const skNow = isGun(familyNow) ? skillOf("rifle") : skillOf("melee");
 		const sneak141 = l1.crouch && !enemy.aggro && enemy.temper !== "timid";
 		emitNoise(isGun(familyNow) ? NOISE.gun : NOISE.melee);
-		const chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0)) * (injured("blind") ? INJ_FX.blindAim : 1) * (injured("arms") ? INJ_FX.armAim : 1);
+		let chance = Math.min(.97, aimRow.hit + perc() * .03 + player.luck * .015 + skNow * .002 + (aim === "head" && hasPerk("deadeye") ? .1 : 0)) * (injured("blind") ? INJ_FX.blindAim : 1) * (injured("arms") ? INJ_FX.armAim : 1);
+		if (tb && tbChanceNext != null) { chance = tbChanceNext / 100; tbChanceNext = null; }
 		player.dir = facing8(enemy.x - player.x, enemy.y - player.y);
 		if (Math.random() > chance) {
 			sfx("click");
@@ -10565,6 +10569,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
+		paintHex15(drawCamX, drawCamY);
 		paintTowns(drawCamX, drawCamY);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
 		// v14.1 Blinded: the world closes in, dark and smeared at the edges
@@ -11386,12 +11391,276 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		saveGame();
 		sync(true);
 	}
+	// ======== v15 Fallout-style turn-based combat (flat hexes under the iso world) ========
+	const HEX15 = 30; // flat-top hex radius in world units; neighbours are 52 apart
+	const HEX15_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+	const TB_COST = { move: 1, melee: 3, gun: 4, aimed: 1, reload: 2, item: 2 };
+	const MAG15 = { revolver: 6, carbine: 5, scatter: 2 };
+	const AIM15 = [["head", "Head", -30], ["eyes", "Eyes", -45], ["arms", "Arms", -15], ["torso", "Torso", 0], ["groin", "Groin", -25], ["legs", "Legs", -10]];
+	let tb = null;
+	let tbPaid = false, tbChanceNext = null;
+	let tbAuto = (() => { try { return localStorage.getItem("maine-rpg-tb15") !== "off"; } catch { return true; } })();
+	const hexOf15 = (x, y) => {
+		const fq = (2 / 3 * x) / HEX15, fr = (-1 / 3 * x + Math.sqrt(3) / 3 * y) / HEX15, fs = -fq - fr;
+		let q = Math.round(fq), r = Math.round(fr); const s = Math.round(fs);
+		const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs);
+		if (dq > dr && dq > ds) q = -r - s; else if (dr > ds) r = -q - s;
+		return { q, r };
+	};
+	const hexXY15 = (h) => ({ x: HEX15 * 1.5 * h.q, y: HEX15 * Math.sqrt(3) * (h.r + h.q / 2) });
+	const hexDist15 = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2;
+	const tbHostile = (e) => !e.dead && e.aggro && e.temper !== "timid" && !e.lineup141;
+	const agil15 = () => Number(w13.core?.agility) || 1;
+	const tbApMax = () => 5 + Math.floor(agil15() / 2);
+	function tbFoe(id) { return world?.enemies.find((e) => e.id === id && !e.dead) ?? null; }
+	function hexFree15(h, self) {
+		const c = hexXY15(h);
+		if (pointBlocked(world, c.x, c.y, RADIUS)) return false;
+		if (self !== "p" && player && hexDist15(hexOf15(player.x, player.y), h) === 0) return false;
+		return !world.enemies.some((e) => !e.dead && e !== self && hexDist15(hexOf15(e.x, e.y), h) === 0);
+	}
+	function snap15(body) {
+		const h = hexOf15(body.x, body.y);
+		let best = h;
+		if (!hexFree15(h, body === player ? "p" : body)) for (const [dq, dr] of HEX15_DIRS) { const n = { q: h.q + dq, r: h.r + dr }; if (hexFree15(n, body === player ? "p" : body)) { best = n; break; } }
+		const c = hexXY15(best); body.x = c.x; body.y = c.y;
+		if (body.path) body.path = [];
+	}
+	function tbCanStart() {
+		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !inside && !raid && v14.st !== 4 && phase === "play" && player && world && !mounted;
+	}
+	function tbStart(foes) {
+		const roll = () => 1 + Math.floor(Math.random() * 6);
+		turnBased = true; apMax = tbApMax(); ap = apMax; apWalk = 0; intent = null; holdWalk = false; work = null;
+		snap15(player);
+		const order = [{ id: "p", init: perc() + agil15() * 2 + roll() }];
+		for (const e of foes) { snap15(e); order.push({ id: e.id, init: (e.kind === "wolf" || e.kind === "coyote" ? 6 : 4) + roll() }); }
+		order.sort((a, b) => b.init - a.init);
+		tb = { order, turn: 0, round: 1, moveQ: [], anim: null, eAp: 0, eT: 0, popup: null, mag: {}, log: [] };
+		pushLog(`Combat! Turn order: ${order.map((o) => o.id === "p" ? "you" : tbFoe(o.id)?.name ?? bodyTitle(tbFoe(o.id)?.kind ?? "foe")).join(", ")}.`);
+		tbBeginTurn();
+		sfx("hit");
+		sync(true);
+	}
+	function tbEnd(why) {
+		tb = null; turnBased = false; ap = apMax; intent = null;
+		pushLog(why || "Combat over. Real time again.");
+		sync(true);
+	}
+	const tbCur = () => tb?.order[tb.turn] ?? null;
+	const tbMine = () => tbCur()?.id === "p";
+	function tbBeginTurn() {
+		const cur = tbCur();
+		if (!cur) return;
+		if (cur.id === "p") { ap = apMax; apWalk = 0; tb.popup = null; }
+		else { const e = tbFoe(cur.id); tb.eAp = e ? (e.crippleLeg > 0 ? 4 : 6) : 0; tb.eT = .35; }
+		sync(true);
+	}
+	function tbNext() {
+		if (!tb) return;
+		tb.order = tb.order.filter((o) => o.id === "p" || tbFoe(o.id));
+		if (tbOverCheck()) return;
+		tb.turn = (tb.turn + 1) % tb.order.length;
+		if (tb.turn === 0) {
+			tb.round++;
+			// anything new that's spotted you joins the fight
+			for (const e of world.enemies) if (tbHostile(e) && !tb.order.some((o) => o.id === e.id) && Math.hypot(e.x - player.x, e.y - player.y) < 360) { snap15(e); tb.order.push({ id: e.id, init: 0 }); }
+			for (const e of world.enemies) { e.crippleArm = Math.max(0, (e.crippleArm || 0) - 1); e.crippleLeg = Math.max(0, (e.crippleLeg || 0) - 1); }
+		}
+		tbBeginTurn();
+	}
+	function tbOverCheck() {
+		if (!tb || !player) return true;
+		const near = world.enemies.some((e) => tbHostile(e) && Math.hypot(e.x - player.x, e.y - player.y) < 560);
+		if (!near) { tbEnd("No one left to fight. Real time again."); return true; }
+		return false;
+	}
+	function tbPathTo(target, budget) {
+		const start = hexOf15(player.x, player.y), key = (h) => `${h.q},${h.r}`;
+		const prev = new Map([[key(start), null]]), q = [start];
+		while (q.length) {
+			const h = q.shift();
+			if (h.q === target.q && h.r === target.r) break;
+			for (const [dq, dr] of HEX15_DIRS) {
+				const n = { q: h.q + dq, r: h.r + dr }, k = key(n);
+				if (prev.has(k) || hexDist15(start, n) > budget + 2 || !hexFree15(n, "p")) continue;
+				prev.set(k, h); q.push(n);
+			}
+		}
+		if (!prev.has(key(target))) return null;
+		const out = [];
+		for (let h = target; h && key(h) !== key(start); h = prev.get(key(h))) out.unshift(h);
+		return out;
+	}
+	const moveCost15 = () => TB_COST.move * (injured("legs") ? 2 : 1);
+	function tbChance(e, part) {
+		const fam = GEAR[player.weaponId]?.family, gun = isGun(fam);
+		const d = hexDist15(hexOf15(player.x, player.y), hexOf15(e.x, e.y));
+		if (!gun && d > 1) return 0;
+		if (gun && Math.hypot(e.x - player.x, e.y - player.y) > swingOf().range + 30) return 0;
+		const mod = AIM15.find((a) => a[0] === part)?.[2] ?? 0;
+		let c = 48 + skillOf(gun ? "rifle" : "melee") * .45 + perc() * 3 + (player.luck || 0) + mod - (gun ? Math.max(0, d - 2) * 4 : 0);
+		if (injured("blind")) c *= INJ_FX.blindAim;
+		if (injured("arms")) c *= INJ_FX.armAim;
+		return Math.max(5, Math.min(95, Math.round(c)));
+	}
+	function tbAttackCost(part) { const gun = isGun(GEAR[player.weaponId]?.family); return (gun ? TB_COST.gun : TB_COST.melee) + (part !== "torso" ? TB_COST.aimed : 0); }
+	function tbMagOf() { const fam = GEAR[player.weaponId]?.family; return player.weaponId === "levergun" ? 4 : MAG15[fam] ?? 0; }
+	function tbLoaded() { const m = tbMagOf(); if (!m) return Infinity; if (tb.mag[player.weaponId] == null) tb.mag[player.weaponId] = Math.min(m, shellCount(player)); return tb.mag[player.weaponId]; }
+	function tbPopup(e) {
+		const parts = AIM15.map(([part, label]) => ({ part, label, hit: tbChance(e, part), ap: tbAttackCost(part) }));
+		tb.popup = { id: e.id, name: e.name ?? bodyTitle(e.kind), parts };
+		sync(true);
+	}
+	function tbAttack(id, part) {
+		const e = tbFoe(id);
+		if (!tb || !tbMine() || !e || tb.anim || tb.moveQ.length) return false;
+		const cost = tbAttackCost(part), hit = tbChance(e, part);
+		tb.popup = null;
+		if (!hit) { pushLog(isGun(GEAR[player.weaponId]?.family) ? "Out of range." : "Too far. Move next to it first."); sync(true); return false; }
+		if (ap < cost) { pushLog("Not enough action points."); sync(true); return false; }
+		if (tbMagOf() && tbLoaded() <= 0) { pushLog("Empty. Reload first."); sync(true); return false; }
+		ap -= cost;
+		if (tbMagOf()) tb.mag[player.weaponId]--;
+		aim = part; tbChanceNext = hit; tbPaid = true; player.cooldown = 0;
+		try { strikeEnemy(e); } finally { tbPaid = false; }
+		sync(true);
+		return true;
+	}
+	function tbReload() {
+		if (!tb || !tbMine()) return;
+		const m = tbMagOf();
+		if (!m) { pushLog("Nothing to reload."); return sync(true); }
+		const cost = TB_COST.reload + (player.weaponId === "levergun" ? 1 : 0);
+		if (ap < cost) { pushLog("Not enough action points."); return sync(true); }
+		ap -= cost; tb.mag[player.weaponId] = Math.min(m, shellCount(player));
+		pushLog(`Reloaded: ${tb.mag[player.weaponId]} in the gun.`); sfx("click"); sync(true);
+	}
+	function tbEndPlayerTurn() { if (tb && tbMine() && !tb.anim) { tb.popup = null; pushLog("You end your turn."); tbNext(); } }
+	function tbTap(sx, sy, wp) {
+		if (!tb || !tbMine() || tb.anim || tb.moveQ.length) return;
+		const foe = enemyUnder(sx, sy);
+		if (foe && !foe.dead) { if (foe.temper !== "timid" || foe.aggro) return tbPopup(foe); }
+		tb.popup = null;
+		const target = hexOf15(wp.x, wp.y);
+		const path = tbPathTo(target, Math.floor(ap / moveCost15()));
+		if (!path || !path.length) { sync(true); return; }
+		tb.moveQ = path.slice(0, Math.floor(ap / moveCost15()));
+		if (!tb.moveQ.length) pushLog("Not enough action points to move.");
+		sync(true);
+	}
+	function tbStepAnim(dt) {
+		const a = tb.anim;
+		a.t += dt / .16;
+		const k = Math.min(1, a.t);
+		a.body.x = a.fx + (a.tx - a.fx) * k; a.body.y = a.fy + (a.ty - a.fy) * k;
+		if (a.body === player) { player.moving = true; player.anim = (player.anim || 0) + dt * 1000 / 60; }
+		if (k >= 1) tb.anim = null;
+	}
+	function tbMoveBody(body, h) {
+		const c = hexXY15(h);
+		body.dir = facing8(c.x - body.x, c.y - body.y);
+		tb.anim = { body, fx: body.x, fy: body.y, tx: c.x, ty: c.y, t: 0 };
+	}
+	function tbEnemyAct(e) {
+		const eh = hexOf15(e.x, e.y), ph = hexOf15(player.x, player.y);
+		const d = hexDist15(eh, ph);
+		if (e.temper === "timid") {
+			if (tb.eAp < 1) return false;
+			const away = HEX15_DIRS.map(([dq, dr]) => ({ q: eh.q + dq, r: eh.r + dr })).filter((n) => hexFree15(n, e)).sort((a, b) => hexDist15(b, ph) - hexDist15(a, ph))[0];
+			if (!away) return false;
+			tb.eAp -= 1; tbMoveBody(e, away); return true;
+		}
+		if (d <= 1) {
+			if (tb.eAp < 3) return false;
+			tb.eAp -= 3;
+			e.dir = facing8(player.x - e.x, player.y - e.y);
+			e.cooldown = 0; e.atkAnim = .4;
+			const dmg = e.crippleArm > 0 ? Math.max(1, Math.round(e.atk * .65)) : e.atk;
+			if (e.blind141 && Math.random() > INJ_FX.enemyBlindAim || Math.random() < .12) { floater(player.x, player.y - 30, "miss"); pushLog(`${e.name ?? bodyTitle(e.kind)} misses.`); }
+			else { player.invuln = 0; hurtPlayer(dmg, e.x, e.y); }
+			return true;
+		}
+		const step = e.crippleLeg > 0 ? 2 : 1;
+		if (tb.eAp < step) return false;
+		const best = HEX15_DIRS.map(([dq, dr]) => ({ q: eh.q + dq, r: eh.r + dr })).filter((n) => hexFree15(n, e)).sort((a, b) => hexDist15(a, ph) - hexDist15(b, ph))[0];
+		if (!best || hexDist15(best, ph) >= d) return false;
+		tb.eAp -= step; tbMoveBody(e, best); return true;
+	}
+	function tbTick(dt) {
+		if (!tb) {
+			if (!tbCanStart()) return;
+			const foes = world.enemies.filter((e) => tbHostile(e) && !e.raid && Math.hypot(e.x - player.x, e.y - player.y) < 340);
+			if (foes.length) tbStart(foes);
+			return;
+		}
+		if (phase !== "play" || inside || raid) { if (inside || raid) tbEnd(); return; }
+		stickX = 0; stickY = 0; intent = null; holdWalk = false;
+		if (tb.anim) { tbStepAnim(dt); return; }
+		if (tbMine()) {
+			if (tb.moveQ.length) {
+				const h = tb.moveQ.shift();
+				if (ap < moveCost15() || !hexFree15(h, "p")) { tb.moveQ = []; return; }
+				ap -= moveCost15(); tbMoveBody(player, h); sync(true);
+				return;
+			}
+			player.moving = false;
+			if (!pendingHit && !melee && tbOverCheck()) return;
+			return;
+		}
+		const cur = tbCur(), e = tbFoe(cur.id);
+		if (!e) { tbNext(); return; }
+		tb.eT -= dt;
+		if (tb.eT > 0) return;
+		tb.eT = .22;
+		if (!tbEnemyAct(e)) { tbNext(); return; }
+		if (phase !== "play") return;
+		sync(true);
+	}
+	function tbHud() {
+		if (!tb) return { on: false, enabled: tbAuto };
+		const cur = tbCur();
+		return {
+			on: true, enabled: tbAuto, mine: tbMine(), ap, maxAp: apMax, round: tb.round,
+			cur: cur?.id === "p" ? "You" : tbFoe(cur?.id)?.name ?? bodyTitle(tbFoe(cur?.id)?.kind ?? "foe"),
+			order: tb.order.map((o) => ({ me: o.id === "p", name: o.id === "p" ? "You" : tbFoe(o.id)?.name ?? bodyTitle(tbFoe(o.id)?.kind ?? "foe"), cur: o === cur })),
+			popup: tb.popup, mag: tbMagOf() ? { n: tbLoaded(), max: tbMagOf() } : null, cost: { ...TB_COST, move: moveCost15() },
+		};
+	}
+	function paintHex15(camX, camY) {
+		if (!tb || !player) return;
+		const ph = hexOf15(player.x, player.y), reach = tbMine() ? Math.floor(ap / moveCost15()) : 0;
+		const pt = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
+		ctx.save();
+		for (let dq = -6; dq <= 6; dq++) for (let dr = Math.max(-6, -dq - 6); dr <= Math.min(6, -dq + 6); dr++) {
+			const h = { q: ph.q + dq, r: ph.r + dr }, c = hexXY15(h);
+			if (pointBlocked(world, c.x, c.y, RADIUS)) continue;
+			const d = hexDist15(ph, h);
+			ctx.beginPath();
+			for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i; const p = pt(c.x + HEX15 * .96 * Math.cos(a), c.y + HEX15 * .96 * Math.sin(a)); if (i) ctx.lineTo(p.sx, p.sy); else ctx.moveTo(p.sx, p.sy); }
+			ctx.closePath();
+			if (d > 0 && d <= reach) { ctx.fillStyle = "rgba(120, 200, 110, .10)"; ctx.fill(); }
+			ctx.strokeStyle = d <= reach ? "rgba(170, 230, 150, .45)" : "rgba(240, 220, 170, .16)"; ctx.lineWidth = 1; ctx.stroke();
+		}
+		const cur = tbCur(), e = cur && cur.id !== "p" ? tbFoe(cur.id) : null;
+		const ring = e ?? player, p = pt(ring.x, ring.y);
+		ctx.strokeStyle = e ? "rgba(220, 90, 60, .9)" : "rgba(240, 200, 90, .9)"; ctx.lineWidth = 2.5;
+		ctx.beginPath(); ctx.ellipse(p.sx, p.sy, 24 * zoom, 11 * zoom, 0, 0, Math.PI * 2); ctx.stroke();
+		ctx.restore();
+	}
 	function setAim(part) {
 		aim = part;
 		pushLog(`Aiming at the ${part}.`);
 		sync(true);
 	}
 	function setTurnBased(on) {
+		// v15: this is the setting: turn-based combat starts by itself when a fight starts in the wild
+		tbAuto = !!on;
+		try { localStorage.setItem("maine-rpg-tb15", on ? "on" : "off"); } catch { /* private mode */ }
+		if (!on && tb) tbEnd();
+		pushLog(on ? "Turn-based combat on: fights in the wild go turn by turn." : "Turn-based combat off: fights stay real time.");
+		sync(true);
+		if (on !== "legacy") return;
 		turnBased = on;
 		ap = apMax;
 		apWalk = 0;
@@ -11400,6 +11669,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	function endTurn() {
+		if (tb) return tbEndPlayerTurn();
 		if (!world || !player || phase !== "play" || !turnBased) return;
 		for (const enemy of world.enemies) {
 			if (enemy.dead || phase !== "play") continue;
@@ -11501,6 +11771,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (cmd === "auto") { l1.auto = arg == null ? !l1.auto : !!arg; pushLog(l1.auto ? "Auto-attack on: you'll swing at anything that comes for you." : "Auto-attack off."); sync(true); }
 			else if (cmd === "stickMode") { l1.stick = arg == null ? !l1.stick : !!arg; sync(true); }
 			else if (cmd === "store") storeCmd(arg?.[0], arg?.[1]);
+			else if (cmd === "tbAttack") { tbAttack(arg?.[0], arg?.[1]); return tbHud(); }
+			else if (cmd === "tbReload") { tbReload(); return tbHud(); }
+			else if (cmd === "tbClose") { if (tb) tb.popup = null; sync(true); return tbHud(); }
+			else if (cmd === "tbEnd") { tbEndPlayerTurn(); return tbHud(); }
 			else if (cmd === "townEnter") return townEnterMsg();
 			else if (cmd === "townMsg") { const ok = arg?.type === "leaveTown" ? leaveTown(arg) : arg?.type === "startQuest" ? townQuest(arg) : false; return { ok }; }
 			else if (cmd === "pack") { packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; } sync(true); }
@@ -11610,6 +11884,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const worldPt = screenToWorld(u.sx, u.sy, camX, camY);
 			hoverX = worldPt.x;
 			hoverY = worldPt.y;
+			if (tb) {
+				// v15 turn-based: drag pans, a tap moves hex by hex or opens the aimed-shot popup on an enemy
+				if (type === "down") { pointerDown = true; downX = x; downY = y; lastPX = x; lastPY = y; moved = 0; }
+				else if (type === "move" && pointerDown) { moved = Math.max(moved, Math.hypot(x - downX, y - downY)); if (moved > 18) { freeCam = true; camX -= (x - lastPX) / zoom; camY -= (y - lastPY) / zoom; } lastPX = x; lastPY = y; }
+				else if (type === "up") { pointerDown = false; if (moved < 14) tbTap(x, y, worldPt); }
+				return;
+			}
 			if (type === "down") {
 				pointerDown = true;
 				downX = x;
@@ -11913,6 +12194,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				setTrap(id === "snare" ? "snare" : "trap");
 				return;
 			}
+			if (tb) {
+				if (!tbMine()) { pushLog("Wait for your turn."); return sync(true); }
+				if (ap < TB_COST.item) { pushLog(`Using that takes ${TB_COST.item} AP.`); return sync(true); }
+				ap -= TB_COST.item;
+			}
 			if (v141Use(def, stack)) { saveGame(); sync(true); return; }
 			if (v13Use(def, stack)) { saveGame(); sync(true); return; }
 			if (def.kind === "weapon") {
@@ -12044,6 +12330,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			startRaid();
 			if (m && raid) { const want = Math.max(1, Number(m[1])); for (let w = 1; w < want && raid; w++) { for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.wave = w; raid.phase = "lull"; raid.t = .5; raid.left = 0; } pushLog(`Test: raid at wave ${want}.`); }
 			else pushLog("Test: raid night starts now.");
+		} else if (name === "turnbased") {
+			// v15: two raiders and a wolf come at you in the woods; turn-based combat starts by itself
+			window.__tbOff = false; tbAuto = true;
+			for (const id of ["revolver"]) if (GEAR[id]) give(id);
+			give("shells", 24); give("medkit", 1); player.weaponId = "revolver"; refreshGear(player); inside = null;
+			if (v14.st < 5) v14.st = 5;
+			const at = (dx, dy) => ({ x: player.x + dx, y: player.y + dy });
+			for (const [dx, dy] of [[230, -60], [200, 90]]) { spawnRaider("scout", at(dx, dy)); const e = world.enemies[world.enemies.length - 1]; e.raid = false; e.aggro = true; }
+			q10Spawn("wolf", "", "Timber wolf", at(-210, 120), [22, 5, 10], "enc", true);
+			pushLog("Test: turn-based fight. Raiders and a wolf.");
 		} else if (name === "worldmap") {
 			window.__wmForce = 1;
 			if (opts.enc) { window.__wmKind = opts.enc; window.__wmEnc = 0; }
@@ -12091,6 +12387,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmGo: (q, r) => wmGo(q, r),
 		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
 		town144Spot: () => townSpot(ISO_TOWNS[0]),
+		tb15: () => ({ ...tbHud(), hex: player ? hexOf15(player.x, player.y) : null, foes: (world?.enemies ?? []).filter((e) => !e.dead && tb?.order.some((o) => o.id === e.id)).map((e) => ({ id: e.id, hp: e.hp, hex: hexOf15(e.x, e.y), blind: !!e.blind141, arm: e.crippleArm || 0, leg: e.crippleLeg || 0, x: e.x, y: e.y })), px: player?.x, py: player?.y }),
+		tb15Tap: (wx, wy) => { if (tb) tbTap(-9999, -9999, { x: wx, y: wy }); },
+		tb15Hex: (q, r) => hexXY15({ q, r }),
+		tb15Popup: (id) => { const e = tbFoe(id); if (e && tb) tbPopup(e); return tb?.popup ?? null; },
+		tb15Kill: () => { for (const e of world.enemies) if (tbHostile(e) && Math.hypot(e.x - player.x, e.y - player.y) < 600) { e.hp = 0; e.dead = true; markDead(e, 0); } tbOverCheck(); sync(true); return !!tb; },
+		tb15Force: (on) => { tbAuto = !!on; window.__tbOff = !on; },
 		town146: () => ({ snow, dog: q10.dog, radio: q10.radio, parts: [...q10.parts], meds: q11.q.meds?.s ?? 0, school: q11.q.school?.s ?? 0, bike: q11.q.bike?.s ?? 0, story: townStoryFlags(), stats: townState().stats }),
 		town146Set: (o) => { if (o.snow != null) snow = o.snow; if (o.dog != null) q10.dog = o.dog; for (const k of ["meds", "school", "bike"]) if (o[k] != null) q11St(k).s = o[k]; },
 		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },

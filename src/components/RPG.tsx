@@ -291,6 +291,7 @@ export function RPG() {
   const [confirmExit, setConfirmExit] = useState(false);
   const short = useShortScreen();
   const playing = hud.phase !== "menu";
+  const tb = (hud as any).tb15 as Tb15 | undefined;
   const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
   const base = roleStats(role);
   const kit = ROLES.find((item) => item.id === role) ?? ROLES[3]!;
@@ -1041,9 +1042,7 @@ export function RPG() {
             <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
               {/* v14.1: no body-part tabs in the HUD; real-time hits roll their own location. The Fallout aimed-shot
                   popup is for v15 turn-based combat and stays off behind AIMED_POPUP. */}
-              {AIMED_POPUP && hud.turnBased ? (["head", "chest", "arm", "leg"] as const).map((part) => (
-                <button key={part} type="button" className={`min-h-10 min-w-12 plank border px-3 py-2 text-xs font-semibold capitalize ${hud.aim === part ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.setAim(part)}>{part}</button>
-              )) : null}
+
               {hud.v141 ? (
                 <>
                   <button type="button" data-v141="crouch" aria-pressed={hud.v141.crouch} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-12 plank border px-2 text-xs font-semibold ${hud.v141.crouch ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v141("crouch")}>{hud.v141.crouch ? "Crouched" : "Crouch"}</button>
@@ -1054,11 +1053,7 @@ export function RPG() {
                   </div>
                 </>
               ) : null}
-              {hud.turnBased ? (
-                <button type="button" className="plank bg-primary px-3 py-2 text-xs font-semibold text-bg short:px-2 short:py-1" onClick={() => apiRef.current?.endTurn()}>
-                  End turn · {hud.ap}/{hud.maxAp}
-                </button>
-              ) : null}
+{tb?.on ? <Tb15Bar tb={tb} api={apiRef} /> : null}
             </div>
 
             <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
@@ -1530,6 +1525,7 @@ export function RPG() {
         </Overlay>
       ) : null}
 
+      {AIMED_POPUP && tb?.on && tb.popup && hud.phase === "play" ? <AimPopup tb={tb} api={apiRef} /> : null}
       {hud.phase === "town" && (hud as any).town ? <TownLayer key={(hud as any).town.n} town={(hud as any).town} api={apiRef} /> : null}
       {hud.phase === "worldmap" && hud.wmap ? (
         <div data-testid="worldmap" className="absolute inset-0 z-50 bg-bg">
@@ -1571,8 +1567,8 @@ export function RPG() {
           <button type="button" data-testid="one-thumb" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.v141("stickMode")}>
             {hud.v141?.stick ? "One-thumb stick: on" : "One-thumb stick: off"}
           </button>
-          <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!hud.turnBased)}>
-            {hud.turnBased ? "Switch to real time" : "Switch to turn-based"}
+          <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!(hud as any).tb15?.enabled)}>
+            {(hud as any).tb15?.enabled ? "Turn-based combat: on" : "Turn-based combat: off"}
           </button>
           <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
             Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
@@ -1630,7 +1626,8 @@ function Overlay({ title, children, delayed = false }: { title: string; children
 }
 
 /** v15 stub: the aimed-shot (called-shot) picker for turn-based combat. Off in v14.1. */
-const AIMED_POPUP = false;
+/** v15: the Fallout aimed-shot popup, only in turn-based combat. */
+const AIMED_POPUP = true;
 
 function ActionButton({
   label,
@@ -1677,6 +1674,44 @@ function TownLayer({ town, api }: { town: { id: string; src: string; n: number }
   return (
     <div data-testid="town-layer" className="absolute inset-0 z-[70] bg-black">
       <iframe ref={frame} data-testid="town-frame" title={`Town: ${town.id}`} src={town.src} className="block h-full w-full border-0" />
+    </div>
+  );
+}
+
+type Tb15 = { on: boolean; enabled: boolean; mine?: boolean; ap?: number; maxAp?: number; round?: number; cur?: string;
+  order?: { me: boolean; name: string; cur: boolean }[]; mag?: { n: number; max: number } | null; cost?: Record<string, number>;
+  popup?: { id: number; name: string; parts: { part: string; label: string; hit: number; ap: number }[] } | null };
+/** v15 turn-based HUD: whose turn, AP pips, reload and end turn. Narrow enough for a portrait phone. */
+function Tb15Bar({ tb, api }: { tb: Tb15; api: { current: any } }) {
+  const pips = Array.from({ length: tb.maxAp ?? 0 }, (_, i) => i < (tb.ap ?? 0));
+  return (
+    <div data-tb15="bar" className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1 plank border border-primary bg-surface/95 px-2 py-1 text-xs">
+      <span data-tb15="turn" className={`font-semibold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? "Your turn" : `${tb.cur}'s turn`}</span>
+      <span className="text-muted">R{tb.round}</span>
+      <span data-tb15="ap" aria-label={`Action points ${tb.ap} of ${tb.maxAp}`} className="flex items-center gap-0.5">
+        <span className="text-muted">AP</span>
+        {pips.map((on, i) => <span key={i} className="inline-block h-2.5 w-2.5 rounded-full border border-primary" style={{ background: on ? "#e0b050" : "transparent" }} />)}
+      </span>
+      {tb.mag ? (
+        <button type="button" data-tb15="reload" disabled={!tb.mine} className="min-h-8 plank border border-border bg-surface px-2 font-semibold disabled:opacity-50" onClick={() => api.current?.v141("tbReload")}>Reload {tb.mag.n}/{tb.mag.max} · {tb.cost?.reload}AP</button>
+      ) : null}
+      <button type="button" data-tb15="end" disabled={!tb.mine} className="min-h-8 plank bg-primary px-3 font-semibold text-bg disabled:opacity-50" onClick={() => api.current?.v141("tbEnd")}>End turn</button>
+    </div>
+  );
+}
+function AimPopup({ tb, api }: { tb: Tb15; api: { current: any } }) {
+  const p = tb.popup!;
+  return (
+    <div data-tb15="aim" className="pointer-events-auto absolute inset-x-2 bottom-28 z-[65] mx-auto max-w-sm plank border border-primary bg-surface/95 p-2 text-sm">
+      <div className="mb-1 flex items-center justify-between"><b>Aim at the {p.name}</b><span className="text-xs text-muted">AP {tb.ap}/{tb.maxAp}</span></div>
+      <div className="grid grid-cols-2 gap-1">
+        {p.parts.map((q) => (
+          <button key={q.part} type="button" data-part={q.part} disabled={!q.hit || q.ap > (tb.ap ?? 0)} className="flex min-h-10 items-center justify-between plank border border-border bg-bg/60 px-2 disabled:opacity-40" onClick={() => api.current?.v141("tbAttack", [p.id, q.part])}>
+            <span className="font-semibold">{q.label}</span><span className="text-xs">{q.hit ? `${q.hit}%` : "—"} · {q.ap}AP</span>
+          </button>
+        ))}
+      </div>
+      <button type="button" className="mt-1 w-full plank border border-border px-2 py-1 text-xs" onClick={() => api.current?.v141("tbClose")}>Cancel</button>
     </div>
   );
 }
