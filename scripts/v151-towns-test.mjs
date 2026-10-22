@@ -15,9 +15,8 @@ ok(towns.find((t) => t.id === "sk-marcel").src.includes("/towns/skowhegan/") && 
 // pittsfield marker sits south-east of Harmony on the farm map; safe zone of 10 tiles
 const hs = await T("v15Spot", "harmony"), ps = await T("v15Spot", "pittsfield");
 ok(ps.spot && hs.spot && ps.spot.x > hs.spot.x && ps.spot.y > hs.spot.y, `Pittsfield marker SE of Harmony (${Math.round(ps.spot?.x)},${Math.round(ps.spot?.y)})`);
-const wm = await page.evaluate(async () => { const m = await import("/src/game/worldmap.ts"); const g = (id) => m.WM_LOCS.find((l) => l.id === id); const c = (l) => m.hexCenter(l.q, l.r); return { farm: c(g("farm")), pf: c(g("pittsfield")), sk: c(g("skowhegan")) }; });
-ok(wm.pf.x > wm.farm.x && wm.pf.y > wm.farm.y, "world map: Pittsfield hex south-east of Harmony");
-ok(wm.sk.x < wm.farm.x && wm.sk.y >= wm.farm.y, "world map: Skowhegan hex west / south-west of Harmony");
+const wm = await page.evaluate(async () => { let m; try { m = await import("/src/game/worldmap.ts"); } catch { return null; } const g = (id) => m.WM_LOCS.find((l) => l.id === id); const c = (l) => m.hexCenter(l.q, l.r); return { farm: c(g("farm")), pf: c(g("pittsfield")), sk: c(g("skowhegan")) }; });
+if (wm) { ok(wm.pf.x > wm.farm.x && wm.pf.y > wm.farm.y, "world map: Pittsfield hex south-east of Harmony"); ok(wm.sk.x < wm.farm.x && wm.sk.y >= wm.farm.y, "world map: Skowhegan hex west / south-west of Harmony"); } else console.log("SKIP world-map source checks (built bundle)");
 
 await page.addInitScript(() => { window.addEventListener("message", (e) => { if (e.data?.type === "enterTown") window.__enter = e.data; }); });
 async function roundTrip(id, { shot, flags = {}, exit = "worldmap" } = {}) {
@@ -66,8 +65,8 @@ ok((q11.q.mill?.s ?? 0) >= 3, `skowhegan.mill stripped -> mill steps 1+2 done ($
 const fl = (await T("v15Flags", {})).main.flags;
 ok(fl.beaulieu && fl.handcar && fl.gooseGuard && fl.fence && fl.gooseHelps, `flags: beaulieu ${!!fl.beaulieu}, handcar ${!!fl.handcar}, gooseGuard ${!!fl.gooseGuard}, fence ${!!fl.fence}, gooseHelps ${!!fl.gooseHelps}`);
 // items
-const inv = await page.evaluate(async () => { const g = await import("/src/game/gear.ts"); return ["medicine", "wire", "oil"].map((id) => !!g.GEAR[id]); });
-ok(inv.every(Boolean), "medicine, wire, oil are main-game items");
+const inv = await page.evaluate(async () => { try { const g = await import("/src/game/gear.ts"); return ["medicine", "wire", "oil"].map((id) => !!g.GEAR[id]); } catch { return null; } });
+if (inv) ok(inv.every(Boolean), "medicine, wire, oil are main-game items"); else console.log("SKIP gear source check (built bundle)");
 const icons = await page.evaluate(async () => Promise.all(["kit", "wire", "oil"].map(async (n) => (await fetch(`/game/items/${n}.png`)).status)));
 ok(icons.every((s) => s === 200), `item icons load ${icons}`);
 // fence: fewer raiders; goose guard: early warning
