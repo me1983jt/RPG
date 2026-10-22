@@ -4958,8 +4958,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// town quests: an arrow at the screen edge toward the exit that leads there
 		townQuestsDone();
 		let row = 0;
+		// v14.6: quests that point the same way share one arrow; their labels stack under it
+		const groups = new Map();
 		for (const q of l1.tq ?? []) {
 			const g = questGate(q);
+			const k = g ? `${g.x},${g.y}` : "here";
+			if (!groups.has(k)) groups.set(k, { g, labels: [] });
+			groups.get(k).labels.push(q.label);
+		}
+		for (const { g, labels } of groups.values()) {
+			const q = { label: labels.join(" · ") };
 			ctx.save();
 			ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
 			if (!g) { const p = sx(player.x, player.y); ctx.fillStyle = "#f0c040"; ctx.fillText(`★ ${q.label}: you're here`, p.sx, p.sy - 80 * zoom - row * 16); ctx.restore(); row++; continue; }
@@ -4976,8 +4984,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.restore(); ctx.save();
 			ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
 			const lx = Math.max(70, Math.min(viewW - 70, ax)), lyy = Math.max(20, Math.min(viewH - 26, ay + (ay > viewH / 2 ? -22 : 26)));
-			const w = ctx.measureText(q.label).width + 12; ctx.fillStyle = "rgba(15,12,8,.8)"; ctx.fillRect(lx - w / 2, lyy - 13, w, 18);
-			ctx.fillStyle = "#f0c040"; ctx.fillText(q.label, lx, lyy);
+			const up = ay > viewH / 2 ? -1 : 1;
+			labels.forEach((lab, i) => {
+				const yy = lyy + up * i * 20;
+				const w = ctx.measureText(lab).width + 12; ctx.fillStyle = "rgba(15,12,8,.8)"; ctx.fillRect(lx - w / 2, yy - 13, w, 18);
+				ctx.fillStyle = "#f0c040"; ctx.fillText(lab, lx, yy);
+			});
 			ctx.restore();
 		}
 	}
@@ -5002,7 +5014,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
 			],
-			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
+			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => [k, Number(p?.[k]) || 1])),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
 			extra: JSON.parse(JSON.stringify(l1.tx?.[id] ?? {})),
@@ -5029,6 +5041,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			l1.tf = l1.tf ?? {};
 			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = v;
 		}
+		const moved = townMapFlags(l1.tf);
+		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
 		townQuestsDone();
 		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[town.id] = JSON.parse(JSON.stringify(st.extra)); }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
@@ -5045,13 +5059,52 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		saveGame(); sync(true);
 		return true;
 	}
+	/** v14.6: main quest stages for the town (DESIGN.md "Quest mapping"); all read-only on the town side. */
+	function townStoryFlags() {
+		const o = { "story.act": w13.main?.act ?? 1, "story.snow": snow, "story.raids": raidNight };
+		for (const k of ["seed", "ferry", "dog", "radio", "moose"]) o[`story.q10.${k}`] = q10[k] ?? 0;
+		(q10.parts ?? []).forEach((v, i) => { o[`story.q10.radioPart${i}`] = !!v; });
+		for (const q of Q11) o[`story.q11.${q.id}`] = q11.q[q.id]?.s ?? 0;
+		return o;
+	}
+	/** v14.6: town progress -> our quest state. Only ever moves a quest forward; unknown values are ignored. */
+	const TOWN_FLAG_MAP = {
+		"harmony.firstSnow": { given: ["snow", 1], wood: ["snow", 1], done: ["snow", 2] },
+		"harmony.dog": { ranOff: ["dog", 1], tracks: ["dog", 2], found: ["dog", 3], done: ["dog", 4] },
+		"harmony.radio": { offered: ["radio", 1], tube: ["radio", 1, 0], done: ["radio", 1, 0] },
+		"harmony.meds": { away: ["q11:meds", 1], returned: ["q11:meds", 1], done: ["q11:meds", 1] },
+		"harmony.school": { offered: ["q11:school", 1], cleared: ["q11:school", 2] },
+		"harmony.bike": { seen: ["q11:bike", 1], looked: ["q11:bike", 2] },
+	};
+	function townMapFlags(f) {
+		const moved = [];
+		const fwd = (what, n, part) => {
+			if (what === "snow") { if (snow < n) { snow = n; moved.push(`snow ${n}`); } return; }
+			if (what.startsWith("q11:")) {
+				const q = Q11.find((x) => x.id === what.slice(4));
+				if (!q) return;
+				const st = q11St(q.id);
+				if (st.s < n) { st.s = n; st.left = 0; moved.push(`${q.id} ${n}`); q11Begin(q); }
+				return;
+			}
+			if ((q10[what] ?? 0) < n) { q10[what] = n; moved.push(`${what} ${n}`); }
+			if (part != null && q10.parts && !q10.parts[part]) { q10.parts[part] = true; moved.push(`${what} part ${part}`); }
+		};
+		for (const [key, table] of Object.entries(TOWN_FLAG_MAP)) {
+			const v = f?.[key];
+			if (typeof v === "string" && Object.prototype.hasOwnProperty.call(table, v)) fwd(...table[v]);
+		}
+		if (f?.["harmony.radioTube"] === true || f?.["harmony.radioTube"] === "got") fwd("radio", 1, 0);
+		if (moved.some((m) => m.startsWith("dog"))) { if (q10.dog >= 2) q10PlaceDog(); }
+		return moved;
+	}
 	/** v14.5: town quest markers go away when the town marks the quest past the "go there" stage, or the RPG finishes it. */
-	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]] };
+	const TOWN_QUEST_DONE = { "harmony-salt": ["harmony.saltRun", ["returned", "done"]], "harmony-lostdog": ["harmony.lostDog", ["found", "done"]], "harmony-meds": ["harmony.meds", ["returned", "done"]], "harmony-dog": ["harmony.dog", ["found", "done"]], "harmony-radio": ["harmony.radio", ["done"]] };
 	function townQuestsDone() {
 		if (!l1.tq?.length) return;
 		l1.tq = l1.tq.filter((q) => {
 			const d = TOWN_QUEST_DONE[q.id];
-			if (q.id === "harmony-lostdog" && q10.dog >= 3) return false;
+			if ((q.id === "harmony-lostdog" || q.id === "harmony-dog") && q10.dog >= 3) return false;
 			return !(d && d[1].includes(l1.tf?.[d[0]]));
 		});
 	}
@@ -12030,6 +12083,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmGo: (q, r) => wmGo(q, r),
 		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
 		town144Spot: () => townSpot(ISO_TOWNS[0]),
+		town146: () => ({ snow, dog: q10.dog, radio: q10.radio, parts: [...q10.parts], meds: q11.q.meds?.s ?? 0, school: q11.q.school?.s ?? 0, bike: q11.q.bike?.s ?? 0, story: townStoryFlags(), stats: townState().stats }),
+		town146Set: (o) => { if (o.snow != null) snow = o.snow; if (o.dog != null) q10.dog = o.dog; for (const k of ["meds", "school", "bike"]) if (o[k] != null) q11St(k).s = o[k]; },
 		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },
 		pos: () => player ? { x: player.x, y: player.y } : null,
 		town143Msg: (m) => m?.type === "leaveTown" ? leaveTown(m) : townQuest(m),

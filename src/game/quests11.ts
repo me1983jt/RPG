@@ -158,8 +158,8 @@ export const Q11: Q11Quest[] = [
     after: "Justin's saw rig howls on the tractor's power take-off.",
   },
   {
-    id: "bike", title: "Bike Parts", giver: "justin", offer: "That old motor bike by the barn",
-    ask: "That's Dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
+    id: "bike", title: "Bike Parts", giver: "sarah", offer: "That old motor bike by the barn",
+    ask: "That's Justin's dad's old motor bicycle, a Whizzer, leaning on the barn since before the lights went out. Frame's good. She's missing the carburetor, the chain, the engine's seized, there's no tank, no plug and the back tire's rotted off. Find the parts and we'll put her together on the bench. Then you can run the roads twice as quick. Loud, though. Every raider in the county'll hear you coming.",
     accept: "I'll find the parts",
     steps: [
       { kind: "take", site: "farmBike", hud: "look over the old motor bicycle by the barn.", log: "Rust, mouse nests and a good frame. A list of parts in your head.", take: { speaker: "Old motor bicycle", text: "A balloon-tire bicycle with a little engine bolted in the frame. Seized, gutted and flat, but straight.", label: "Make a list of what she needs" } },
@@ -170,7 +170,7 @@ export const Q11: Q11Quest[] = [
       { kind: "take", site: "npc:cal", hud: "buy a spark plug from Jack Ready (6 iron).", log: "Jack sells you a plug in its box. \"The ready prosper,\" he says.", give: [["sparkplug", 1]], cost: 6, take: { speaker: "Jack Ready", text: "\"A spark plug? Got a whole coffee can of 'em. Six iron.\"", label: "Buy a spark plug (6 iron)" } },
       { kind: "take", site: "farmBike", hud: "build the bike at the farm workbench.", log: "Two evenings on the bench, skinned knuckles, and she fires on the third kick.", need: ["carburetor", "chain", "engine", "gastank", "sparkplug", "tire"], take: { speaker: "Farm workbench", text: "Everything laid out on the bench: carb, chain, engine, tank, plug and tire.", label: "Build the motor bicycle" } },
     ],
-    done: "Listen to her go! Just like Dad's. She'll drink gas, mind, so keep a can on you. And no kids on it. Not ever.",
+    done: "Listen to her go! Just like his dad's. She'll drink gas, mind, so keep a can on you. And no kids on it. Not ever.",
     doneLabel: "Take her out", reward: [["gas", 3]], xp: 40,
     after: "The motor bicycle runs. Ride it with the Ride button when you're beside it; it burns gas.",
   },

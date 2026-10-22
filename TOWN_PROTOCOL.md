@@ -1,4 +1,4 @@
-# Town layer protocol v1 (Maine RPG v14.5)
+# Town layer protocol v1 (Maine RPG v14.6)
 
 The RPG opens a town as a full-screen same-origin iframe when the player walks into its marker in the
 isometric world (Harmony village: a cluster of houses beside the road, a short walk from the Cambridge Road
@@ -60,3 +60,10 @@ Applying a returned state:
 v14.5: shots/ and tests/ are not copied in. Quest markers `harmony-salt` and `harmony-lostdog` clear when
 `harmony.saltRun` is returned/done or `harmony.lostDog` is found/done (or Goose is found in the RPG).
 `extra.skills` is stored and sent back as-is; the RPG doesn't apply town skill levels yet.
+
+v14.6: main-quest stages go out read-only as `story.act`, `story.snow`, `story.raids`, `story.q10.<seed|ferry|dog|radio|moose>`,
+`story.q10.radioPart<0-2>`, `story.q11.<questId>` (Q11 step s), plus `story.stage`, `story.gooseFound`, `story.day`, `story.seen.*`.
+Returned `harmony.*` flags move our quests forward only (unknown values ignored):
+firstSnow given|wood -> snow 1, done -> snow 2; dog ranOff 1, tracks 2, found 3, done 4; radio offered -> radio 1, tube|done (or
+`harmony.radioTube: true`) -> radio 1 + part 1; meds away|returned|done -> Medicine Run step 1; school offered -> 1, cleared -> 2;
+bike seen -> 1, looked -> 2. Markers `harmony-meds`, `harmony-dog`, `harmony-radio` clear when the town marks them returned/found/done.

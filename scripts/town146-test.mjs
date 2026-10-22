@@ -1,0 +1,42 @@
+// v14.6: Harmony uses the main-game quests: story.* stages go out, harmony.* flags come back forward-only.
+import { boot } from "./v4-lib.mjs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+const { browser, page, errs, T, begin } = await boot(url, { vw: 1366, vh: 768, v14: true });
+let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
+await begin(); await T("v14Set", { st: 5 });
+await page.evaluate(() => { window.__wmEnc = 1; window.__townSrc = "/towns/_stub/harmony.html"; window.__controlsTest.l141Calm?.(); });
+const sp = await T("town144Spot");
+const enter = async () => { await T("setPos", sp.x + 420, sp.y + 200); await page.waitForTimeout(700); await T("setPos", sp.x + 30, sp.y + 20); await page.waitForTimeout(1500); };
+const leave = (flags) => page.evaluate((f) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { questFlags: f } }), flags);
+await T("town146Set", { snow: 0, dog: 0, meds: 0, school: 0, bike: 0 });
+let d = await T("town146");
+const sf = d.story;
+ok(["story.act", "story.snow", "story.raids", "story.q10.dog", "story.q10.radio", "story.q11.meds", "story.q11.school", "story.q11.bike"].every((k) => k in sf), `story.* stages sent (${Object.keys(sf).length} keys)`);
+ok(d.stats && Object.keys(d.stats).length === 8 && Object.values(d.stats).every((v) => typeof v === "number"), `stats still sent ${JSON.stringify(d.stats)}`);
+await enter();
+ok(await page.getByTestId("town-layer").isVisible(), "town open");
+await leave({ "harmony.firstSnow": "done", "harmony.dog": "tracks", "harmony.meds": "away", "harmony.school": "cleared", "harmony.bike": "looked", "harmony.radio": "tube" });
+d = await T("town146");
+ok(d.snow === 2, `firstSnow done -> snow 2 (${d.snow})`);
+ok(d.dog === 2, `dog tracks -> q10.dog 2 (${d.dog})`);
+ok(d.meds === 1, `meds away -> Medicine Run step 1 (${d.meds})`);
+ok(d.school === 2, `school cleared -> School Days step 1 done (${d.school})`);
+ok(d.bike === 2, `bike looked -> Bike Parts step 1 done (${d.bike})`);
+ok(d.radio >= 1 && d.parts[0] === true, `radio tube -> radio part 1 (${d.radio}, ${d.parts})`);
+// never backward, unknown values ignored
+await T("town146Set", { snow: 3, dog: 4, meds: 3 });
+await enter();
+await leave({ "harmony.firstSnow": "given", "harmony.dog": "ranOff", "harmony.meds": "away", "harmony.school": "bogus", "harmony.bike": 7, "harmony.radioTube": true });
+d = await T("town146");
+ok(d.snow === 3 && d.dog === 4 && d.meds === 3, `no quest moves backward (snow ${d.snow}, dog ${d.dog}, meds ${d.meds})`);
+ok(d.school === 2 && d.bike === 2, "unknown values are ignored");
+d = await T("town143");
+ok(d.state.questFlags["story.snow"] === 3 && d.state.questFlags["story.q10.dog"] === 4, "story.* reflects the real state on the next visit");
+ok(d.state.questFlags["harmony.school"] === "bogus", "town's own harmony.* values are still stored and sent back as-is");
+// merged quest arrows
+await page.evaluate(() => { const t = window.__controlsTest; t.town143Msg({ type: "startQuest", id: "harmony-meds", target: "skow", label: "Medicine for Mira (Skowhegan)" }); t.town143Msg({ type: "startQuest", id: "harmony-x", target: "skow", label: "Second job, same way" }); t.choose?.("close"); });
+await page.waitForTimeout(3500);
+await page.screenshot({ path: "beta30-shots/v146-merged-arrows.png" });
+ok(!errs.length, `no errors ${errs.join(" | ")}`);
+console.log(fail ? `${fail} FAILED` : "ALL PASS");
+await browser.close(); process.exit(fail ? 1 : 0);
