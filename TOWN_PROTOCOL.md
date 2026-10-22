@@ -75,8 +75,8 @@ bike seen -> 1, looked -> 2. Markers `harmony-meds`, `harmony-dog`, `harmony-rad
 | app | source (env override) | entry ids (`enterTown.town`) | RPG markers (`ISO_TOWNS`) |
 |---|---|---|---|
 | harmony | `/workspace/quest-harmony` (`TOWN_HARMONY_SRC`) | harmony, bunker, kennebec, skow, raiders, north, grokwoods, depot, barnyard, sugarbush (`?scene=`) | as before |
-| pittsfield | `/workspace/quest-pittsfield` (`TOWN_PITTSFIELD_SRC`) | pittsfield (scene main), coop, depot | `pittsfield` (farm map, south-east of Harmony past the co-op), `pf-coop` (at the Seed Run co-op), `pf-depot` |
-| skowhegan | `/workspace/quest-skowhegan` (`TOWN_SKOWHEGAN_SRC`) | skowhegan (scene main), hospital, mill, marcelstore | `skowhegan` (map 2, Water St between the hospital and mill), `sk-hospital`, `sk-mill`, `sk-marcel` |
+| pittsfield | `/workspace/quest-pittsfield` (`TOWN_PITTSFIELD_SRC`) | pittsfield, coop, depot | `pittsfield` (farm map, south-east of Harmony past the co-op), `pf-coop` (at the Seed Run co-op), `pf-depot` |
+| skowhegan | `/workspace/quest-skowhegan` (`TOWN_SKOWHEGAN_SRC`) | skowhegan, hospital, mill, marcelstore | `skowhegan` (map 2, Water St between the hospital and mill), `sk-hospital`, `sk-mill`, `sk-marcel` |
 
 - World map hexes: `pittsfield` (6,7), south-east of Harmony; `skowhegan` (3,6), west/south-west. Tapping one walks you to its marker and opens the town.
 - Safe zones: the `pittsfield` and `skowhegan` markers get Harmony's 10-tile no-attack zone; the sub-entries (`sub: true`) do not, so the co-op, hospital and mill fights still happen.

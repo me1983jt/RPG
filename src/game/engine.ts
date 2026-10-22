@@ -4940,10 +4940,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		{ id: "depot", name: "The Collector's depot", map: 1, at: [92, 34], act: 6, upto: 6 },
 		// v15.1: Quest RPG's Pittsfield (southeast of Harmony, by the co-op on the farm map) and Skowhegan (Water St, between the hospital and mill on map 2).
 		// app: which town game; entry: the enterTown.town id it gets. Sub-entries open the same game at a scene and have no safe zone of their own.
-		{ id: "pittsfield", name: "Pittsfield", map: 0, at: [98, 66], app: "pittsfield", entry: "pittsfield", scene: "main" },
+		{ id: "pittsfield", name: "Pittsfield", map: 0, at: [98, 66], app: "pittsfield", entry: "pittsfield" },
 		{ id: "pf-coop", name: "Pittsfield co-op", map: 0, at: [Q10_SITES.coop.tx, Q10_SITES.coop.ty + 3], app: "pittsfield", entry: "coop", sub: true },
 		{ id: "pf-depot", name: "Pittsfield depot", map: 0, at: [104, 60], app: "pittsfield", entry: "depot", sub: true },
-		{ id: "skowhegan", name: "Skowhegan · Water Street", map: 2, at: [56, 60], app: "skowhegan", entry: "skowhegan", scene: "main" },
+		{ id: "skowhegan", name: "Skowhegan · Water Street", map: 2, at: [56, 60], app: "skowhegan", entry: "skowhegan" },
 		{ id: "sk-hospital", name: "Redington hospital", map: 2, at: [Q11_SITES.skowHospital.tx, Q11_SITES.skowHospital.ty + 3], app: "skowhegan", entry: "hospital", sub: true },
 		{ id: "sk-mill", name: "Woolen mill floor", map: 2, at: [Q11_SITES.skowMill.tx, Q11_SITES.skowMill.ty + 3], app: "skowhegan", entry: "mill", sub: true },
 		{ id: "sk-marcel", name: "Marcel's store", map: 2, at: [62, 64], app: "skowhegan", entry: "marcelstore", sub: true },
@@ -5088,8 +5088,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function openTown(l) {
 		w13.seen[l.id] = true;
-		// v15.1: Pittsfield/Skowhegan main markers name their Main St scene, so a class carried over in the shared extra has a scene to start in
-		if (!l.scene && townDef(l.town)?.scene) l = { ...l, scene: townDef(l.town).scene };
 		town = { id: l.town, loc: l.id, src: townSrc(l.town) + (l.scene ? `${townSrc(l.town).includes("?") ? "&" : "?"}scene=${l.scene}` : ""), n: (townN = townN + 1), scene: l.scene };
 		phase = "town"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
 		pushLog(`${l.name}.`);
