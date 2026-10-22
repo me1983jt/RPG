@@ -147,3 +147,17 @@ Prices and loot (camp raids, caravans, Marcel, Bangor) were reviewed and are unc
 | The Grok | Claw only from the quest | Drops 2-3 Grok claws, 3 hide, 3 meat |
 | Hot cider / cider donut | Heal only | +6 food +20 water / +14 food, each +15 stamina |
 | Bob's lever gun | — | atk 10, slowest reload of any long gun (1.15 s), below the Wyndham (12) and scoped carbine (14) |
+
+## v15.1 (turn-based fairness pass)
+
+Numbers live in `src/game/engine.ts` next to `TB_COST` / `AIM15` / `tbEnemyAp`.
+
+| Area | Before | After | Why |
+|---|---|---|---|
+| Enemy AP per turn | 6 for everyone (4 with a crippled leg) | **5** for scouts, wolves, animals; **6** for elites, bosses, brutes and armor raiders; −2 with a crippled leg (min 2) | A melee hit costs 3 AP, so 6 AP let every scout hit twice a turn while a new player (5 AP, 4 per gun shot) fires once. Now ordinary foes hit once and step; the big ones still double up |
+| Enemy melee miss | 12% | **18%** | Paired with the AP cut it takes early fights from "lose half your HP per round" to tense |
+| Your base hit chance | 48% + skill/stat terms | **55%** + same terms | A fresh character had about 50% on the torso and the 5% floor on eyes; aimed shots were never worth the extra AP |
+| Eyes penalty | −45 | **−40** | Eyes still the hardest shot (with 0 skill ≈ 15-20%), but not an automatic miss |
+| Raid wave size | 2 + wave + ⌊night/2⌋ (night 1: 3/4/5) | 1 + wave + ⌊night/2⌋, **cap 7** (night 1: 2/3/4) | Each raider gets a full turn in turn-based mode, so five raiders at once on night 1 was a near-certain loss. Wave counts (3–6) are unchanged |
+
+Unchanged: head −30, arms −15, groin −25, legs −10, AP costs (move 1, melee 3, gun 4, +1 aimed, reload 2, item 2), player AP 5 + agility/2.

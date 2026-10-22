@@ -9298,7 +9298,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (raid.t <= 0) {
 				raid.wave += 1;
 				raid.phase = "wave";
-				raid.left = 2 + raid.wave + Math.floor(raid.night / 2);
+				raid.left = Math.min(7, 1 + raid.wave + Math.floor(raid.night / 2)); // v15.1: one fewer per wave, cap 7 (turn-based fights)
 				if (raid.defend) { v14.defendWave = raid.wave - 1; defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp })); }
 				raid.spawnT = 0;
 				pushLog(`Wave ${raid.wave} of ${raid.waves}.`);
@@ -11528,7 +11528,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const HEX15_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 	const TB_COST = { move: 1, melee: 3, gun: 4, aimed: 1, reload: 2, item: 2 };
 	const MAG15 = { revolver: 6, carbine: 5, scatter: 2 };
-	const AIM15 = [["head", "Head", -30], ["eyes", "Eyes", -45], ["arms", "Arms", -15], ["torso", "Torso", 0], ["groin", "Groin", -25], ["legs", "Legs", -10]];
+	const AIM15 = [["head", "Head", -30], ["eyes", "Eyes", -40], ["arms", "Arms", -15], ["torso", "Torso", 0], ["groin", "Groin", -25], ["legs", "Legs", -10]];
+	const TB_BASE_HIT = 55, TB_FOE_MISS = .18; // v15.1 balance (was 48 and .12)
 	let tb = null;
 	let tbPaid = false, tbChanceNext = null;
 	let tbAuto = (() => { try { return localStorage.getItem("maine-rpg-tb15") !== "off"; } catch { return true; } })();
@@ -11585,7 +11586,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cur = tbCur();
 		if (!cur) return;
 		if (cur.id === "p") { ap = apMax; apWalk = 0; tb.popup = null; }
-		else { const e = tbFoe(cur.id); tb.eAp = e ? (e.crippleLeg > 0 ? 4 : 6) : 0; tb.eT = .35; }
+		else { const e = tbFoe(cur.id); tb.eAp = e ? tbEnemyAp(e) : 0; tb.eT = .35; }
 		sync(true);
 	}
 	function tbNext() {
@@ -11631,7 +11632,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!gun && d > 1) return 0;
 		if (gun && Math.hypot(e.x - player.x, e.y - player.y) > swingOf().range + 30) return 0;
 		const mod = AIM15.find((a) => a[0] === part)?.[2] ?? 0;
-		let c = 48 + skillOf(gun ? "rifle" : "melee") * .45 + perc() * 3 + (player.luck || 0) + mod - (gun ? Math.max(0, d - 2) * 4 : 0);
+		let c = TB_BASE_HIT + skillOf(gun ? "rifle" : "melee") * .45 + perc() * 3 + (player.luck || 0) + mod - (gun ? Math.max(0, d - 2) * 4 : 0);
 		if (injured("blind")) c *= INJ_FX.blindAim;
 		if (injured("arms")) c *= INJ_FX.armAim;
 		return Math.max(5, Math.min(95, Math.round(c)));
@@ -11694,6 +11695,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		body.dir = facing8(c.x - body.x, c.y - body.y);
 		tb.anim = { body, fx: body.x, fy: body.y, tx: c.x, ty: c.y, t: 0 };
 	}
+	/** v15.1 balance: 5 AP for most foes (one hit plus a step), 6 for elites/bosses, 2 less on a crippled leg. */
+	function tbEnemyAp(e) { const big = !!(e.elite || e.boss || e.variant === "brute" || e.variant === "armor"); return Math.max(2, (big ? 6 : 5) - (e.crippleLeg > 0 ? 2 : 0)); }
 	function tbEnemyAct(e) {
 		const eh = hexOf15(e.x, e.y), ph = hexOf15(player.x, player.y);
 		const d = hexDist15(eh, ph);
@@ -11709,7 +11712,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			e.dir = facing8(player.x - e.x, player.y - e.y);
 			e.cooldown = 0; e.atkAnim = .4;
 			const dmg = e.crippleArm > 0 ? Math.max(1, Math.round(e.atk * .65)) : e.atk;
-			if (e.blind141 && Math.random() > INJ_FX.enemyBlindAim || Math.random() < .12) { floater(player.x, player.y - 30, "miss"); pushLog(`${e.name ?? bodyTitle(e.kind)} misses.`); }
+			if (e.blind141 && Math.random() > INJ_FX.enemyBlindAim || Math.random() < TB_FOE_MISS) { floater(player.x, player.y - 30, "miss"); pushLog(`${e.name ?? bodyTitle(e.kind)} misses.`); }
 			else { player.invuln = 0; hurtPlayer(dmg, e.x, e.y); }
 			return true;
 		}
