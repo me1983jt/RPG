@@ -149,7 +149,7 @@ await shot("01-start-menu.png");
 await page.getByRole("button", { name: "Winter Survival" }).click(); await wait(2500);
 s11 = await T("q11State"); check("winter-start", s11.mode11 === "winter" && s11.season === 3, s11.mode11);
 await wait(1500); await shot("08-winter-survival.png");
-await T("q11ModeTime", 600 * 3.2); await wait(800);
+await T("q11ModeTime", 1200 * 3.2); await wait(800); // days are 20 min since v14.1
 let mr = await T("modeResult"); check("winter-end", !!mr && mr.mode === "winter" && (await T("dbg")).phase === "menu", mr);
 await page.getByRole("button", { name: "Back to menu" }).click(); await wait(400);
 // Night Watch: catch a prowler, then dawn

@@ -154,10 +154,8 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
           choices: [{ label: "Glad they're good", id: "q10-seed-done" }],
         },
       };
-    if (q.seed === 0)
-      return { add: [{ label: "You look worried, Sarah", id: "q10-seed-ask" }] };
-    return null;
   }
+  // v15 merged Justin's quests into Sarah's: seed, ferry and moose offers all come from her.
   if (role === "sarah") {
     if (q.moose === 4 || q.moose === 3)
       return {
@@ -170,6 +168,7 @@ export function q10Talk(role: string, q: Q10State, snowDone: boolean, raidOn: bo
         },
       };
     const add: { label: string; id: string }[] = [];
+    if (q.seed === 0) add.push({ label: "You look worried, Sarah", id: "q10-seed-ask" });
     if (q.ferry === 0) add.push({ label: "Anything need doing?", id: "q10-ferry-ask" });
     if (q.moose === 0) add.push({ label: "Meat for the winter?", id: "q10-moose-ask" });
     return add.length ? { add } : null;

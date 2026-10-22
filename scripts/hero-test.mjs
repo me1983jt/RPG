@@ -1,5 +1,5 @@
 import { boot } from "./v4-lib.mjs";
-const url = process.argv[2] || "http://127.0.0.1:8111/";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
 const out = process.env.HEROOUT || "/workspace/maine-rpg/beta17-shots/";
 const { browser, page, errs, T, begin } = await boot(url, { vw: 1280, vh: 800 });
 const R = {}; const fail = [];
@@ -25,7 +25,8 @@ for (const [sx, sy] of vec) {
   if (sx === 1 && sy === 0) await page.screenshot({ path: out + "02-walk-east.png" });
   await T("setPos", p0.x, p0.y); await wait(200);
 }
-check("walk-8-dirs", dirs.size === 8 && walkFrames.size === 8 && walkBad === 0, { dirs: [...dirs], frames: [...walkFrames], walkBad });
+// v14.1+: walking snaps to the 6 hex facings (1,2,3,5,6,7); pure N/S takes a neighbouring diagonal
+check("walk-hex-dirs", [1, 2, 3, 5, 6, 7].every((d) => dirs.has(d)) && !dirs.has(0) && !dirs.has(4) && walkFrames.size === 8 && walkBad === 0, { dirs: [...dirs], frames: [...walkFrames], walkBad });
 // gun
 await T("giveItem", "carbine", 1); await T("invEquip", "carbine", "main"); await wait(200);
 await T("swingNow"); l = sum(await take(450));

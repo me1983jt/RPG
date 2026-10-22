@@ -3022,8 +3022,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Farm talk options for the play types. */
 	function q11FarmChoices(role) {
 		if (snow < 3 || raid || mode11) return [];
-		if (role === "sarah") return [{ label: "Work on the farm", id: "q11-farm" }];
-		if (role === "sarah") return [{ label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
+		if (role === "sarah") return [{ label: "Work on the farm", id: "q11-farm" }, { label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
 		return [];
 	}
 	function q11Choice(id) {
