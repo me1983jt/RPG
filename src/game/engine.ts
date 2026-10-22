@@ -4983,8 +4983,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.setTransform(1, 0, 0, 1, 0, 0);
 			ctx.restore(); ctx.save();
 			ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
-			const lx = Math.max(70, Math.min(viewW - 70, ax)), lyy = Math.max(20, Math.min(viewH - 26, ay + (ay > viewH / 2 ? -22 : 26)));
-			const up = ay > viewH / 2 ? -1 : 1;
+			// v14.7: labels sit inward from the arrow (toward the middle of the view), clear of the corner HUD and zoom buttons
+			const inX = onScreen ? ax : ax - Math.cos(ang) * 64, inY = onScreen ? ay - 20 : ay - Math.sin(ang) * 64;
+			const lx = Math.max(viewW * .28, Math.min(viewW * .72, inX)), lyy = Math.max(60, Math.min(viewH * .62, inY));
+			const up = lyy > viewH / 2 ? -1 : 1;
 			labels.forEach((lab, i) => {
 				const yy = lyy + up * i * 20;
 				const w = ctx.measureText(lab).width + 12; ctx.fillStyle = "rgba(15,12,8,.8)"; ctx.fillRect(lx - w / 2, yy - 13, w, 18);
@@ -7328,6 +7330,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (found) addStack(items, found, 1);
 			if (mapId === 2 && Math.random() < .35) addStack(items, Math.random() < .5 ? "medicine" : "gas", 1);
 			if (Math.random() < .4) addStack(items, "cloth", 1);
+			// v14.7: meds on raiders: a medkit now and then, a doctor's bag rarely
+			const med = Math.random();
+			if (med < (enemy.elite ? .03 : .012)) addStack(items, "docbag", 1);
+			else if (med < (enemy.elite ? .14 : .07)) addStack(items, "medkit", 1);
 		} else {
 			addStack(items, "meat", enemy.kind === "moose" ? 3 : enemy.kind === "deer" ? 2 : 1);
 			addStack(items, "bone", enemy.kind === "moose" ? 3 : enemy.kind === "deer" ? 2 : 1);
@@ -7410,6 +7416,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else {
 			addStack(items, "cloth", 1);
 			if (Math.random() < .55) addStack(items, "bandage", 1);
+			if (Math.random() < .08) addStack(items, "medkit", 1);
 		}
 		leavePile(npc.x, npc.y, npc.name, items, scrap, "", npc.dir, folkSheet(npc));
 		pushLog(`${npc.name} is down. Search the body.`);
@@ -7458,6 +7465,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			][Math.random() * 5 | 0];
 			addStack(items, food, 1);
 		} else if (roll < .93) addStack(items, "bandage", 1);
+		else if (roll < .975) addStack(items, Math.random() < .12 ? "docbag" : "medkit", 1);
 		else addStack(items, "kit", 1);
 		leavePile(crow.x, crow.y, "Crow drop", items, 0, "", 0);
 		floater(crow.x, crow.y - 20, "Dropped");
@@ -9852,14 +9860,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	var groundPat = new Map();
-	function groundFill(tile) {
-		const name = [
+	function groundFill(tile, seed = 0) {
+		const name = terrainPick([
 			"ground-mat-dirt",
 			"ground-mat-scrub",
 			"ground-mat-road",
 			"ground-mat-rubble",
 			"ground-mat-snow"
-		][tile] ?? "ground-mat-dirt";
+		][tile] ?? "ground-mat-dirt", seed);
 		const cached = groundPat.get(name);
 		if (cached) return cached;
 		const img = images.get(name);
@@ -9918,7 +9926,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (alpha < .02 || w <= 0 || h <= 0) return;
 		const pad = alpha > .98 ? 1.5 : 0;
 		ctx.globalAlpha = alpha;
-		ctx.fillStyle = groundFill(tile);
+		ctx.fillStyle = groundFill(tile, TERRAIN.variants.size ? Math.floor(x / TILE) * 131 + Math.floor(y / TILE) * 977 : 0);
 		ctx.fillRect(x, y, w + pad, h + pad);
 		if (snow) {
 			ctx.globalAlpha = alpha * .52;
@@ -10018,7 +10026,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const flick = (k) => 1 + Math.sin(t * 9 + k) * .04 + Math.sin(t * 23 + k * 3) * .03;
 		// the hero carries a small light; sharper eyes see a little further into it
 		const pp = at(player.x, player.y - 40);
-		lights.push({ x: pp.sx, y: pp.sy, r: (120 + Math.min(10, perc()) * 9) * zoom * (carrying("lantern") ? 1.7 : 1), a: carrying("lantern") ? .95 : .8, warm: carrying("lantern") ? .55 : .3 });
+		lights.push({ x: pp.sx, y: pp.sy, r: (120 + Math.min(10, perc()) * 9) * zoom * (carrying("lantern") ? 1.7 : 1) * (injured("blind") ? INJ_FX.blindLight : 1), a: carrying("lantern") ? .95 : .8, warm: carrying("lantern") ? .55 : .3 });
 		const margin = 320 * zoom;
 		// Mother Pelletier's lantern
 		for (const e of world.enemies) {
@@ -10310,7 +10318,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						void dh; void sc;
 						if (prop.kind === "firering" && prop.lit14 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 6, 30, false, 0, 0, drawCamX, drawCamY);
 						if ((prop.f14 || prop.p14) && buildOpen && (prop.hp ?? 0) < maxHp14(prop)) paintHp14(pt, H, (prop.hp ?? 0) / maxHp14(prop));
-					} else blit(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					} else blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3") && images.get("fx-fire")) blit("fx-fire", c.x, c.y - h * .35, h * .8, false, 0, 0, drawCamX, drawCamY);
@@ -12630,7 +12638,29 @@ function softenSprite(img, radius, protectRows = 0) {
 }
 /** v11.1 optional art (public/game/v2/optional.json, written by scripts/gen-optional-art.mjs). Only listed files are requested. */
 const OPTIONAL_ART = new Set();
+/** v14.7 drop-in terrain (see TERRAIN_SPEC.md): public/game/terrain/terrain.json lists files in public/game/terrain/.
+ * "<name>.png" replaces the built-in image of that name; "<name>-<n>.png" adds variants picked per tile/prop.
+ * Ground uses ground-<dirt|scrub|road|rubble|snow>[-n]. */
+const TERRAIN = { files: new Set(), variants: new Map() };
+const GROUND_KEYS = ["dirt", "scrub", "road", "rubble", "snow"];
+function terrainBase(stem) {
+	const g = /^ground-(dirt|scrub|road|rubble|snow)(?:-(\d+))?$/.exec(stem);
+	if (g) return `ground-mat-${g[1]}`;
+	return stem.replace(/-\d+$/, "");
+}
+/** Name to draw for an image, given a stable seed (tile index or prop id): a drop-in variant if any. */
+function terrainPick(name, seed) {
+	const v = TERRAIN.variants.get(name);
+	if (!v || !v.length) return name;
+	return v[((seed * 2654435761) >>> 0) % v.length];
+}
 async function loadImages(images) {
+	try {
+		const r = await fetch(`/game/terrain/terrain.json?v=${ART_V}`);
+		if (r.ok) for (const n of await r.json()) if (typeof n === "string" && /^[a-z0-9-]+$/.test(n.replace(/\.png$/, ""))) TERRAIN.files.add(n.replace(/\.png$/, ""));
+	} catch {
+		/* no terrain pack */
+	}
 	try {
 		const r = await fetch(`/game/v2/optional.json?v=${ART_V}`);
 		if (r.ok) for (const n of await r.json()) if (typeof n === "string") OPTIONAL_ART.add(n);
@@ -12641,12 +12671,22 @@ async function loadImages(images) {
 	for (const n of [...extra]) if (/^v2\/(bandit-[a-z]+|boss-collector)-walk$/.test(n)) extra.push(`${n}-atk`, `${n}-dead`);
 	// v11.2 lazy loading: bosses and attack/death sheets aren't needed for the first screen.
 	// The menu opens once the core set is in; the rest streams in right after.
-	const all = [...IMAGES, ...extra];
+	const terr = [...TERRAIN.files].map((f) => `terrain/${f}`);
+	const all = [...IMAGES, ...extra, ...terr];
 	const core = all.filter((n) => !LAZY_SHEET.test(n));
 	const lazy = all.filter((n) => LAZY_SHEET.test(n));
 	await loadSet(images, core);
 	LAZY_STATE.pending = lazy.length;
 	LAZY_STATE.done = loadSet(images, lazy).then(() => { LAZY_STATE.pending = 0; });
+	// drop-in terrain: exact names replace the built-in image; numbered ones become variants of it
+	for (const f of TERRAIN.files) {
+		const img = images.get(`terrain/${f}`);
+		if (!img) continue;
+		const base = terrainBase(f);
+		const list = TERRAIN.variants.get(base) ?? [];
+		list.push(`terrain/${f}`);
+		TERRAIN.variants.set(base, list);
+	}
 }
 const LAZY_SHEET = /^boss-|-(atk|dead|death|gun-atk|axe|down|hit|crouch|carry|talk)$/;
 const LAZY_STATE = { pending: -1, done: Promise.resolve() };

@@ -139,7 +139,7 @@ export const AILMENTS: Record<AilId, { name: string; text: string; cure: string;
 };
 /** v14.1: the crippled injuries and their effects. */
 export const INJURIES = ["blind", "arms", "legs"] as const;
-export const INJ_FX = { blindAim: 0.45, blindSight: 0.45, armAim: 0.75, enemyBlindAim: 0.5, enemyBlindSight: 0.5 };
+export const INJ_FX = { blindAim: 0.45, blindSight: 0.45, armAim: 0.75, enemyBlindAim: 0.5, enemyBlindSight: 0.5, blindLight: 0.5 };
 
 // ---------------- armor durability, dye, sets
 export const DURA_MAX = 100;
