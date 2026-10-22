@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>The Long Winter — Harmony</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css"></head><body>
+<div id="game">
+ <div id="bar">
+  <button data-verb="walk" title="Walk"><b>🚶</b><span>Walk</span></button>
+  <button data-verb="look" title="Look"><b>👁</b><span>Look</span></button>
+  <button data-verb="hand" title="Hand"><b>✋</b><span>Hand</span></button>
+  <button data-verb="talk" title="Talk"><b>💬</b><span>Talk</span></button>
+  <button data-verb="item" id="btnItem" title="Item"><b id="itemIcon">∅</b><span>Item</span></button>
+  <button id="btnCycle" title="Cycle verb"><b>⟳</b><span>Cycle</span></button>
+  <button id="btnInv" title="Inventory"><b>🎒</b><span>Inv</span></button>
+  <button id="btnStats" title="Stats"><b>📜</b><span>Stats</span></button>
+  <button id="btnMenu" title="Game menu"><b>⚙</b><span>Menu</span></button>
+  <div id="score">Score: 0</div>
+ </div>
+ <div id="view"><canvas id="cv" width="640" height="360"></canvas>
+  <div id="hud"><span id="hpTxt"></span></div><div id="hover"></div></div>
+ <div id="overlay"></div>
+</div>
+<script src="shared/character.js"></script><script src="js/story.js"></script><script src="js/scenes.js"></script><script src="js/acts.js"></script><script src="js/acts67.js"></script><script src="js/game.js"></script>
+</body></html>

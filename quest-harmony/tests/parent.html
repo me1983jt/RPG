@@ -1,0 +1,7 @@
+<!doctype html><html><head><link rel="icon" href="data:,"></head><body style="margin:0"><iframe id="f" src="../index.html" style="width:915px;height:412px;border:0"></iframe><script>
+window.log=[];const f=document.getElementById('f');
+const state={inventory:[{id:'medkit',qty:1,name:'Medkit'},{id:'jerky',qty:3},{id:'junk',qty:4}],hp:20,maxHp:30,injuries:{blinded:false,crippledArm:true,crippledLeg:false},
+ companions:[{id:'loki',name:'Loki',withYou:true}],stats:{strength:3,vigor:2,endurance:2,intellect:4,perception:2,luck:1,agility:2,grit:3},questFlags:{'story.stage':2},day:3,time:'10:30',extra:{}};
+window.sendEnter=(s)=>f.contentWindow.postMessage({type:'enterTown',protocol:1,town:'harmony',state:s||state},'*');
+addEventListener('message',e=>{log.push(e.data);if(e.data.type==='ready')sendEnter();});
+</script></body></html>

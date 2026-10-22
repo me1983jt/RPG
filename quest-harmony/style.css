@@ -1,0 +1,76 @@
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#0a0a08;overflow:hidden;touch-action:manipulation}
+body{font-family:"Courier New",monospace;color:#e8dcc0;display:flex;align-items:center;justify-content:center}
+#game{position:relative;width:640px;height:400px;transform-origin:center center;user-select:none;-webkit-user-select:none;
+ border:3px solid #2a1d10;box-shadow:0 0 0 2px #6b4b2a,0 0 30px #000}
+#bar{height:40px;display:flex;align-items:center;gap:2px;padding:2px 4px;
+ background:url(img/wood.jpg) center/cover,#5a3d22;border-bottom:3px solid #3a2a1a;position:relative}
+#bar button{position:relative;width:52px;height:34px;padding:0;cursor:pointer;color:#f3e6c8;font:inherit;
+ background:url(img/rust.jpg) center/cover,#6a3b1c;border:2px solid #2b1a0c;border-radius:3px;
+ box-shadow:inset 1px 1px 0 rgba(255,220,170,.4),inset -2px -2px 0 rgba(0,0,0,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+#bar button::before,#bar button::after{content:"";position:absolute;top:3px;width:4px;height:4px;border-radius:50%;background:radial-gradient(#d9c7a5,#4a3520)}
+#bar button::before{left:3px}#bar button::after{right:3px}
+#bar button b{font-size:15px;text-shadow:1px 1px #000}#bar button span{font-size:9px;text-shadow:1px 1px #000}
+#bar button.on{background:#b07a2a;box-shadow:inset 2px 2px 4px #000;color:#fff8d0}
+#score{margin-left:auto;font-weight:bold;font-size:12px;padding:4px 8px;background:#1c140c;border:2px inset #8a6a40;color:#f0d080}
+#view{position:relative;width:640px;height:360px;background:#000}canvas{display:block;image-rendering:auto}
+#hud{position:absolute;left:4px;top:3px;font-size:11px;color:#fff;text-shadow:1px 1px 2px #000;pointer-events:none}
+#hover{position:absolute;left:0;right:0;bottom:3px;text-align:center;color:#fff3c0;text-shadow:1px 1px 2px #000;font-weight:bold;font-size:13px;pointer-events:none}
+#overlay{position:absolute;inset:0;pointer-events:none}
+.box{pointer-events:auto;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:520px;max-height:380px;overflow:auto;
+ background:url(img/wood.jpg) center/cover,#5a3d22;border:5px solid #3a2410;outline:2px solid #8a6a40;padding:10px;color:#1a1008;box-shadow:6px 6px 0 rgba(0,0,0,.6)}
+.box .in{background:#e9dcc0;border:2px solid #6b4b2a;padding:10px 12px;font-size:14px;line-height:1.35;position:relative}
+.box h2{margin:0 0 6px;font-size:17px;border-bottom:2px solid #6b4b2a;color:#4a1a0a}
+.box .pt{float:left;width:72px;height:72px;margin:0 10px 4px 0;border:3px solid #3a2410;object-fit:cover}
+.box button{font:inherit;font-size:13px;margin:6px 6px 0 0;padding:6px 10px;cursor:pointer;color:#f3e6c8;background:url(img/rust.jpg) center/cover,#6a3b1c;border:2px solid #2b1a0c;border-radius:3px;min-height:32px}
+.box button:disabled{opacity:.4}.box .hint{font-size:10px;color:#6b4b2a;text-align:right;margin-top:4px}
+.grid{display:flex;flex-wrap:wrap;gap:6px}.it{width:74px;height:66px;border:2px solid #6b4b2a;background:#d8c8a4;text-align:center;font-size:24px;cursor:pointer;padding-top:4px}
+.it small{display:block;font-size:10px}.it.sel{background:#f0d080;border-color:#a02}
+table{font-size:13px;border-collapse:collapse;width:100%}td{padding:2px 6px;border-bottom:1px dotted #a08060}
+.bar2{display:inline-block;height:9px;background:#a22;border:1px solid #000;vertical-align:middle}.bar2.st{background:#2a6}.bar2.hu{background:#b80}
+.death .in{background:#fff;text-align:center}.death .in h2{color:#900;border:0}
+#fight{pointer-events:auto;position:absolute;inset:0;background:#1a120a;display:flex;flex-direction:column}
+#fight canvas{flex:1}#fight .ctl{display:flex;gap:6px;justify-content:center;padding:6px;background:url(img/wood.jpg) center/cover}
+#fight .ctl button{font:inherit;font-size:15px;padding:8px 18px;min-height:40px;color:#f3e6c8;background:url(img/rust.jpg) center/cover,#6a3b1c;border:2px solid #2b1a0c;border-radius:3px;cursor:pointer}
+.cls{display:flex;gap:6px;flex-wrap:wrap}.cls button{width:118px;min-height:86px;text-align:left;font-size:11px;white-space:normal}.cls b{font-size:14px;display:block}
+
+/* ===== Rugged pass (textures from tools_ui.py). Chrome 83 safe: no `inset`, no flex `gap`. ===== */
+#overlay{top:0;left:0;right:0;bottom:0}#fight{top:0;left:0;right:0;bottom:0}
+#game{border:0;box-shadow:none;background:#000}
+#bar{width:476px;gap:0;padding:2px 6px 0 6px;background:url(img/ui/bar.png) 0 0/100% 100% no-repeat;border:0;z-index:2}
+#bar button{width:42px;height:34px;margin:0 2px 0 0;border:0;border-radius:0;background:url(img/ui/plate0.png) center/100% 100%;
+ box-shadow:none;filter:drop-shadow(1px 2px 0 rgba(0,0,0,.6));clip-path:polygon(3% 8%,22% 0,60% 5%,97% 0,100% 40%,95% 96%,55% 100%,20% 94%,0 100%,4% 50%)}
+#bar button:nth-child(2n){background-image:url(img/ui/plate1.png);transform:rotate(-2deg) translateY(1px);clip-path:polygon(0 3%,40% 0,100% 6%,97% 55%,100% 100%,45% 94%,6% 100%,2% 45%)}
+#bar button:nth-child(3n){background-image:url(img/ui/plate2.png);transform:rotate(1.6deg);clip-path:polygon(6% 0,100% 2%,96% 30%,99% 92%,60% 100%,0 96%,3% 60%,0 14%)}
+#bar button:nth-child(5n){background-image:url(img/ui/plate3.png);transform:rotate(-1deg) translateY(-1px)}
+#bar button::before,#bar button::after{top:4px;width:5px;height:5px;background:radial-gradient(circle at 35% 35%,#e8dcc0,#6a5a48 55%,#2a2018)}
+#bar button.on{background-color:#c08a30;background-blend-mode:screen;transform:translateY(2px) rotate(0);filter:drop-shadow(0 0 3px #ffd070)}
+#bar button b{font-size:16px}#bar button span{font-weight:bold;letter-spacing:-.5px}
+#score{margin:0 0 0 2px;padding:5px 6px;font-size:11px;border:0;background:#20160c;color:#f0d080;transform:rotate(1.5deg);
+ clip-path:polygon(0 10%,15% 0,100% 6%,96% 100%,30% 94%,4% 100%);box-shadow:inset 0 0 6px #000}
+.box{border:22px solid transparent;border-image:url(img/ui/frame.png) 30 round;background:none;outline:0;padding:0;box-shadow:none;
+ filter:drop-shadow(4px 6px 3px rgba(0,0,0,.7));transform:translate(-50%,-50%) rotate(-.6deg)}
+.box::before{content:"";position:absolute;left:50%;top:-30px;width:90px;height:14px;margin-left:-45px;z-index:2;
+ background:repeating-linear-gradient(60deg,#a88a58 0 4px,#6a5434 4px 6px,#c8aa70 6px 9px);border-radius:7px;box-shadow:0 2px 2px rgba(0,0,0,.5)}
+.box .in{background:none;border:16px solid transparent;border-image:url(img/ui/parchment.png) 40 fill stretch;margin:-6px;padding:2px 4px;color:#20140a}
+.box h2{border-bottom:0;background:url(img/ui/plate2.png) center/100% 100%;color:#f6e8c8;text-shadow:1px 1px 0 #000;display:inline-block;padding:3px 12px 3px 10px;
+ transform:rotate(-1.2deg);clip-path:polygon(0 8%,8% 0,92% 4%,100% 0,97% 60%,100% 100%,10% 94%,2% 100%)}
+.box button{border:0;border-radius:0;margin:6px 8px 0 0;padding:7px 12px;min-height:36px;background:url(img/ui/plate1.png) center/100% 100%;text-shadow:1px 1px 0 #000;font-weight:bold;
+ filter:drop-shadow(1px 2px 0 rgba(0,0,0,.5));clip-path:polygon(2% 6%,30% 0,70% 4%,98% 0,100% 50%,97% 100%,60% 95%,25% 100%,0 96%,3% 50%);transform:rotate(-1deg)}
+.box button:nth-of-type(2n){background-image:url(img/ui/plate3.png);transform:rotate(1.2deg);clip-path:polygon(0 0,45% 5%,100% 2%,96% 60%,100% 100%,40% 96%,3% 100%,0 40%)}
+.box button:nth-of-type(3n){background-image:url(img/ui/plate0.png);transform:rotate(-.4deg) translateY(1px)}
+.box button:active{transform:translateY(2px)}
+.grid{gap:0}.grid .it{margin:0 6px 6px 0;border:0;background:url(img/ui/cardboard.png) center/100% 100%;transform:rotate(-1.5deg);
+ clip-path:polygon(0 5%,20% 0,85% 3%,100% 0,97% 50%,100% 100%,50% 96%,0 100%,3% 50%);color:#1a1008}
+.grid .it:nth-child(2n){transform:rotate(1.8deg)}.grid .it:nth-child(3n){transform:rotate(-.5deg) translateY(2px)}
+.grid .it.sel{background-color:#f0c040;background-blend-mode:multiply;outline:0;filter:drop-shadow(0 0 4px #ffcc40)}
+.death .in{border-image:url(img/ui/cardboard.png) 40 fill stretch;background:none}.death .in h2{color:#f6e8c8;border:0}
+.death{transform:translate(-50%,-50%) rotate(1deg)}
+.cls{gap:0}.cls button{width:112px;margin:0 8px 8px 0;transform:rotate(-2deg)}.cls button:nth-child(2n){transform:rotate(2.2deg) translateY(3px)}
+.cls button:nth-child(3n){transform:rotate(-.8deg)}
+table td{border-bottom:1px dashed #8a6a40}
+#fight .ctl{gap:0;background:url(img/ui/bar.png) 0 0/100% 100%}#fight .ctl button{margin:0 4px;border:0;border-radius:0;background:url(img/ui/plate1.png) center/100% 100%;
+ clip-path:polygon(2% 6%,30% 0,98% 4%,100% 60%,96% 100%,30% 95%,0 100%,3% 40%)}
+#fight .ctl button:nth-child(2n){background-image:url(img/ui/plate3.png);transform:rotate(1.5deg)}
+.box.death .in{border-image:url(img/ui/cardboard.png) 40 fill stretch;background:none;color:#1a0e04}
+.box.death .in b{color:#3a0a00}
+#fight{top:40px}
