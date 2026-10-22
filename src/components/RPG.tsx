@@ -1677,6 +1677,8 @@ function TownLayer({ town, api }: { town: { id: string; src: string; n: number }
   return (
     <div data-testid="town-layer" className="absolute inset-0 z-[70] bg-black">
       <iframe ref={frame} data-testid="town-frame" title={`Town: ${town.id}`} src={town.src} className="block h-full w-full border-0" />
+      <button type="button" data-testid="town-exit" onClick={() => api.current?.v141("townMsg", { type: "leaveTown", exit: "town" })}
+        className="absolute right-2 top-2 rounded border border-border bg-black/70 px-2 py-1 text-xs text-muted" title="Leave without the town's changes">Leave town</button>
     </div>
   );
 }
