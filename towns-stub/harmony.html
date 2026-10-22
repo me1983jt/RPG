@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harmony (stub town)</title>
+<style>
+body{margin:0;min-height:100vh;background:#1c1814;color:#f4e6c4;font:16px/1.4 system-ui,sans-serif;display:flex;align-items:center;justify-content:center}
+main{max-width:30rem;padding:1.2rem;border:1px solid #c9a36a;background:#2a231c}
+h1{margin:.1rem 0 .6rem;font-size:1.4rem}button{display:block;width:100%;margin:.4rem 0;padding:.7rem;font:inherit;background:#3b3025;color:#f4e6c4;border:1px solid #c9a36a;border-radius:4px}
+button:disabled{opacity:.45}#log{min-height:2.6rem;color:#9fd07a;font-size:.9rem}small{color:#9a8a70}
+</style></head><body><main>
+<h1>Harmony village <small>(stub)</small></h1>
+<p id="stat">Waiting for the game…</p>
+<button id="heal" data-act="heal">Heal (Medkit)</button>
+<button id="food" data-act="food">Buy food (3 coins)</button>
+<button id="quest" data-act="quest">Take quest</button>
+<button id="leave" data-act="leave">Leave</button>
+<p id="log"></p>
+<small>Stand-in until the real Harmony town game is copied in. Protocol v1, see TOWN_PROTOCOL.md.</small>
+</main><script>
+let S = null, town = "harmony";
+const $ = (id) => document.getElementById(id);
+const post = (m) => parent.postMessage(m, "*");
+const has = (id) => (S.inventory.find((i) => i.id === id) || { qty: 0 }).qty;
+const add = (id, n) => { const it = S.inventory.find((i) => i.id === id); if (it) it.qty += n; else S.inventory.push({ id, qty: n }); S.inventory = S.inventory.filter((i) => i.qty > 0); };
+function show() {
+  if (!S) return;
+  const inj = Object.entries(S.injuries).filter(([, v]) => v).map(([k]) => k).join(", ") || "none";
+  $("stat").textContent = `Day ${S.day}, ${S.time}. HP ${S.hp}/${S.maxHp}. Injuries: ${inj}. Medkits ${has("medkit")}, jerky ${has("jerky")}. Coins ${S.extra.coins}. Visits ${S.extra.visits}.`;
+  $("heal").disabled = !has("medkit"); $("food").disabled = S.extra.coins < 3;
+}
+addEventListener("message", (e) => {
+  if (e.source !== parent || !e.data || e.data.type !== "enterTown") return;
+  town = e.data.town; S = e.data.state;
+  S.extra = Object.assign({ coins: 10, visits: 0, score: 0 }, S.extra || {});
+  S.extra.visits++;
+  show();
+});
+document.body.addEventListener("click", (e) => {
+  const a = e.target.dataset && e.target.dataset.act; if (!a || !S) return;
+  if (a === "heal" && has("medkit")) { add("medkit", -1); S.hp = S.maxHp; S.injuries = { blinded: false, crippledArm: false, crippledLeg: false }; $("log").textContent = "The doctor patches you up."; }
+  if (a === "food" && S.extra.coins >= 3) { S.extra.coins -= 3; add("jerky", 1); S.extra.score += 1; $("log").textContent = "You buy a strip of jerky."; }
+  if (a === "quest") { S.questFlags["harmony.mailRun"] = "started"; post({ type: "startQuest", id: "harmony-mail", target: "skow", label: "Mail run to Skowhegan" }); $("log").textContent = "Postmaster wants a bag carried to Skowhegan. Marked on your map."; }
+  if (a === "leave") post({ type: "leaveTown", exit: "worldmap", state: S });
+  show();
+});
+post({ type: "ready", town });
+</script></body></html>

@@ -84,12 +84,16 @@ export interface V141State {
   sq: Record<string, number>;
   playT?: number;
   sqf: Record<string, boolean>;
+  /** v14.3 town layer: town-owned quest flags, each town's own stats/score, town quests on the world map */
+  tf?: Record<string, string | number | boolean>;
+  tx?: Record<string, Record<string, unknown>>;
+  tq?: { id: string; town: string; q: number; r: number; label: string }[];
 }
 export function freshV141(): V141State {
   return { crouch: false, noise: 0, loot: {}, chests: {}, prod: {}, drop: null, stick: false, auto: false, sq: {}, sqf: {} };
 }
 export function loadV141(raw: Partial<V141State> | undefined): V141State {
-  return { ...freshV141(), ...(raw ?? {}), chests: raw?.chests ?? {}, prod: raw?.prod ?? {}, loot: raw?.loot ?? {}, sq: raw?.sq ?? {}, sqf: raw?.sqf ?? {} };
+  return { ...freshV141(), ...(raw ?? {}), chests: raw?.chests ?? {}, prod: raw?.prod ?? {}, loot: raw?.loot ?? {}, sq: raw?.sq ?? {}, sqf: raw?.sqf ?? {}, tf: raw?.tf ?? {}, tx: raw?.tx ?? {}, tq: raw?.tq ?? [] };
 }
 
 /** Loot-run lore from the writers' handoff (gb-handoff/lootruns.md): descriptions, notes found in each room, and the side quest NPCs. */

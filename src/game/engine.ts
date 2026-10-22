@@ -34,6 +34,7 @@ import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDi
 import { b64ToBytes, bytesToB64, getSlot, hasSave, setSlot, slotInfos, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
+import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
 import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
@@ -4877,7 +4878,89 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		travelLock = 2;
 		hollowedArea(target);
 	}
+	// ======== v14.3 town layer: a separate town game in a full-screen iframe (see town.ts / TOWN_PROTOCOL.md) ========
+	let town = null;
+	function townSrc(id) {
+		const o = typeof window !== "undefined" && window.__townSrc;
+		return (typeof o === "string" ? o : o?.[id]) || TOWN_SRC[id] || `/towns/${id}/index.html`;
+	}
+	function openTown(l) {
+		const m = wmState();
+		m.warn = ""; m.path = [];
+		w13.seen[l.id] = true;
+		town = { id: l.town, loc: l.id, src: townSrc(l.town), n: (town?.n ?? 0) + 1 };
+		pushLog(`${l.name}.`);
+		saveGame(); sync(true);
+	}
+	function townState() {
+		const p = player;
+		const inj = {};
+		for (const [k, id] of INJ_MAP) inj[k] = injured(id);
+		const id = town?.id ?? "harmony";
+		return {
+			inventory: (p?.bag ?? []).filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty, name: GEAR[s.id]?.name ?? s.id })),
+			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
+			injuries: inj,
+			companions: [
+				{ id: "cyndal", name: "Cyndal", withYou: !!escortBodies?.length },
+				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
+				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
+			],
+			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1 },
+			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
+			extra: JSON.parse(JSON.stringify(l1.tx?.[id] ?? {})),
+		};
+	}
+	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: town.id, state: townState() } : null; }
+	/** Apply a {type:'leaveTown', exit, state} from the town game. Anything missing or malformed is left as it was. */
+	function leaveTown(msg) {
+		if (!town || !player || !msg || msg.type !== "leaveTown") return false;
+		const st = msg.state && typeof msg.state === "object" ? msg.state : {};
+		const inv = cleanInventory(st.inventory, (id) => !!GEAR[id]);
+		if (inv) {
+			const want = new Map(inv.map((q) => [q.id, q.qty]));
+			for (const s of [...player.bag]) { const n = want.get(s.id) ?? 0; if (s.qty > n) takeItem(s.id, s.qty - n); }
+			for (const [id, n] of want) { const have = countOf(id); if (n > have) giveItem(id, n - have); }
+			refreshGear(player);
+		}
+		if (Number.isFinite(Number(st.hp))) player.hp = Math.max(1, Math.min(player.maxHp ?? 44, Math.round(Number(st.hp))));
+		if (st.injuries && typeof st.injuries === "object") for (const [k, id] of INJ_MAP) {
+			if (st.injuries[k] === false && w13.ail[id]) delete w13.ail[id];
+			else if (st.injuries[k] === true && !w13.ail[id]) w13.ail[id] = curDay() + 1;
+		}
+		if (st.questFlags && typeof st.questFlags === "object") {
+			l1.tf = l1.tf ?? {};
+			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = v;
+		}
+		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[town.id] = JSON.parse(JSON.stringify(st.extra)); }
+		const from = WM_LOCS.find((l) => l.id === town.loc);
+		const exit = typeof msg.exit === "string" ? msg.exit : "worldmap";
+		town = null;
+		const dest = WM_LOCS.find((l) => l.id === exit && !l.town);
+		const m = wmState();
+		if (from) { m.q = from.q; m.r = from.r; }
+		if (dest) { m.from = from ? [from.q, from.r] : m.from; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
+		else { phase = "worldmap"; pushLog("You leave town. The world map."); }
+		saveGame(); sync(true);
+		return true;
+	}
+	/** {type:'startQuest', id, target, label?}: a town quest puts a marker on the world map. */
+	function townQuest(msg) {
+		if (!msg || msg.type !== "startQuest" || typeof msg.id !== "string" || !msg.id) return false;
+		const t = msg.target;
+		const loc = typeof t === "string" ? WM_LOCS.find((l) => l.id === t) ?? LOOT_RUNS.find((l) => l.id === t) : null;
+		const q = loc ? loc.q : Number(t?.q), r = loc ? loc.r : Number(t?.r);
+		if (!Number.isInteger(q) || !Number.isInteger(r) || q < 0 || r < 0 || q > 11 || r > 8) return false;
+		l1.tq = (l1.tq ?? []).filter((x) => x.id !== msg.id);
+		const label = typeof msg.label === "string" && msg.label ? msg.label.slice(0, 40) : msg.id;
+		l1.tq.push({ id: msg.id, town: town?.id ?? "harmony", q, r, label });
+		wmReveal(q, r);
+		pushLog(`New town job: ${label}. Marked on the world map.`);
+		saveGame(); sync(true);
+		return true;
+	}
 	function wmEnter(l) {
+		if (l.town) return openTown(l);
 		const m = wmState();
 		m.warn = "";
 		wmArrive(l.map, m.from);
@@ -4904,7 +4987,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function wmHud() {
 		if (phase !== "worldmap" || !v14.map) return null;
 		const m = v14.map;
-		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? lootRunAt(m.q, m.r)?.name ?? null, loot: lootHud(), clock: clockLabel(clock), bike: bikeBuilt() };
+		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? lootRunAt(m.q, m.r)?.name ?? null, loot: lootHud(), clock: clockLabel(clock), bike: bikeBuilt(), town: town ? { id: town.id, src: town.src, n: town.n } : null, tq: l1.tq ?? [] };
 	}
 	// ---- workbench: repair, patch, dye
 	function benchMenu() {
@@ -11246,6 +11329,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (cmd === "auto") { l1.auto = arg == null ? !l1.auto : !!arg; pushLog(l1.auto ? "Auto-attack on: you'll swing at anything that comes for you." : "Auto-attack off."); sync(true); }
 			else if (cmd === "stickMode") { l1.stick = arg == null ? !l1.stick : !!arg; sync(true); }
 			else if (cmd === "store") storeCmd(arg?.[0], arg?.[1]);
+			else if (cmd === "townEnter") return townEnterMsg();
+			else if (cmd === "townMsg") { const ok = arg?.type === "leaveTown" ? leaveTown(arg) : arg?.type === "startQuest" ? townQuest(arg) : false; return { ok }; }
 			else if (cmd === "pack") { packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; } sync(true); }
 			return hud141();
 		},
@@ -11832,6 +11917,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
 		wmOpen: () => openWorldMap(),
 		wmGo: (q, r) => wmGo(q, r),
+		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
+		town143Msg: (m) => m?.type === "leaveTown" ? leaveTown(m) : townQuest(m),
 		gates: () => world ? world.gates.map((g) => ({ tx: g.tx, ty: g.ty, side: g.side })) : [],
 		gatesFull: () => world ? world.gates.map((g) => ({ ...g })) : [],
 		hurtPlayer: (n) => { if (player) { player.invuln = 0; hurtPlayer(n, player.x + 10, player.y); } },

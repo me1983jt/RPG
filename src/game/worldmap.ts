@@ -13,7 +13,7 @@ export const WM_TERRAIN = [
   "WWWWWWWVWWWW",
 ];
 export const WM_HOURS: Record<string, number> = { R: 0.6, T: 0.6, F: 1.2, W: 2, V: 2.5 };
-export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string }
+export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string; town?: string }
 export const WM_LOCS: WmLoc[] = [
   { id: "farm", name: "Harmony · Cambridge Road", q: 5, r: 5, map: 0, blurb: "The farm, Lowelltown road and Jack's." },
   { id: "lowell", name: "Lowelltown Woods", q: 2, r: 4, map: 3, blurb: "Spruce and old logging roads." },
@@ -21,6 +21,7 @@ export const WM_LOCS: WmLoc[] = [
   { id: "kennebec", name: "The Kennebec", q: 7, r: 5, map: 4, blurb: "Wide water, a single crossing." },
   { id: "north", name: "North Woods · The Grok's woods", q: 5, r: 1, map: 1, blurb: "Chain of Ponds and deep timber." },
   { id: "raiders", name: "Raider Country", q: 10, r: 3, map: 5, blurb: "Camps along the ridge. Stay off the skyline." },
+  { id: "harmony", name: "Harmony village", q: 4, r: 4, map: -1, town: "harmony", blurb: "The town on the Moose River road. Trade, a doctor, work." },
   { id: "bunker", name: "The Bunker", q: 3, r: 7, map: 6, blurb: "A hatch under the birches." },
 ];
 /** Room for future loot spots: hexes that will open as small maps later. */
@@ -67,4 +68,4 @@ export function hexPath(from: [number, number], to: [number, number], bike: bool
 }
 export const hexHours = (q: number, r: number, bike: boolean) => { const t = terrainAt(q, r); const h = WM_HOURS[t] ?? 2; return bike && (t === "R" || t === "T" || t === "F") ? h * 0.5 : h; };
 export const locAt = (q: number, r: number) => WM_LOCS.find((l) => l.q === q && l.r === r) ?? null;
-export const locOfMap = (map: number) => WM_LOCS.find((l) => l.map === map) ?? WM_LOCS[0]!;
+export const locOfMap = (map: number) => WM_LOCS.find((l) => l.map === map && map >= 0) ?? WM_LOCS[0]!;

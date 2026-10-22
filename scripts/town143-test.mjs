@@ -1,0 +1,51 @@
+// v14.3: Harmony town layer round trip (iframe + postMessage) with the stub town page.
+import { boot } from "./v4-lib.mjs";
+const url = process.argv[2] || "http://127.0.0.1:8112/";
+const { browser, page, errs, T, begin } = await boot(url, { vw: 1366, vh: 768, v14: true });
+let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) fail++; };
+await begin();
+await T("v14Set", { st: 5 });
+await page.evaluate(() => { window.__wmEnc = 1; const t = window.__controlsTest; t.l141Calm?.(); t.l141Give("medkit", 1); t.l141Injure("blind"); t.l141Injure("legs"); t.hurtPlayer(20); });
+let d = await T("town143");
+const hp0 = d.state.hp, med0 = (d.state.inventory.find((i) => i.id === "medkit") || {}).qty || 0, jer0 = (d.state.inventory.find((i) => i.id === "jerky") || {}).qty || 0;
+ok(d.state.injuries.blinded && d.state.injuries.crippledLeg && hp0 < d.state.maxHp, `set up: hurt (${hp0}/${d.state.maxHp}), blinded, crippled leg, medkit ${med0}`);
+await T("wmOpen");
+await T("wmGo", 4, 4);
+for (let i = 0; i < 40; i++) { const w = await T("wm"); if (!w.map.path.length) break; await page.waitForTimeout(300); }
+await T("wmGo", 4, 4); await page.waitForTimeout(600);
+ok(await page.getByTestId("town-layer").isVisible(), "tapping Harmony village opens the full-screen town layer");
+const f = page.frameLocator('[data-testid="town-frame"]');
+await f.locator("#stat").filter({ hasText: "HP" }).waitFor({ timeout: 8000 });
+const stat = await f.locator("#stat").textContent();
+ok(/blinded/.test(stat) && /crippledLeg/.test(stat) && stat.includes(`HP ${hp0}/`), `town got enterTown state: "${stat}"`);
+await page.screenshot({ path: "beta30-shots/v143-town-stub.png" });
+await f.locator("#heal").click(); await f.locator("#food").click(); await f.locator("#quest").click();
+await page.waitForTimeout(300);
+d = await T("town143");
+ok(d.tq?.some((q) => q.id === "harmony-mail" && q.q === 8 && q.r === 7), "startQuest adds a world-map marker at Skowhegan");
+await f.locator("#leave").click(); await page.waitForTimeout(600);
+ok(!(await page.getByTestId("town-layer").count()), "Leave closes the town layer");
+d = await T("town143");
+const inv = (id) => (d.state.inventory.find((i) => i.id === id) || {}).qty || 0;
+ok(d.phase === "worldmap", "exit 'worldmap' puts you back on the world map at Harmony");
+ok(d.state.hp === d.state.maxHp, `hp from the town applied (${d.state.hp}/${d.state.maxHp})`);
+ok(!d.state.injuries.blinded && !d.state.injuries.crippledLeg, "injuries healed by the town are cleared");
+ok(inv("medkit") === med0 - 1, `medkit used up (${med0} -> ${inv("medkit")})`);
+ok(inv("jerky") === jer0 + 1, `bought food arrives in the pack (${jer0} -> ${inv("jerky")})`);
+ok(d.tf?.["harmony.mailRun"] === "started", "town quest flag saved");
+ok(d.tx?.harmony?.coins === 7 && d.tx.harmony.visits === 1, `town's own stats saved in extra (${JSON.stringify(d.tx?.harmony)})`);
+const wm = await T("wm"); ok(wm.map.q === 4 && wm.map.r === 4, "map marker stays on Harmony");
+await page.waitForTimeout(300); await page.screenshot({ path: "beta30-shots/v143-quest-marker.png" });
+// second visit: extra comes back
+await T("wmGo", 4, 4); await f.locator("#stat").filter({ hasText: "Visits 2" }).waitFor({ timeout: 8000 });
+ok(true, "second visit gets the saved extra back (Visits 2, coins 7)");
+// exit to the farm, plus bad input is ignored
+await page.evaluate(() => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "farm", state: { hp: "x", inventory: [{ id: "notathing", qty: 5 }, { id: "jerky", qty: -2 }], injuries: { blinded: true } } }));
+await page.waitForTimeout(900);
+d = await T("town143"); const w2 = await T("wm");
+ok(w2.phase === "play" && w2.mapId === 0, "exit 'farm' walks you into the farm");
+ok(d.state.injuries.blinded && !d.state.inventory.some((i) => i.id === "notathing"), "town can set an injury; unknown items are dropped");
+ok(!(await page.evaluate(() => window.__controlsTest.town143Msg({ type: "startQuest", id: "x", target: { q: 99, r: 0 } }))), "startQuest with an off-map target is refused");
+ok(!errs.length, `no errors ${errs.join(" | ")}`);
+console.log(fail ? `${fail} FAILED` : "ALL PASS");
+await browser.close(); process.exit(fail ? 1 : 0);
