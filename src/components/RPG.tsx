@@ -1530,7 +1530,7 @@ export function RPG() {
         </Overlay>
       ) : null}
 
-      {hud.phase === "worldmap" && hud.wmap?.town ? <TownLayer key={hud.wmap.town.n} town={hud.wmap.town} api={apiRef} /> : null}
+      {hud.phase === "town" && (hud as any).town ? <TownLayer key={(hud as any).town.n} town={(hud as any).town} api={apiRef} /> : null}
       {hud.phase === "worldmap" && hud.wmap ? (
         <div data-testid="worldmap" className="absolute inset-0 z-50 bg-bg">
           <div className="absolute inset-0"><WorldMap14 wm={hud.wmap} go={(q, r) => apiRef.current?.v14("wmGo", [q, r])} /></div>

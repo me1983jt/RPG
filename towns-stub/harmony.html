@@ -39,7 +39,7 @@ document.body.addEventListener("click", (e) => {
   if (a === "heal" && has("medkit")) { add("medkit", -1); S.hp = S.maxHp; S.injuries = { blinded: false, crippledArm: false, crippledLeg: false }; $("log").textContent = "The doctor patches you up."; }
   if (a === "food" && S.extra.coins >= 3) { S.extra.coins -= 3; add("jerky", 1); S.extra.score += 1; $("log").textContent = "You buy a strip of jerky."; }
   if (a === "quest") { S.questFlags["harmony.mailRun"] = "started"; post({ type: "startQuest", id: "harmony-mail", target: "skow", label: "Mail run to Skowhegan" }); $("log").textContent = "Postmaster wants a bag carried to Skowhegan. Marked on your map."; }
-  if (a === "leave") post({ type: "leaveTown", exit: "worldmap", state: S });
+  if (a === "leave") post({ type: "leaveTown", exit: "town", state: S });
   show();
 });
 post({ type: "ready", town });

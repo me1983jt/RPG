@@ -375,7 +375,7 @@ export interface Player {
   respawnY: number;
 }
 
-export type Phase = "worldmap" | "menu" | "play" | "pause" | "dialogue" | "dead";
+export type Phase = "worldmap" | "town" | "menu" | "play" | "pause" | "dialogue" | "dead";
 
 export interface Choice {
   label: string;

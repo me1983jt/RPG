@@ -1,10 +1,10 @@
 // v14.3: put the town game at public/towns/<id>/index.html before dev/build.
-// Real town: TOWN_HARMONY_SRC (a .html file or a folder with index.html/harmony.html), default /workspace/long-winter-demo/harmony.html.
+// Real town: TOWN_HARMONY_SRC (a .html file or a folder with index.html/harmony.html), default /workspace/quest-harmony.
 // If it's not there, the stub in towns-stub/harmony.html is used. The source is only read, never changed.
 import { cpSync, copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 const root = resolve(dirname(new URL(import.meta.url).pathname), "..");
-const towns = [{ id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/long-winter-demo/harmony.html", stub: join(root, "towns-stub/harmony.html") }];
+const towns = [{ id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/quest-harmony", stub: join(root, "towns-stub/harmony.html") }];
 for (const t of towns) {
   const out = join(root, "public/towns", t.id);
   mkdirSync(out, { recursive: true });
@@ -21,5 +21,7 @@ for (const t of towns) {
     copyFileSync(t.src, join(out, "index.html"));
     used = t.src;
   } else copyFileSync(t.stub, join(out, "index.html"));
+  mkdirSync(join(root, "public/towns/_stub"), { recursive: true });
+  copyFileSync(t.stub, join(root, "public/towns/_stub", `${t.id}.html`));
   console.log(`town ${t.id}: ${used} -> public/towns/${t.id}/index.html`);
 }

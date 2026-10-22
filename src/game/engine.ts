@@ -674,6 +674,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
 			wmap: wmHud(),
+			town: town ? { id: town.id, src: town.src, n: town.n } : null,
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
 			log,
 			buildOpen,
@@ -4360,6 +4361,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function noiseTick(dt, moving) {
 		earlyWolves(dt);
+		townTick();
 		const target = l1.crouch ? (moving ? NOISE.crouch : NOISE.still) : mounted ? NOISE.bike : work && work.swing > 0 ? NOISE.chop : moving ? NOISE.walk : NOISE.still;
 		if (l1.noise > target) l1.noise = Math.max(target, l1.noise - 45 * dt);
 		else l1.noise = Math.min(target, l1.noise + 90 * dt);
@@ -4879,16 +4881,109 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		hollowedArea(target);
 	}
 	// ======== v14.3 town layer: a separate town game in a full-screen iframe (see town.ts / TOWN_PROTOCOL.md) ========
-	let town = null;
+	let town = null, townN = 0;
 	function townSrc(id) {
 		const o = typeof window !== "undefined" && window.__townSrc;
 		return (typeof o === "string" ? o : o?.[id]) || TOWN_SRC[id] || `/towns/${id}/index.html`;
 	}
+	/** v14.4: towns live in the iso world. Harmony village sits beside the road a short walk from the farm (map 0). */
+	const ISO_TOWNS = [{ id: "harmony", name: "Harmony village", map: 0 }];
+	let townArmed = true;
+	function townSpot(t) {
+		if (!world || mapId !== t.map) return null;
+		world.townSpots = world.townSpots ?? {};
+		if (world.townSpots[t.id] !== undefined) return world.townSpots[t.id];
+		const fc = tileOf(farmCenter().x, farmCenter().y);
+		let spot = null;
+		const free = (x, y) => x > 6 && y > 6 && x < MAP_W - 6 && !inFarm(x, y) && world.tiles[y * MAP_W + x] !== 2 && !pointBlocked(world, x * TILE + 32, y * TILE + 32, 40);
+		for (let r = 14; r <= 30 && !spot; r++) for (let a = 0; a < 360 && !spot; a += 8) {
+			const x = Math.round(fc.tx + Math.cos(a * Math.PI / 180) * r), y = Math.round(fc.ty + Math.sin(a * Math.PI / 180) * r);
+			if (world.tiles[y * MAP_W + x] !== 2) continue;
+			for (const [dx, dy] of [[2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2]]) if (free(x + dx, y + dy) && free(x + dx + 1, y + dy) && free(x + dx, y + dy + 1)) { spot = { x: (x + dx) * TILE + 32, y: (y + dy) * TILE + 32, roadX: x * TILE + 32, roadY: y * TILE + 32 }; break; }
+		}
+		world.townSpots[t.id] = spot;
+		return spot;
+	}
+	function townTick() {
+		if (!player || inside || town || phase !== "play") return;
+		for (const t of ISO_TOWNS) {
+			const sp = townSpot(t);
+			if (!sp) continue;
+			const d = Math.hypot(player.x - sp.x, player.y - sp.y);
+			if (d > 170) townArmed = true;
+			else if (d < 70 && townArmed) { townArmed = false; intent = null; openTown({ id: t.id, town: t.id, name: t.name }); }
+		}
+	}
+	/** Where a town quest points from here: the exit gate facing its world-map hex (or null when you're on that map). */
+	function questGate(t) {
+		if (!world?.gates?.length) return null;
+		const here = locOfMap(mapId);
+		if (here.q === t.q && here.r === t.r) return null;
+		const c = hexCenter(here.q, here.r), f = hexCenter(t.q, t.r);
+		const want = Math.atan2(f.y - c.y, f.x - c.x);
+		let best = null, bd = 9;
+		for (const g of world.gates) {
+			const a = Math.atan2(g.arriveTy - HEX_CY, g.arriveTx - HEX_CX);
+			let d = Math.abs(a - want); if (d > Math.PI) d = Math.PI * 2 - d;
+			if (d < bd) { bd = d; best = g; }
+		}
+		return best ? { x: best.tx * TILE + 32, y: best.ty * TILE + 32 } : null;
+	}
+	function paintTowns(camX, camY) {
+		if (!world || !player || inside) return;
+		const sx = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
+		for (const t of ISO_TOWNS) {
+			const sp = townSpot(t);
+			if (!sp) continue;
+			const m = sx(sp.x, sp.y);
+			if (m.sx < -200 || m.sy < -200 || m.sx > viewW + 200 || m.sy > viewH + 200) continue;
+			const img = images.get("farmhouse");
+			ctx.save();
+			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 4 * zoom, 70 * zoom, 22 * zoom, 0, 0, Math.PI * 2); ctx.fill();
+			const house = (dx, dy, w) => {
+				if (img?.naturalWidth) { const h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, m.sx + dx * zoom - w * zoom / 2, m.sy + dy * zoom - h * zoom, w * zoom, h * zoom); }
+				else { ctx.fillStyle = "#8a6a4a"; ctx.fillRect(m.sx + (dx - w / 2) * zoom, m.sy + (dy - w * .5) * zoom, w * zoom, w * .5 * zoom); ctx.fillStyle = "#5a3a2a"; ctx.beginPath(); ctx.moveTo(m.sx + (dx - w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.lineTo(m.sx + dx * zoom, m.sy + (dy - w * .9) * zoom); ctx.lineTo(m.sx + (dx + w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.fill(); }
+			};
+			house(-48, -8, 88); house(50, -4, 82); house(0, 14, 104);
+			const near = Math.hypot(player.x - sp.x, player.y - sp.y) < 260;
+			const label = near ? `${t.name} · walk in` : t.name;
+			ctx.globalAlpha = 1;
+			ctx.font = `700 ${Math.round(13 * Math.max(1, zoom * .8))}px system-ui, sans-serif`; ctx.textAlign = "center";
+			const w = ctx.measureText(label).width + 16, ly = m.sy - 124 * zoom;
+			ctx.fillStyle = "rgba(15,12,8,.82)"; ctx.fillRect(m.sx - w / 2, ly - 15, w, 21);
+			ctx.strokeStyle = "#c9a36a"; ctx.lineWidth = 1; ctx.strokeRect(m.sx - w / 2 + .5, ly - 14.5, w - 1, 20);
+			ctx.fillStyle = "#f4e6c4"; ctx.fillText(label, m.sx, ly);
+			ctx.restore();
+		}
+		// town quests: an arrow at the screen edge toward the exit that leads there
+		let row = 0;
+		for (const q of l1.tq ?? []) {
+			const g = questGate(q);
+			ctx.save();
+			ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
+			if (!g) { const p = sx(player.x, player.y); ctx.fillStyle = "#f0c040"; ctx.fillText(`★ ${q.label}: you're here`, p.sx, p.sy - 80 * zoom - row * 16); ctx.restore(); row++; continue; }
+			const p = sx(player.x, player.y), gm = sx(g.x, g.y);
+			const ang = Math.atan2(gm.sy - p.sy, gm.sx - p.sx);
+			const rx = viewW / 2 - 46, ry = viewH / 2 - 46;
+			const k = Math.min(rx / Math.max(1e-3, Math.abs(Math.cos(ang))), ry / Math.max(1e-3, Math.abs(Math.sin(ang))));
+			const onScreen = gm.sx > 30 && gm.sy > 30 && gm.sx < viewW - 30 && gm.sy < viewH - 30;
+			const ax = onScreen ? gm.sx : viewW / 2 + Math.cos(ang) * k, ay = onScreen ? gm.sy - 30 : viewH / 2 + Math.sin(ang) * k;
+			ctx.translate(ax, ay); ctx.rotate(onScreen ? Math.PI / 2 : ang);
+			ctx.fillStyle = "#f0c040"; ctx.strokeStyle = "#1c1814"; ctx.lineWidth = 3;
+			ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-10, -11); ctx.lineTo(-4, 0); ctx.lineTo(-10, 11); ctx.closePath(); ctx.stroke(); ctx.fill();
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			ctx.restore(); ctx.save();
+			ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
+			const lx = Math.max(70, Math.min(viewW - 70, ax)), lyy = Math.max(20, Math.min(viewH - 26, ay + (ay > viewH / 2 ? -22 : 26)));
+			const w = ctx.measureText(q.label).width + 12; ctx.fillStyle = "rgba(15,12,8,.8)"; ctx.fillRect(lx - w / 2, lyy - 13, w, 18);
+			ctx.fillStyle = "#f0c040"; ctx.fillText(q.label, lx, lyy);
+			ctx.restore();
+		}
+	}
 	function openTown(l) {
-		const m = wmState();
-		m.warn = ""; m.path = [];
 		w13.seen[l.id] = true;
-		town = { id: l.town, loc: l.id, src: townSrc(l.town), n: (town?.n ?? 0) + 1 };
+		town = { id: l.town, loc: l.id, src: townSrc(l.town), n: (townN = townN + 1) };
+		phase = "town"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
 		pushLog(`${l.name}.`);
 		saveGame(); sync(true);
 	}
@@ -4933,14 +5028,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = v;
 		}
 		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[town.id] = JSON.parse(JSON.stringify(st.extra)); }
-		const from = WM_LOCS.find((l) => l.id === town.loc);
-		const exit = typeof msg.exit === "string" ? msg.exit : "worldmap";
+		const exit = typeof msg.exit === "string" ? msg.exit : "town";
+		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
+		const sp = tdef ? townSpot(tdef) : null;
 		town = null;
-		const dest = WM_LOCS.find((l) => l.id === exit && !l.town);
-		const m = wmState();
-		if (from) { m.q = from.q; m.r = from.r; }
-		if (dest) { m.from = from ? [from.q, from.r] : m.from; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
-		else { phase = "worldmap"; pushLog("You leave town. The world map."); }
+		phase = "play"; townArmed = false;
+		const dest = WM_LOCS.find((l) => l.id === exit);
+		if (sp) { player.x = sp.roadX; player.y = sp.roadY; if (pointBlocked(world, player.x, player.y, RADIUS)) { player.x = sp.x + 110; player.y = sp.y + 40; } }
+		if (dest && dest.map === mapId) { if (dest.map === 0) { const fc = farmCenter(); player.x = fc.x; player.y = fc.y + 150; } pushLog(`You leave town for ${dest.name}.`); }
+		else if (dest) { const m = wmState(); const here = locOfMap(mapId); m.from = [here.q, here.r]; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
+		else pushLog(`You walk out of ${tdef?.name ?? "town"} onto the road.`);
+		snapPrev();
 		saveGame(); sync(true);
 		return true;
 	}
@@ -4960,7 +5058,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	function wmEnter(l) {
-		if (l.town) return openTown(l);
 		const m = wmState();
 		m.warn = "";
 		wmArrive(l.map, m.from);
@@ -10394,6 +10491,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
+		paintTowns(drawCamX, drawCamY);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
 		// v14.1 Blinded: the world closes in, dark and smeared at the edges
 		if (injured("blind") && !inside) {
@@ -11918,6 +12016,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmOpen: () => openWorldMap(),
 		wmGo: (q, r) => wmGo(q, r),
 		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
+		town144Spot: () => townSpot(ISO_TOWNS[0]),
+		pos: () => player ? { x: player.x, y: player.y } : null,
 		town143Msg: (m) => m?.type === "leaveTown" ? leaveTown(m) : townQuest(m),
 		gates: () => world ? world.gates.map((g) => ({ tx: g.tx, ty: g.ty, side: g.side })) : [],
 		gatesFull: () => world ? world.gates.map((g) => ({ ...g })) : [],

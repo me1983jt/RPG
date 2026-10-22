@@ -21,7 +21,6 @@ export const WM_LOCS: WmLoc[] = [
   { id: "kennebec", name: "The Kennebec", q: 7, r: 5, map: 4, blurb: "Wide water, a single crossing." },
   { id: "north", name: "North Woods · The Grok's woods", q: 5, r: 1, map: 1, blurb: "Chain of Ponds and deep timber." },
   { id: "raiders", name: "Raider Country", q: 10, r: 3, map: 5, blurb: "Camps along the ridge. Stay off the skyline." },
-  { id: "harmony", name: "Harmony village", q: 4, r: 4, map: -1, town: "harmony", blurb: "The town on the Moose River road. Trade, a doctor, work." },
   { id: "bunker", name: "The Bunker", q: 3, r: 7, map: 6, blurb: "A hatch under the birches." },
 ];
 /** Room for future loot spots: hexes that will open as small maps later. */
