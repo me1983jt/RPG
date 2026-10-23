@@ -8,7 +8,8 @@ await T("v14Set", { st: 5 });
 await page.evaluate(() => { localStorage.setItem("maine-rpg-hud", JSON.stringify({ quest: true, health: true, aim: true })); });
 const gates = await page.evaluate(() => window.__controlsTest.gatesFull()); ok(gates.length >= 1, `farm map has exit gates (${gates.length})`);
 const g = gates[0];
-for (const k of ["quest", "health", "aim"]) await page.locator(`[data-hud-min="${k}"]`).first().click();
+// v15.8: the aim panel only exists in a fight now; minimize what is on screen
+for (const k of ["quest", "health", "aim"]) { const l = page.locator(`[data-hud-min="${k}"]`).first(); if (await l.count()) await l.click(); }
 await T("setHour", 12);
 const ga = await page.evaluate(() => 0);
 await T("setPos", g.tx * 64 + 32 + (g.arriveTx - g.tx) * 64 * 2.5, g.ty * 64 + 32 + (g.arriveTy - g.ty) * 64 * 2.5); await page.waitForTimeout(900);

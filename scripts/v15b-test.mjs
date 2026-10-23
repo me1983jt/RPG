@@ -7,7 +7,7 @@ let fail = 0; const ok = (c, m) => { console.log((c ? "PASS " : "FAIL ") + m); i
   await begin(); await page.waitForTimeout(800);
   const s = await T("v15Start"); console.log(JSON.stringify(s));
   const dh = Math.hypot(s.x - s.harmony.x, s.y - s.harmony.y);
-  ok(s.harmony && dh > 70 && dh < 300, `new game starts just outside the Harmony village marker (${Math.round(dh)} px)`);
+  ok(s.harmony && dh >= 260 && dh < 400, `new game starts just outside the Harmony village marker (${Math.round(dh)} px)`);
   ok(s.st === 2, "the walk home is the next step (Sarah meets you at the stakes)");
   const sf = await T("v15Safe");
   ok(sf.here === "harmony" && await page.locator("[data-safe15]").isVisible(), "the Safe zone tag shows by Harmony");

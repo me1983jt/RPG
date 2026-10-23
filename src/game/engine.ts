@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2073;
+const ART_V = 2074;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -198,6 +198,11 @@ var IMAGES = [
 	"npc-nora",
 	"npc-etta",
 	"npc-gus",
+	"v4/npc-gus",
+	"v4/overlays/boarded_window_house_v4",
+	"v4/overlays/boarded_window_hall_v4",
+	"v4/overlays/shingle_holes_v4",
+	"v4/npc-pete",
 	"npc-ruth",
 	"npc-emile",
 	"npc-paul",
@@ -636,7 +641,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (mapId === 0 && v14.st < 3 && !mode11) { const c = v14.camp ?? { tx: 0, ty: 0 }; const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(Math.atan2(FARM.ty - c.ty, FARM.tx - c.tx) / (Math.PI / 4)) % 8) + 8) % 8]; return `Cold road: ${STAGE_TEXT[v14.st].replace("east", dir)}`; }
 		if (raid) {
 			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
-			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} soon`;
+			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} in ${Math.max(1, Math.ceil(raid.t))}s`;
 			return `Raid night ${raid.night}: ${stage}. Farmhouse ${pct}%.`;
 		}
 		if (snow < 3 && quest <= 0) {
@@ -4106,7 +4111,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (hv) {
 			const fc = farmCenter();
 			let best = null;
-			for (let a = 0; a < 360; a += 15) for (const r of [150, 190, 230]) {
+			for (let a = 0; a < 360; a += 15) for (const r of [270, 310, 350]) { // v15.8: was 150-230; spawn clear of the walk-in ring
 				const x = hv.x + Math.cos(a * Math.PI / 180) * r, y = hv.y + Math.sin(a * Math.PI / 180) * r;
 				if (pointBlocked(world, x, y, RADIUS)) continue;
 				const tt = tileOf(x, y); if (inFarm(tt.tx, tt.ty) || Math.hypot(tt.tx - FARM.tx, tt.ty - FARM.ty) < FARM.r + 3) continue;
@@ -4114,7 +4119,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				if (!best || d < best.d) best = { x, y, d };
 			}
 			if (best) {
-				player.x = best.x; player.y = best.y; player.respawnX = best.x; player.respawnY = best.y; townArmed = false;
+				player.x = best.x; player.y = best.y; player.respawnX = best.x; player.respawnY = best.y; townDisarm();
 				v14.st = 2; giveItem("matches"); giveItem("water");
 				pushLog("You come to on the road outside Harmony village. Home's just up Cambridge Road.");
 			}
@@ -4966,7 +4971,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const townApp = (id) => { const t = townDef(id); return t ? t.app ?? "harmony" : id; };
 	/** The enterTown.town id for a marker: harmony entries are their own id, Pittsfield/Skowhegan markers name their scene entry. */
 	const townEntry = (id) => townDef(id)?.entry ?? id;
-	let townArmed = true;
+	/** v15.8: each town arms on its own (one shared flag let any far town re-arm the near one). Leaving or
+	 * spawning disarms them all; each re-arms once you're 170 px from it. */
+	const townArm = {};
+	function townDisarm() { for (const t of ISO_TOWNS) townArm[t.id] = false; }
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
 		world.townSpots = world.townSpots ?? {};
@@ -5015,8 +5023,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const sp = townSpot(t);
 			if (!sp) continue;
 			const d = Math.hypot(player.x - sp.x, player.y - sp.y);
-			if (d > 170) townArmed = true;
-			else if (d < 70 && townArmed) { townArmed = false; intent = null; openTown({ id: t.id, town: t.id, name: t.name }); }
+			if (d > 170) townArm[t.id] = true;
+			else if (d < 70 && townArm[t.id] !== false) { townDisarm(); intent = null; openTown({ id: t.id, town: t.id, name: t.name }); }
 		}
 	}
 	/** Where a town quest points from here: the exit gate facing its world-map hex (or null when you're on that map). */
@@ -5034,6 +5042,51 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return best ? { x: best.tx * TILE + 32, y: best.ty * TILE + 32 } : null;
 	}
+	/** v15.8: town marker houses join the depth-sorted draw list, so people walk in front of and behind them;
+	 * the ground shadow goes down with the ground. Offsets are screen px at zoom 1 from the marker. */
+	const TOWN_HOUSES = { harmony: [[-72, -12, 132], [75, -6, 123], [0, 21, 156]], _: [[0, 15, 144]] };
+	function townGround(camX, camY) {
+		if (!world || !player || inside) return;
+		for (const t of ISO_TOWNS) {
+			if (!townOpen(t)) continue;
+			const sp = townSpot(t); if (!sp) continue;
+			const r = worldToScreen(sp.x, sp.y, camX, camY), m = zoomPoint(r.sx, r.sy);
+			if (m.sx < -200 || m.sy < -200 || m.sx > viewW + 200 || m.sy > viewH + 200) continue;
+			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 6 * zoom, 105 * zoom, 105 * CAM_ISO_Y * .63 * zoom, 0, 0, Math.PI * 2); ctx.fill();
+		}
+	}
+	function townHouseDraws(draws, camX, camY, bodies) {
+		if (!world || !player || inside) return;
+		const img = images.get("farmhouse");
+		const iw = img ? (img.naturalWidth || img.width) : 0, ih = img ? (img.naturalHeight || img.height) : 0;
+		for (const t of ISO_TOWNS) {
+			if (!townOpen(t)) continue;
+			const sp = townSpot(t); if (!sp) continue;
+			for (const [dx, dy, w] of TOWN_HOUSES[t.id] ?? TOWN_HOUSES._) {
+				const vx = dy / (2 * CAM_ISO_Y) + dx / 2, vy = dy / (2 * CAM_ISO_Y) - dx / 2;
+				const fx = sp.x + vx, fy = sp.y + vy;
+				const key = `${t.id}|${dx}`;
+				draws.push({ z: bodyZ(fx, fy), draw: () => {
+					const r = worldToScreen(sp.x, sp.y, camX, camY), m = zoomPoint(r.sx, r.sy);
+					if (m.sx < -300 || m.sy < -300 || m.sx > viewW + 300 || m.sy > viewH + 300) return;
+					const x0 = m.sx + dx * zoom - w * zoom / 2, h = iw ? w * ih / iw : w * .8, y1 = m.sy + dy * zoom, y0 = y1 - h * zoom;
+					// fade to ~35% while anyone stands behind it
+					let behind = false;
+					for (const b of bodies) {
+						if (bodyZ(b.x, b.y) >= bodyZ(fx, fy)) continue;
+						const br = worldToScreen(b.x, b.y, camX, camY), bs = zoomPoint(br.sx, br.sy);
+						if (bs.sx > x0 && bs.sx < x0 + w * zoom && bs.sy < y1 && bs.sy > y0) { behind = true; break; }
+					}
+					const f = townFade.get(key) ?? 0, nf = f + ((behind ? 1 : 0) - f) * Math.min(1, STEP * 10);
+					townFade.set(key, nf);
+					ctx.save(); ctx.globalAlpha = 1 - nf * .65;
+					if (iw) ctx.drawImage(img, x0, y0, w * zoom, h * zoom);
+					ctx.restore();
+				} });
+			}
+		}
+	}
+	const townFade = new Map();
 	function paintTowns(camX, camY) {
 		if (!world || !player || inside) return;
 		const sx = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
@@ -5043,14 +5096,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!sp) continue;
 			const m = sx(sp.x, sp.y);
 			if (m.sx < -200 || m.sy < -200 || m.sx > viewW + 200 || m.sy > viewH + 200) continue;
-			const img = images.get("farmhouse");
-			ctx.save();
-			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 6 * zoom, 105 * zoom, 33 * zoom, 0, 0, Math.PI * 2); ctx.fill();
-			const house = (dx, dy, w) => {
-				if (img?.naturalWidth) { const h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, m.sx + dx * zoom - w * zoom / 2, m.sy + dy * zoom - h * zoom, w * zoom, h * zoom); }
-				else { ctx.fillStyle = "#8a6a4a"; ctx.fillRect(m.sx + (dx - w / 2) * zoom, m.sy + (dy - w * .5) * zoom, w * zoom, w * .5 * zoom); ctx.fillStyle = "#5a3a2a"; ctx.beginPath(); ctx.moveTo(m.sx + (dx - w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.lineTo(m.sx + dx * zoom, m.sy + (dy - w * .9) * zoom); ctx.lineTo(m.sx + (dx + w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.fill(); }
-			};
-			if (t.id === "harmony") { house(-72, -12, 132); house(75, -6, 123); house(0, 21, 156); } else house(0, 15, 144); // v15.4: x1.5
+			ctx.save(); // v15.8: the houses are depth-sorted with everything else (townHouseDraws); only the label is drawn here
 			const near = Math.hypot(player.x - sp.x, player.y - sp.y) < 260;
 			const label = near ? `${t.name} · walk in` : t.name;
 			ctx.globalAlpha = 1;
@@ -5115,6 +5161,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const id = townApp(town?.id ?? "harmony");
 		return {
 			inventory: (p?.bag ?? []).filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty, name: GEAR[s.id]?.name ?? s.id })),
+			// v15.8: the town class follows the RPG role, so no town ever asks again (a class picked in a town still wins via extra.cls)
+			class: ({ fighter: "woodsman", hunter: "woodsman", thief: "scrounger", medic: "fixer" })[p?.role] ?? "woodsman",
 			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
 			injuries: inj,
 			companions: [
@@ -5172,14 +5220,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// v15.1: Skowhegan's bridge hotspot (Fur & Mask still hold it) hands over to quest-harmony's Skowhegan bridge crossing
 		if (exit === "bridge" && townApp(town.id) === "skowhegan") {
 			townQuestsDone();
-			town = null; phase = "play"; townArmed = false;
+			town = null; phase = "play"; townDisarm();
 			autosave15("Left Skowhegan");
 			openTown({ id: "skow", town: "skow", name: "Skowhegan bridge" });
 			return true;
 		}
 		const sp = tdef ? townSpot(tdef) : null;
 		town = null;
-		phase = "play"; townArmed = false;
+		phase = "play"; townDisarm();
 		const dest = WM_LOCS.find((l) => l.id === exit && !locLocked(l, l1.tf));
 		if (sp) { player.x = sp.roadX; player.y = sp.roadY; if (pointBlocked(world, player.x, player.y, RADIUS)) { player.x = sp.x + 110; player.y = sp.y + 40; } }
 		if (dest && dest.map === mapId) { if (dest.map === 0) { const fc = farmCenter(); player.x = fc.x; player.y = fc.y + 150; } pushLog(`You leave town for ${dest.name}.`); }
@@ -5195,7 +5243,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function fastTravel15(ft) {
 		const from = townDef(town?.id ?? "")?.name ?? "town";
 		const td = townDef(ft);
-		town = null; phase = "play"; townArmed = false;
+		town = null; phase = "play"; townDisarm();
 		const hrs = FT15_HOURS[ft];
 		clock += hrs / 24 * DAY_LENGTH_SEC;
 		needsTick(hrs);
@@ -5356,7 +5404,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		w13.seen[l.id] = true;
 		// v15.1: a town hex walks you to its marker and opens the town game
 		const td = l.town ? townDef(l.town) : null, sp = td ? townSpot(td) : null;
-		if (td && sp) { player.x = sp.roadX; player.y = sp.roadY; snapPrev(); townArmed = false; openTown({ id: td.id, town: td.id, name: td.name }); return; }
+		if (td && sp) { player.x = sp.roadX; player.y = sp.roadY; snapPrev(); townDisarm(); openTown({ id: td.id, town: td.id, name: td.name }); return; }
 		saveGame(); sync(true);
 	}
 	function wmEncounter(raiders) {
@@ -9128,6 +9176,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const k = V2_WHO[npc.role];
 		return k && images.get(`v2/${k}-walk`) ? k : "";
 	}
+	const V4_FOLK = new Set(["gus", "pete"]);
 	function folkSheet(npc) {
 		const k = v2Who(npc);
 		if (k) return `v2/${k}-walk`;
@@ -9150,6 +9199,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		// Standing still uses each sheet's cleanest upright feet-together cell; walking skips rows whose
 		// art is slanted (most NPC diagonals lean ~18px) or mis-sized (Loki's N row). See pose-table.ts.
+		// v15.8: Quest RPG's approved v4 town-character art (one upright frame, feet on the bottom row) for people
+		// who also appear in the towns and have no animated v2 set. Used while they stand; walking keeps the sheet.
+		if (body.still !== false && V4_FOLK.has(body.role) && images.get(`v4/npc-${body.role}`)) {
+			blit(`v4/npc-${body.role}`, body.x, body.y, folkHeight(body), false, 0, 0, camX, camY);
+			return;
+		}
 		const sheet = folkSheet(body);
 		const pose = POSE[sheet];
 		const dir = (body.dir || 0) % 8;
@@ -9459,7 +9514,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				return;
 			}
 			raid.phase = "lull";
-			raid.t = 14;
+			raid.t = 9; // v15.8: was 14 s; read as a stall
 			raid.warned = false;
 			raid.ang = Math.random() * Math.PI * 2;
 			if (world.npcs.some((m) => m.role === "loki")) {
@@ -9472,6 +9527,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function endRaid(won, why) {
 		if (!raid || !player || !world) return;
+		{ const wm = wmState(); wm.lastNight = curDay(); wm.warn = ""; } // v15.8: the raid is over; the world map opens clean (no away-raid the same night)
 		if (mode11 === "endless") {
 			if (won) {
 				raid.waves += 1; raid.phase = "lull"; raid.t = 8; raid.warned = false; raid.ang = Math.random() * Math.PI * 2;
@@ -10765,6 +10821,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		drawGround(drawCamX, drawCamY);
 		if (world) { const dprG = canvas.width / Math.max(1, viewW); drawGroundDepth(); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
 		q10DrawGround(drawCamX, drawCamY, dpr);
+		// v15.8: combat hexes, move highlights and the turn ring sit on the ground, under every sprite
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0); townGround(drawCamX, drawCamY); paintHex15(drawCamX, drawCamY);
 		if (world.gates.length && !mode11) {
 			// v14 exit grid: a tinted band at each edge road; walking in opens the world map
 			ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
@@ -10805,6 +10863,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		const draws = [];
+		const fadeBodies = player ? [player, ...(world?.npcs ?? []), ...(world?.enemies ?? []).filter((e) => !e.dead), ...(dogBody ? [dogBody] : [])] : [];
 		for (const prop of world.props) {
 			const t = prop.tx + prop.ty;
 			const i = prop.ty * 156 + prop.tx;
@@ -10844,23 +10903,28 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					let seeThrough = false;
 					// vehicles: use the real art box (native size), not the old prop box
 					const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
-					if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140)) && c.x + c.y > player.x + player.y && !(standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y))) {
+					// v15.8: any character (hero, folk, foes, Goose) behind a tall prop makes it fade to ~35%
+					if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
 						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 						const ps = zoomPoint(pr.sx, pr.sy);
-						const hr = worldToScreen(player.x, player.y, drawCamX, drawCamY);
-						const hs = zoomPoint(hr.sx, hr.sy);
 						const ph = (vArt ? vArt.h : h * scale) * zoom;
 						const pimg = images.get(vArt ? vArt.name : spec.image);
 						const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
 						const pw = ph * aspect * (tree ? .85 : .92);
-						seeThrough = Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph;
+						for (const b of fadeBodies) {
+							if (c.x + c.y <= b.x + b.y) continue;
+							if (b === player && standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y)) continue;
+							const hr = worldToScreen(b.x, b.y, drawCamX, drawCamY);
+							const hs = zoomPoint(hr.sx, hr.sy);
+							if (Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph) { seeThrough = true; break; }
+						}
 					}
 					// ease the fade in and out instead of popping
 					const fadeTo = seeThrough ? 1 : 0;
 					prop.fade = (prop.fade || 0) + (fadeTo - (prop.fade || 0)) * Math.min(1, STEP * 10);
 					if (prop.fade < .01) prop.fade = 0;
 					seeThrough = prop.fade > 0;
-					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * (tree ? .78 : .62);
+					if (seeThrough) ctx.globalAlpha = 1 - prop.fade * .65;
 					if (prop.fade > .3) occl141 = true;
 					const treeArt = v2TreeArt(prop, n);
 					if (prop.kind === "tractor" && (prop.charge || 0) > 0 && images.get("v2/tractor-drive")) {
@@ -11144,6 +11208,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		paintFlood(drawCamX, drawCamY);
 		q10Draws(draws, drawCamX, drawCamY);
+		townHouseDraws(draws, drawCamX, drawCamY, fadeBodies);
 		draws.sort((a, b) => a.z - b.z);
 		occl141 = false;
 		for (const item of draws) item.draw();
@@ -11156,7 +11221,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
-		paintHex15(drawCamX, drawCamY);
 		paintTowns(drawCamX, drawCamY);
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
 		// v14.1 Blinded: the world closes in, dark and smeared at the edges
@@ -11437,7 +11501,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.drawImage(src, sx, sy, sw, sh, -dw / 2, spriteY, dw, dh);
 			ctx.restore();
 		} else ctx.drawImage(src, sx, sy, sw, sh, p.sx - dw / 2, p.sy + spriteY, dw, dh);
+		if (!sheet && !strips && !tilt && !flip && PROP_OVERLAYS[name]) paintOverlays(name, p.sx - dw / 2, p.sy + spriteY, dw / img.width);
 		ctx.imageSmoothingEnabled = smooth;
+	}
+	/** v15.8: Quest RPG's v4 map overlays (boarded windows, missing shingles) pinned onto building art.
+	 * [overlay, x, y, w (px in the building image), skewY to match that wall/roof face of the 2:1 art]. */
+	const PROP_OVERLAYS = {
+		farmhouse: [["boarded_window_house_v4", 93, 124, 21, 0], ["boarded_window_hall_v4", 249, 133, 20, -.28], ["boarded_window_house_v4", 249, 194, 24, -.28]],
+		shack: [["boarded_window_hall_v4", 232, 124, 30, -.45], ["shingle_holes_v4", 150, 70, 120, -.55]],
+	};
+	function paintOverlays(name, x0, y0, k) {
+		for (const [ov, ox, oy, ow, skew] of PROP_OVERLAYS[name]) {
+			const im = images.get(`v4/overlays/${ov}`); if (!im) continue;
+			const iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height, w = ow * k, h = w * ih / iw;
+			ctx.save(); ctx.translate(x0 + ox * k, y0 + oy * k); ctx.transform(1, skew, 0, 1, 0, 0); ctx.globalAlpha *= .95; ctx.drawImage(im, 0, 0, w, h); ctx.restore();
+		}
 	}
 	function enemyUnder(sx, sy) {
 		if (!world) return null;
@@ -13036,7 +13114,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		freeFarmTile: () => { if (!world) return null; const f = tileOf(farmCenter().x, farmCenter().y); for (let r = 3; r < 9; r++) for (let y = f.ty - r; y <= f.ty + r; y++) for (let x = f.tx - r; x <= f.tx + r; x++) if (inFarm(x, y) && footprintFree(world, x, y, 1, 1) && world.tiles[y * MAP_W + x] !== 2) return { tx: x, ty: y }; return null; },
 		toggleBuild: (on) => { buildOpen = !!on; sync(true); },
 		save: () => saveGame(),
-		v14WinWave: () => { if (!raid) return; for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.left = 0; },
+		v14WinWave: () => { if (!raid) return; for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.left = 0; if (raid.phase === "lull") raid.t = Math.min(raid.t, .5); },
 
 		getYaw: () => lastYaw,
 		getSpeed: () => lastSpeed,

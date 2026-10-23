@@ -1,4 +1,6 @@
 import { WM_COLS, WM_HEX, WM_H, WM_LOCS, WM_ROWS, WM_W, hexAt, hexCenter } from "@/game/worldmap";
+/** v15.8: world-map location id -> Quest RPG town icon (public/game/v4/icons/<name>_icon_v4.png). */
+const TOWN_ICONS: Record<string, string> = { farm: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville" };
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
@@ -97,6 +99,9 @@ function WorldMap14({ wm, go }: { wm: any; go: (q: number, r: number) => void })
   const [tick, setTick] = useState(0);
   const redraw = () => setTick((n) => n + 1);
   useEffect(() => { const i = new Image(); i.onload = redraw; i.src = "/game/v14/worldmap.jpg"; img.current = i; }, []);
+  // v15.8: Quest RPG painted town icons replace the plain house-block markers
+  const icons = useRef<Record<string, HTMLImageElement>>({});
+  useEffect(() => { for (const [loc, f] of Object.entries(TOWN_ICONS)) { const i = new Image(); i.onload = redraw; i.src = `/game/v4/icons/${f}_icon_v4.png`; icons.current[loc] = i; } }, []);
   useEffect(() => {
     const c = ref.current; if (!c) return;
     const ro = new ResizeObserver(() => redraw()); ro.observe(c); return () => ro.disconnect();
@@ -140,6 +145,12 @@ function WorldMap14({ wm, go }: { wm: any; go: (q: number, r: number) => void })
     const st = hexCenter(wm.q, wm.r); g.moveTo(st.x, st.y);
     for (const [q, r] of wm.path) { const p = hexCenter(q, r); g.lineTo(p.x, p.y); }
     g.stroke(); g.setLineDash([]);
+    for (const l of WM_LOCS) {
+      const ic = icons.current[l.id];
+      if (!ic?.complete || !ic.naturalWidth || !fog.has(`${l.q},${l.r}`) || (wm.locked ?? []).includes(l.id)) continue;
+      const p = hexCenter(l.q, l.r), sz = WM_HEX * 1.55;
+      g.save(); g.shadowColor = "rgba(0,0,0,.55)"; g.shadowBlur = 6; g.drawImage(ic, p.x - sz / 2, p.y - sz * .62, sz, sz); g.restore();
+    }
     g.restore();
     const sc = (x: number, y: number) => ({ x: v.x + x * v.s, y: v.y + y * v.s });
     g.textAlign = "center"; g.textBaseline = "middle";
@@ -1197,6 +1208,16 @@ export function RPG() {
           <div data-menu="card" className="w-full plank border border-border bg-surface/95 p-6 short:p-3 menu-cols">
             <p className="text-xs uppercase tracking-widest text-primary">Northwestern Maine</p>
             <h1 className="mt-1 font-display text-5xl leading-none short:text-3xl">Maine RPG</h1>
+            {hud.hasSave && step === "trade" ? (
+              <button
+                type="button"
+                data-testid="continue-btn"
+                className="mt-2 w-full plank border border-primary bg-primary/20 px-4 py-3 text-lg font-semibold short:py-2"
+                onClick={() => apiRef.current?.continueGame()}
+              >
+                Continue
+              </button>
+            ) : null}
             <p className="mt-3 leading-relaxed text-muted short:mt-1 short:line-clamp-2 short:text-sm">
               After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. Name yourself, pick a trade, and set your clothes.
             </p>
@@ -1386,16 +1407,6 @@ export function RPG() {
                 </>
               ) : (
                 <>
-                  {hud.hasSave && step === "trade" ? (
-                    <button
-                      type="button"
-                      data-testid="continue-btn"
-                      className="plank border border-primary bg-primary/20 px-4 py-3 font-semibold"
-                      onClick={() => apiRef.current?.continueGame()}
-                    >
-                      Continue
-                    </button>
-                  ) : null}
                   {step === "trade" ? (
                     <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => setStep("points")}>
                       Next
