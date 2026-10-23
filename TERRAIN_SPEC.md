@@ -45,3 +45,9 @@ Water and details (reserved, loaded but not drawn yet)
 - Grass should be worn, with bare dirt patches and mixed tufts.
 - Avoid visible repeats. Use many variants and random rotation or flips.
 - Draw everything to scale with the characters, which are getting bigger and more detailed. Check every piece against the hero sprite.
+
+## v15.5 ground renderer
+The ground is now baked into 16x16-tile chunks (`bakeChunk` in engine.ts). Materials blend along noise-warped edges, and every `ground-*-n` variant is mixed in with rotations and flips. Seeded decals are scattered on top: pebbles, ruts, cracks, potholes, weeds, moss, leaf litter, grass tufts and faint graffiti. A muted overcast regrade is applied.
+- Roads near town lots (rubble) or the map edge are drawn as asphalt; other roads are dirt tracks.
+- Chunks and their fogged copies are cached (LRU of 16). They only rebake when their tiles change.
+- Fog of war uses soft per-tile masks.

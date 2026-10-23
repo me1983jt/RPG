@@ -10242,6 +10242,299 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		spillQ.clear();
 		ctx.globalAlpha = 1;
 	}
+	/** v15.5 terrain: the ground is baked into 16x16-tile chunks (1024 world px at half resolution) in which
+	 * grass / bare dirt / dirt track / gravel shoulder / asphalt / rubble / snow blend along wavy, noise-warped
+	 * edges (never along tile or hex lines). Every texture variant is mixed in with rotations and flips, then a
+	 * seeded scatter of pebbles, cracks, potholes, ruts, standing grass tufts and faint graffiti is painted on,
+	 * and the result gets the muted overcast regrade. Chunks are drawn through the same isometric matrix as
+	 * everything else, so details are foreshortened with the view; pebbles and tufts get relief (shadow to the
+	 * lower right, blades standing up on screen). Chunks are cached (LRU) and rebaked only if their tiles change. */
+	const CH_T = 16, CH_W = CH_T * 64, CH_S = .5, CH_PX = CH_W * CH_S, CH_MAX = 16;
+	const chunkCache = new Map();
+	let chunkWorld = null;
+	const v155Pats = new Map();
+	function v155Rng(seed) { let s = seed >>> 0 || 1; return () => { s = Math.imul(s ^ s >>> 15, 2246822519) + 0x9e3779b9 >>> 0; s ^= s >>> 13; return (s >>> 0) / 4294967296; }; }
+	function v155Img(mat, v) {
+		const base = ["ground-mat-dirt", "ground-mat-scrub", "ground-mat-road", "ground-mat-rubble", "ground-mat-snow"][mat];
+		const list = TERRAIN.variants.get(base);
+		const name = list?.length ? list[v % list.length] : base;
+		return images.get(name) ?? null;
+	}
+	/** A pattern for material/variant with its own rotation+flip (k = 0..7), in chunk-baking space. */
+	function v155Pat(g, key, img, k) {
+		const id = `${key}|${k}`;
+		let p = v155Pats.get(id);
+		if (p === undefined) {
+			p = img ? g.createPattern(img, "repeat") : null;
+			v155Pats.set(id, p);
+		}
+		if (p && typeof p.setTransform === "function") {
+			const m = new DOMMatrix();
+			m.scaleSelf(CH_S * (k & 4 ? -1 : 1), CH_S); m.rotateSelf((k & 3) * 90);
+			p.setTransform(m);
+		}
+		return p;
+	}
+	let v155Asphalt = null;
+	function asphaltImg() {
+		if (v155Asphalt) return v155Asphalt;
+		const src = v155Img(3, 1) ?? v155Img(2, 0);
+		if (!src) return null;
+		const c = document.createElement("canvas"); c.width = c.height = 256;
+		const g = c.getContext("2d");
+		g.fillStyle = "#4b4c4e"; g.fillRect(0, 0, 256, 256);
+		g.globalAlpha = .55; g.filter = "grayscale(1) contrast(.7) brightness(.85)"; g.drawImage(src, 0, 0, 256, 256); g.filter = "none";
+		const r = v155Rng(77); g.globalAlpha = .25;
+		for (let i = 0; i < 2200; i++) { const v = 60 + r() * 70 | 0; g.fillStyle = `rgb(${v},${v},${v + 3})`; g.fillRect(r() * 256, r() * 256, 1.2, 1.2); }
+		v155Asphalt = c; return c;
+	}
+	/** Material of a world point (tile units), warped by smooth noise so borders wander. 0 dirt field, 1 grass,
+	 * 2 dirt track, 3 rubble, 4 snow, 6 asphalt, -1 nothing. */
+	function v155MatAt(tx, ty, asph) {
+		const wx = tx + edgeWave(tx * 2.3, ty * 2.3) * .8 + edgeWave(tx * 7.1 + 5, ty * 7.1) * .3, wy = ty + edgeWave(ty * 2.3 + 40, tx * 2.3 + 17) * .8 + edgeWave(ty * 7.1 + 9, tx * 7.1 + 3) * .3;
+		const ix = Math.floor(wx), iy = Math.floor(wy);
+		if (ix < 0 || iy < 0 || ix > 155 || iy > 155) return -1;
+		const t = world.tiles[iy * 156 + ix];
+		if (t === 2) return inFarm(ix, iy) ? 4 : asph[iy * 156 + ix] ? 6 : 2;
+		return t >= 0 && t <= 4 ? t : -1;
+	}
+	let v155AsphMap = null;
+	function v155Asph() {
+		if (v155AsphMap && v155AsphMap.w === world) return v155AsphMap.a;
+		// paved where the road runs near town lots (rubble) or is part of an edge highway; elsewhere a dirt track
+		const a = new Uint8Array(156 * 156);
+		for (let y = 0; y < 156; y++) for (let x = 0; x < 156; x++) {
+			if (world.tiles[y * 156 + x] !== 2) continue;
+			let near = x < 3 || y < 3 || x > 152 || y > 152;
+			for (let dy = -4; dy <= 4 && !near; dy++) for (let dx = -4; dx <= 4; dx++) {
+				const nx = x + dx, ny = y + dy;
+				if (nx >= 0 && ny >= 0 && nx < 156 && ny < 156 && world.tiles[ny * 156 + nx] === 3) { near = true; break; }
+			}
+			a[y * 156 + x] = near ? 1 : 0;
+		}
+		v155AsphMap = { w: world, a }; return a;
+	}
+	function v155Sig(cx, cy) {
+		let h = 0;
+		for (let y = cy * CH_T - 1; y <= cy * CH_T + CH_T; y++) for (let x = cx * CH_T - 1; x <= cx * CH_T + CH_T; x++) {
+			const t = x < 0 || y < 0 || x > 155 || y > 155 ? 9 : world.tiles[y * 156 + x];
+			h = Math.imul(h ^ (t + 3), 16777619);
+		}
+		return h;
+	}
+	function bakeChunk(cx, cy) {
+		const asph = v155Asph();
+		const BW = CH_PX + 64, PADT = 1, SPAN = CH_T + 2; // bake one tile of margin on every side, crop after (no seams)
+		const c = document.createElement("canvas"); c.width = c.height = BW;
+		const g = c.getContext("2d");
+		const M = 144, step = SPAN / M; // mask grid: 8 world px per cell
+		const mats = new Int8Array(M * M);
+		const present = new Set();
+		for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+			const m = v155MatAt(cx * CH_T - PADT + (i + .5) * step, cy * CH_T - PADT + (j + .5) * step, asph);
+			mats[j * M + i] = m; if (m >= 0) present.add(m);
+		}
+		const mask = document.createElement("canvas"); mask.width = mask.height = M;
+		const mg = mask.getContext("2d");
+		const layer = document.createElement("canvas"); layer.width = layer.height = BW;
+		const lg = layer.getContext("2d");
+		const seed = cx * 7919 + cy * 104729;
+		const fillMat = (gg, mat, s) => {
+			// all variants, each rotated/flipped, mixed by big soft noise blobs
+			const img0 = mat === 6 ? asphaltImg() : v155Img(mat === 2 ? 0 : mat, 0);
+			gg.globalAlpha = 1; gg.fillStyle = (mat === 6 ? v155Pat(gg, "asph", img0, s & 7) : v155Pat(gg, `${mat}-0`, img0, s & 7)) ?? "#555"; gg.fillRect(0, 0, BW, BW);
+			if (mat === 6) return;
+			const base = mat === 2 ? 0 : mat;
+			const n = TERRAIN.variants.get(["ground-mat-dirt", "ground-mat-scrub", "ground-mat-road", "ground-mat-rubble", "ground-mat-snow"][base])?.length ?? 1;
+			const r = v155Rng(s * 31 + mat);
+			for (let v = 1; v < n; v++) {
+				const p = v155Pat(gg, `${base}-${v}`, v155Img(base, v), (v + s) & 7);
+				if (!p) continue;
+				gg.fillStyle = p;
+				for (let b = 0; b < 3; b++) {
+					const x = r() * BW, y = r() * BW, rad = 80 + r() * 160;
+					const gr = gg.createRadialGradient(x, y, 0, x, y, rad);
+					gr.addColorStop(0, "rgba(0,0,0,.95)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+					gg.save(); gg.globalCompositeOperation = "source-over"; gg.globalAlpha = .9;
+					gg.beginPath(); gg.arc(x, y, rad, 0, 7); gg.clip(); gg.globalAlpha = .55 + r() * .4; gg.fillRect(x - rad, y - rad, rad * 2, rad * 2); gg.restore();
+				}
+			}
+			if (mat === 2) { gg.globalAlpha = .28; gg.fillStyle = "#5a4a38"; gg.fillRect(0, 0, BW, BW); gg.globalAlpha = 1; }
+		};
+		const order = [1, 0, 3, 2, 6, 4];
+		g.imageSmoothingEnabled = true;
+		for (const mat of order) {
+			if (!present.has(mat)) continue;
+			const id = mg.createImageData(M, M);
+			for (let k = 0; k < M * M; k++) if (mats[k] === mat) id.data[k * 4 + 3] = 255;
+			mg.putImageData(id, 0, 0);
+			lg.globalCompositeOperation = "source-over"; lg.clearRect(0, 0, BW, BW);
+			fillMat(lg, mat, seed + mat);
+			lg.globalCompositeOperation = "destination-in";
+			lg.filter = "blur(6px)"; lg.drawImage(mask, 0, 0, BW, BW); lg.filter = "none";
+			lg.globalCompositeOperation = "source-over";
+			g.drawImage(layer, 0, 0);
+			if (mat === 2 || mat === 6) {
+				// gravel shoulder: a wider, fainter halo of dirt+gravel around roads
+				lg.clearRect(0, 0, BW, BW); fillMat(lg, 0, seed + 9);
+				lg.globalCompositeOperation = "destination-in"; lg.filter = "blur(9px)"; lg.drawImage(mask, 0, 0, BW, BW); lg.filter = "none"; lg.globalCompositeOperation = "source-over";
+				g.save(); g.globalCompositeOperation = "destination-over"; g.drawImage(layer, 0, 0); g.restore();
+			}
+		}
+		// grass: bare patches
+		const r = v155Rng(seed ^ 0x5bd1e995);
+		const at = (px, py) => { const i = Math.min(M - 1, Math.max(0, px / BW * M | 0)), j = Math.min(M - 1, Math.max(0, py / BW * M | 0)); return mats[j * M + i]; };
+		const dirtP = v155Pat(g, "0-0", v155Img(0, 1) ?? v155Img(0, 0), seed & 7);
+		if (dirtP) for (let i = 0; i < 26; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 1) continue;
+			const rad = 14 + r() * 34, gr = g.createRadialGradient(x, y, rad * .2, x, y, rad);
+			g.save(); g.beginPath(); for (let a = 0; a < 6.28; a += .5) { const rr = rad * (.7 + r() * .4); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr * .8); } g.closePath();
+			g.clip(); g.globalAlpha = .5 + r() * .3; g.fillStyle = dirtP; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); g.restore(); void gr;
+		}
+		// dirt track ruts (lengthwise along the road direction)
+		for (let i = 0; i < 260; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 2) continue;
+			const ty = Math.floor(cy * CH_T - PADT + y / BW * SPAN), tx = Math.floor(cx * CH_T - PADT + x / BW * SPAN);
+			const alongY = roadRunsY(tx, ty);
+			g.globalAlpha = .16; g.strokeStyle = "#3a2e22"; g.lineWidth = 2 + r() * 2; g.beginPath();
+			const off = (r() < .5 ? -1 : 1) * 7;
+			if (alongY) { g.moveTo(x + off, y - 12); g.quadraticCurveTo(x + off + r() * 3, y, x + off, y + 12); } else { g.moveTo(x - 12, y + off); g.quadraticCurveTo(x, y + off + r() * 3, x + 12, y + off); }
+			g.stroke();
+		}
+		// asphalt: cracks, potholes, faint graffiti spots
+		for (let i = 0; i < 40; i++) {
+			let x = r() * BW, y = r() * BW; if (at(x, y) !== 6) continue;
+			g.globalAlpha = .45; g.strokeStyle = "#26272a"; g.lineWidth = .9; g.beginPath(); g.moveTo(x, y);
+			for (let k = 0; k < 6; k++) { x += (r() - .5) * 14; y += (r() - .5) * 14; g.lineTo(x, y); }
+			g.stroke();
+		}
+		for (let i = 0; i < 6; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 6) continue;
+			const rx = 4 + r() * 7; g.globalAlpha = .55; g.fillStyle = "#2e2c29"; g.beginPath(); g.ellipse(x, y, rx, rx * .8, r() * 3, 0, 7); g.fill();
+			g.globalAlpha = .35; g.fillStyle = "#6b6a66"; g.beginPath(); g.ellipse(x - 1, y - 1, rx * .9, rx * .6, 0, 3.4, 6); g.fill();
+		}
+		if (r() < .45) for (let tries = 0; tries < 20; tries++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 6) continue;
+			const col = ["rgba(150,62,58,", "rgba(72,92,140,", "rgba(190,190,180,"][r() * 3 | 0];
+			g.save(); g.filter = "blur(1px)"; g.lineWidth = 2.2; g.lineCap = "round";
+			for (let k = 0; k < 4; k++) { g.strokeStyle = col + (.18 + r() * .1) + ")"; g.beginPath(); g.arc(x + k * 5, y + (r() - .5) * 4, 4 + r() * 5, r() * 3, 3 + r() * 3); g.stroke(); }
+			g.restore(); break;
+		}
+		// pebbles with relief (on track, shoulder edges, field dirt, rubble); shadow falls screen-down-right
+		for (let i = 0; i < 520; i++) {
+			const x = r() * BW, y = r() * BW, m = at(x, y);
+			if (!(m === 2 || m === 0 || m === 3 || (m === 1 && r() < .08))) continue;
+			const s = .8 + r() * 1.6, v = 92 + r() * 60 | 0;
+			g.globalAlpha = .45; g.fillStyle = "#1e1a16"; g.beginPath(); g.ellipse(x + s * .9, y + s * .1, s, s * .8, 0, 0, 7); g.fill();
+			g.globalAlpha = 1; g.fillStyle = `rgb(${v},${v - 4},${v - 12})`; g.beginPath(); g.ellipse(x, y, s, s * .8, r() * 3, 0, 7); g.fill();
+			g.fillStyle = `rgba(235,232,222,.5)`; g.fillRect(x - s * .6, y - s * .6, s * .5, s * .4);
+		}
+		// grass tufts: blades along world (-1,-1), which stands straight up on screen
+		for (let i = 0; i < 700; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 1) continue;
+			const n = 3 + r() * 4 | 0, hue = r();
+			g.globalAlpha = .5; g.strokeStyle = hue < .5 ? "#4e5a36" : hue < .85 ? "#7a7448" : "#8c7f5a"; g.lineWidth = .8;
+			g.beginPath();
+			for (let k = 0; k < n; k++) { const L = 3 + r() * 4, sp = (r() - .5) * 3; g.moveTo(x + k * .6, y - k * .6); g.lineTo(x + k * .6 - L + sp, y - k * .6 - L - sp); }
+			g.stroke();
+		}
+		// neglect: weeds pushing through the pavement, moss creeping over it, dead leaf litter everywhere
+		for (let i = 0; i < 260; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 6) continue;
+			g.globalAlpha = .35; g.strokeStyle = r() < .6 ? "#55603a" : "#7a7244"; g.lineWidth = .8; g.beginPath();
+			for (let k = 0; k < 4; k++) { const L = 2 + r() * 4; g.moveTo(x + k, y - k); g.lineTo(x + k - L, y - k - L + (r() - .5) * 2); }
+			g.stroke();
+		}
+		for (let i = 0; i < 14; i++) {
+			const x = r() * BW, y = r() * BW; if (at(x, y) !== 6) continue;
+			const rad = 6 + r() * 16, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+			gr.addColorStop(0, "rgba(56,74,54,.4)"); gr.addColorStop(1, "rgba(56,74,54,0)");
+			g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+		}
+		for (let i = 0; i < 420; i++) {
+			const x = r() * BW, y = r() * BW, m = at(x, y); if (m < 0 || m === 4) continue;
+			g.globalAlpha = .4 + r() * .25; g.fillStyle = ["#7a4a2a", "#8a6a3a", "#5e4a36", "#6e3e2a"][r() * 4 | 0];
+			g.beginPath(); g.ellipse(x, y, 1.6 + r() * 1.4, .9 + r() * .6, r() * 3, 0, 7); g.fill();
+		}
+		g.globalAlpha = 1;
+		// overcast regrade: ~70% saturation, slightly cool, soft
+		const out = document.createElement("canvas"); out.width = out.height = BW;
+		const og = out.getContext("2d");
+		og.filter = "saturate(.7) brightness(.96) contrast(.95) blur(.4px)"; og.drawImage(c, 0, 0); og.filter = "none";
+		og.globalCompositeOperation = "multiply"; og.fillStyle = "#e4e8ee"; og.fillRect(0, 0, BW, BW);
+		// keep the hex island fade (and holes where nothing is drawn)
+		og.globalCompositeOperation = "destination-in"; og.drawImage(c, 0, 0);
+		const fa = mg.createImageData(M, M);
+		for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+			const tx = cx * CH_T - PADT + (i + .5) * step, ty = cy * CH_T - PADT + (j + .5) * step;
+			const t = world.tiles[Math.min(155, ty | 0) * 156 + Math.min(155, tx | 0)];
+			fa.data[(j * M + i) * 4 + 3] = 255 * landFadeAt(tx, ty, t) | 0;
+		}
+		mg.putImageData(fa, 0, 0);
+		og.filter = "blur(2px)"; og.drawImage(mask, 0, 0, BW, BW); og.filter = "none";
+		og.globalCompositeOperation = "source-over";
+		const fin = document.createElement("canvas"); fin.width = fin.height = CH_PX;
+		fin.getContext("2d").drawImage(out, -32, -32);
+		return fin;
+	}
+	let fogMasks = null;
+	/** Fog of war as two soft 1-px-per-tile masks (explored, out-of-sight), rebuilt only when they change, so the
+	 * edge of what you've seen is a soft wavy fade instead of tile steps. */
+	function v155Fog() {
+		let h = 0;
+		for (let i = 0; i < 156 * 156; i++) h = Math.imul(h ^ (explored[i] * 2 + visible[i] + 1), 16777619) + i | 0;
+		if (fogMasks && fogMasks.h === h && fogMasks.w === world) return fogMasks;
+		const mk = (f) => {
+			const raw = document.createElement("canvas"); raw.width = raw.height = 156;
+			const g = raw.getContext("2d"), id = g.createImageData(156, 156);
+			for (let i = 0; i < 156 * 156; i++) id.data[i * 4 + 3] = f(i);
+			g.putImageData(id, 0, 0);
+			const c = document.createElement("canvas"); c.width = c.height = 312;
+			const cg = c.getContext("2d"); cg.filter = "blur(1.2px)"; cg.drawImage(raw, 0, 0, 312, 312); cg.filter = "none";
+			return c;
+		};
+		fogMasks = { h, w: world, ex: mk((i) => explored[i] === 1 ? 255 : 0), dim: mk((i) => explored[i] === 1 && visible[i] !== 1 ? 140 : 0) };
+		return fogMasks;
+	}
+	function drawGroundChunks(tx0, ty0, tx1, ty1) {
+		if (chunkWorld !== world) { chunkCache.clear(); chunkWorld = world; v155AsphMap = null; fogMasks = null; }
+		const fm = v155Fog();
+		ctx.globalAlpha = 1;
+		const smooth = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = true;
+		let baked = 0;
+		for (let cy = Math.floor(ty0 / CH_T); cy <= Math.floor(ty1 / CH_T); cy++) for (let cx = Math.floor(tx0 / CH_T); cx <= Math.floor(tx1 / CH_T); cx++) {
+			const key = cy * 64 + cx, sig = v155Sig(cx, cy);
+			let e = chunkCache.get(key);
+			if (!e || e.sig !== sig) {
+				if (baked >= 2 && e) { /* spread rebakes over frames */ } else { e = { sig, c: bakeChunk(cx, cy) }; baked++; }
+			}
+			chunkCache.delete(key); chunkCache.set(key, e);
+			// fog: cut to explored (soft) and dim what is out of sight; recomposited only when fog or tiles change
+			if (e.fh !== fm.h || e.fc !== e.c) {
+				if (!e.f) { e.f = document.createElement("canvas"); e.f.width = e.f.height = CH_PX; }
+				const sg = e.f.getContext("2d");
+				sg.globalCompositeOperation = "copy"; sg.drawImage(e.c, 0, 0);
+				const mx = cx * CH_T * 2, my = cy * CH_T * 2, ms = CH_T * 2;
+				sg.globalCompositeOperation = "destination-in"; sg.drawImage(fm.ex, mx, my, ms, ms, 0, 0, CH_PX, CH_PX);
+				sg.globalCompositeOperation = "source-atop"; sg.drawImage(fm.dim, mx, my, ms, ms, 0, 0, CH_PX, CH_PX);
+				sg.globalCompositeOperation = "source-over";
+				e.fh = fm.h; e.fc = e.c;
+			}
+			ctx.drawImage(e.f, cx * CH_W, cy * CH_W, CH_W, CH_W);
+		}
+		while (chunkCache.size > CH_MAX) chunkCache.delete(chunkCache.keys().next().value);
+		ctx.imageSmoothingEnabled = smooth;
+	}
+	/** Screen-space depth cue for the oblique view: distant (top) ground hazes toward the overcast sky,
+	 * near (bottom) ground sits a touch darker. */
+	function drawGroundDepth() {
+		const dpr = canvas.width / Math.max(1, viewW);
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		const gr = ctx.createLinearGradient(0, 0, 0, viewH);
+		gr.addColorStop(0, "rgba(196,202,210,.22)"); gr.addColorStop(.42, "rgba(196,202,210,0)");
+		gr.addColorStop(.75, "rgba(18,22,28,0)"); gr.addColorStop(1, "rgba(18,22,28,.16)");
+		ctx.fillStyle = gr; ctx.fillRect(0, 0, viewW, viewH);
+	}
 	function drawGround(dcx, dcy) {
 		if (!world) return;
 		const b = viewTiles(dcx, dcy);
@@ -10252,54 +10545,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const ty0 = Math.max(0, b.ty0);
 		const tx1 = Math.min(155, b.tx1);
 		const ty1 = Math.min(155, b.ty1);
-		const fringe = tx1 - tx0 > 46 ? 32 : 16;
-		for (let ty = ty0; ty <= ty1; ty++) {
-			let runTile = -2;
-			let runX = 0;
-			let runFog = false;
-			let runSnow = false;
-			const perTile = TERRAIN.variants.size > 0; // v15.4: a variant per tile, not per run
-			const flush = (x) => {
-				if (runTile < 0) return;
-				if (perTile) for (let k = runX; k < x; k++) queueGroundRect(k * 64, ty * 64, runTile, runFog ? .42 : 1, runSnow, runTile === 2 && roadRunsY(k, ty));
-				else paintGroundRect(runX * 64, ty * 64, (x - runX) * 64, 64, runTile, runFog ? .42 : 1, runSnow);
-				runTile = -2;
-			};
-			for (let tx = tx0; tx <= tx1 + 1; tx++) {
-				let solid = false;
-				let tile = 0;
-				let fog = false;
-				let snow = false;
-				let fade = 0;
-				if (tx <= tx1) {
-					const i = ty * 156 + tx;
-					tile = world.tiles[i] ?? 0;
-					if (explored[i] === 1 && tile >= 0 && tile <= 4) {
-						fade = landFadeAt(tx + .5, ty + .5, tile);
-						fog = visible[i] !== 1;
-						snow = tile === 2 && inFarm(tx, ty);
-						solid = fade > .98;
-					}
-				}
-				if (solid && tile === runTile && fog === runFog && snow === runSnow) continue;
-				flush(tx);
-				if (solid) {
-					runTile = tile;
-					runX = tx;
-					runFog = fog;
-					runSnow = snow;
-				} else if (tx <= tx1 && fade > .02) {
-					const step = fringe;
-					const base = fog ? .42 : 1;
-					for (let oy = 0; oy < 64; oy += step) for (let ox = 0; ox < 64; ox += step) {
-						const a = landFadeAt(tx + (ox + step / 2) / 64, ty + (oy + step / 2) / 64, tile) * base;
-						paintGroundRect(tx * 64 + ox, ty * 64 + oy, step, step, tile, a, snow, tile === 2 && roadRunsY(tx, ty));
-					}
-				}
-			}
-		}
-		flushGroundQueue();
-		paintGroundSpill(tx0, ty0, tx1, ty1);
+		drawGroundChunks(tx0, ty0, tx1, ty1); // v15.5 (old per-tile path: paintGroundRect/queueGroundRect/paintGroundSpill, unused)
 		// v15 map scan: the frozen stream along the west edge of the farm lot (walkable ice)
 		if (world.stream?.length) for (const [sx, sy] of world.stream) {
 			if (sx < tx0 - 1 || sx > tx1 + 1 || sy < ty0 - 1 || sy > ty1 + 1 || explored[sy * 156 + sx] !== 1) continue;
@@ -10494,6 +10740,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		drawGround(drawCamX, drawCamY);
+		if (world) { const dprG = canvas.width / Math.max(1, viewW); drawGroundDepth(); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
 		q10DrawGround(drawCamX, drawCamY, dpr);
 		if (world.gates.length && !mode11) {
 			// v14 exit grid: a tinted band at each edge road; walking in opens the world map
