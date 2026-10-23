@@ -2,6 +2,13 @@
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
 const ART_V = 2073;
+/** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
+ * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
+ * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
+ * through this one number. Alternates: 0.42 (subtle), 0.34 (low). A ?isoy=0.4 URL param overrides it for testing. */
+const CAM_ISO_Y_DEFAULT = 0.38;
+const CAM_ISO_Y = (() => { try { const v = parseFloat(new URLSearchParams(globalThis.location?.search ?? "").get("isoy") ?? ""); return v >= 0.2 && v <= 0.7 ? v : CAM_ISO_Y_DEFAULT; } catch { return CAM_ISO_Y_DEFAULT; } })();
+setIsoY(CAM_ISO_Y);
 import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
@@ -31,6 +38,7 @@ import {
   type SkillId,
 } from "@/game/progress";
 import { facing8Hys } from "@/game/iso";
+import { setIsoY } from "@/game/iso";
 import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { autoInfo, b64ToBytes, bytesToB64, getSlot, hasSave, restoreAutosave, setSlot, slotInfos, writeAutosave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
@@ -1202,7 +1210,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const t = tileOf(player.x, player.y);
 		reveal(t.tx, t.ty, 11, true);
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		sync(true);
 		saveGame();
 	}
@@ -1394,7 +1402,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10World();
 		phase = "play";
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		sync(true);
 		saveGame();
 	}
@@ -2288,7 +2296,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		reveal(land.tx, land.ty, sightRadius(), true);
 		pushLog(`The ferry grinds onto the far bank. You leave ${leaving} behind and step off into ${world.name}, the north woods.`);
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		snapParty();
 		landReturn();
 		saveGame();
@@ -2381,7 +2389,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world) return;
 		const z = zoom;
 		ctx.save();
-		ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
+		ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
 		const t = performance.now() / 1000;
 		for (const m of q10All()) {
 			if (m.quiet || m.mode === "npc") continue;
@@ -2916,7 +2924,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		setLog(MODE_TEXT[kind]);
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		phase = "play";
 		sync(true);
 	}
@@ -3250,7 +3258,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog(target >= 3 ? (target === 9 ? "You stop on the road." : `You come into ${world.name}.`) : target === 2 ? `Two hours down the old road from ${leaving}. Skowhegan: dead streetlights, the Kennebec loud in the gorge, and one bridge.` : `The road climbs out of the river valley. You come back into ${world.name}.`);
 		if (target === 2) achieve("skow");
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		snapParty();
 		landReturn();
 		saveGame();
@@ -6252,7 +6260,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const [dx, dy, r] of blobs) {
 			const raw = worldToScreen((f.tx + .5 + dx) * TILE, (f.ty + .5 + dy) * TILE, dcx, dcy);
 			const p = zoomPoint(raw.sx, raw.sy);
-			const rx = r * TILE * .78 * zoom, ry = rx * .5;
+			const rx = r * TILE * .78 * zoom, ry = rx * CAM_ISO_Y;
 			const g = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, rx);
 			g.addColorStop(0, "rgba(28,40,46,0.78)");
 			g.addColorStop(.75, "rgba(34,48,54,0.62)");
@@ -8359,7 +8367,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		reveal(land.tx, land.ty, sightRadius(), true);
 		pushLog(`The road leaves ${leaving}. You come into ${world.name}.`);
 		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) / 2 - viewH / 2;
+		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 		snapParty();
 		landReturn();
 		saveGame();
@@ -8655,7 +8663,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const mdx = player.x - fromX, mdy = player.y - fromY;
 			// v14.1 (gif-compare): the leg cycle runs on a timer scaled by speed, not on distance:
 			// walk 105 ms/frame, run 70 ms/frame at their reference speeds, faster or slower with actual speed
-			const scr = Math.hypot(mdx - mdy, (mdx + mdy) / 2) / Math.max(dt, 1e-3);
+			const scr = Math.hypot(mdx - mdy, (mdx + mdy) * CAM_ISO_Y) / Math.max(dt, 1e-3);
 			const run = scr > SCREEN_SPEED * 1.15;
 			const ms = (run ? ANIM_MS.run : ANIM_MS.walk) / Math.max(.6, Math.min(1.5, scr / (run ? SCREEN_SPEED * 1.4 : SCREEN_SPEED)));
 			const cols = sheetCols(images.get(heroKey()));
@@ -10540,7 +10548,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const b = viewTiles(dcx, dcy);
 		const dpr = canvas.width / Math.max(1, viewW);
 		const z = zoom;
-		ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
+		ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
 		const tx0 = Math.max(0, b.tx0);
 		const ty0 = Math.max(0, b.ty0);
 		const tx1 = Math.min(155, b.tx1);
@@ -10744,7 +10752,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10DrawGround(drawCamX, drawCamY, dpr);
 		if (world.gates.length && !mode11) {
 			// v14 exit grid: a tinted band at each edge road; walking in opens the world map
-			ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
+			ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
 			const pulse = .28 + Math.sin(performance.now() / 400) * .08;
 			ctx.fillStyle = `rgba(224,176,80,${pulse})`;
 			for (const g of world.gates) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) ctx.fillRect((g.tx + dx) * 64 + 3, (g.ty + dy) * 64 + 3, 58, 58);
@@ -10762,7 +10770,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		if (buildOpen) {
-			ctx.setTransform(dpr * z, dpr * .5 * z, -dpr * z, dpr * .5 * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
+			ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
 			const tile = hoverTile();
 			const spec = PROP_SPEC[RECIPES[recipe].kind];
 			ctx.fillStyle = canPlaceAt(tile) ? "rgba(138,154,98,0.45)" : "rgba(196,84,58,0.4)";
@@ -12331,7 +12339,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			startRaid();
 			if (!raid) { raidMode = false; phase = "menu"; }
 			camX = player.x - player.y - viewW / 2;
-			camY = (player.x + player.y) / 2 - viewH / 2;
+			camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
 			sync(true);
 		},
 		continueGame() {

@@ -1,21 +1,25 @@
-/** Isometric 2:1 projection. Screen axes are player-visible. */
+/** Isometric projection. Screen axes are player-visible. ISO_Y is the screen height of one world unit along
+ * the view axis relative to its width (0.5 = classic 2:1 top-down-ish iso; lower = camera sits lower, more
+ * 3rd-person, ground more foreshortened). Set once at startup from engine.ts (CAM_ISO_Y). */
+export let ISO_Y = 0.5;
+export function setIsoY(k: number): void { ISO_Y = Math.max(0.2, Math.min(0.7, k)); }
 
 export function screenDirToWorld(dsx: number, dsy: number): { vx: number; vy: number } {
-  return { vx: dsy + dsx / 2, vy: dsy - dsx / 2 };
+  return { vx: dsy / (2 * ISO_Y) + dsx / 2, vy: dsy / (2 * ISO_Y) - dsx / 2 };
 }
 
 export function worldVelToScreen(vx: number, vy: number): { dsx: number; dsy: number } {
-  return { dsx: vx - vy, dsy: (vx + vy) / 2 };
+  return { dsx: vx - vy, dsy: (vx + vy) * ISO_Y };
 }
 
 export function worldToScreen(x: number, y: number, camX: number, camY: number): { sx: number; sy: number } {
-  return { sx: x - y - camX, sy: (x + y) / 2 - camY };
+  return { sx: x - y - camX, sy: (x + y) * ISO_Y - camY };
 }
 
 export function screenToWorld(sx: number, sy: number, camX: number, camY: number): { x: number; y: number } {
   const X = sx + camX;
   const Y = sy + camY;
-  return { x: Y + X / 2, y: Y - X / 2 };
+  return { x: Y / (2 * ISO_Y) + X / 2, y: Y / (2 * ISO_Y) - X / 2 };
 }
 
 /** Facing rows on the four-direction sheets: 0 down, 1 left, 2 right, 3 up. */
