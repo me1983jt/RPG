@@ -2,7 +2,7 @@
 export const WM_COLS = 12, WM_ROWS = 9, WM_HEX = 50;
 // R road, F field, W woods, V river, T town / area
 export const WM_TERRAIN = [
-  "WWWWWWWWWWWW",
+  "WWWWWTWWWWWW",
   "WWWWWTWWWWWW",
   "WWWWWRWWWWFF",
   "FWWWWRWWVFTF",
@@ -13,7 +13,7 @@ export const WM_TERRAIN = [
   "WWWWWWWVWWWW",
 ];
 export const WM_HOURS: Record<string, number> = { R: 0.6, T: 0.6, F: 1.2, W: 2, V: 2.5 };
-export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string; town?: string }
+export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string; town?: string; lock?: "moosehead" }
 export const WM_LOCS: WmLoc[] = [
   { id: "farm", name: "Harmony · Cambridge Road", q: 5, r: 5, map: 0, blurb: "The farm, Lowelltown road and Jack's." },
   { id: "lowell", name: "Lowelltown Woods", q: 2, r: 4, map: 3, blurb: "Spruce and old logging roads." },
@@ -24,6 +24,8 @@ export const WM_LOCS: WmLoc[] = [
   { id: "bunker", name: "The Bunker", q: 3, r: 7, map: 6, blurb: "A hatch under the birches." },
   // v15.1: Quest RPG town games. Pittsfield lies south-east of Harmony on the rail line, Skowhegan west and south-west down the Kennebec.
   { id: "pittsfield", name: "Pittsfield", q: 6, r: 7, map: 0, town: "pittsfield", blurb: "Railroad town. Rusty Maine Central rails, a water tower, the farmers' co-op." },
+  // v15.4: Greenville on Moosehead Lake, north of the North Woods. Hidden until the Harmony map + ferry flags are set.
+  { id: "greenville", name: "Greenville · Moosehead Lake", q: 5, r: 0, map: 7, lock: "moosehead", blurb: "Cabins at the foot of the lake. The ferry dock is the only way north." },
   { id: "skowhegan", name: "Skowhegan · Water Street", q: 3, r: 6, map: 2, town: "skowhegan", blurb: "Redington hospital, the woolen mill, Marcel's store." },
 ];
 /** Room for future loot spots: hexes that will open as small maps later. */
@@ -70,4 +72,7 @@ export function hexPath(from: [number, number], to: [number, number], bike: bool
 }
 export const hexHours = (q: number, r: number, bike: boolean) => { const t = terrainAt(q, r); const h = WM_HOURS[t] ?? 2; return bike && (t === "R" || t === "T" || t === "F") ? h * 0.5 : h; };
 export const locAt = (q: number, r: number) => WM_LOCS.find((l) => l.q === q && l.r === r) ?? null;
+/** v15.4: Moosehead opens only with questFlags['harmony.hasMooseheadMap'] === true AND questFlags['harmony.ferry'] === 'fixed'. */
+export const mooseheadOpen = (flags: Record<string, unknown> | null | undefined) => !!flags && flags["harmony.hasMooseheadMap"] === true && flags["harmony.ferry"] === "fixed";
+export const locLocked = (l: WmLoc | null | undefined, flags: Record<string, unknown> | null | undefined) => !!l && l.lock === "moosehead" && !mooseheadOpen(flags);
 export const locOfMap = (map: number) => WM_LOCS.find((l) => l.map === map && map >= 0) ?? WM_LOCS[0]!;

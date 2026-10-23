@@ -156,6 +156,8 @@ export const GEAR: Record<string, GearDef> = {
   sparkplug: { id: "sparkplug", name: "Spark plug", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Still in the box. Bike part." },
   tire: { id: "tire", name: "Bicycle tire", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Balloon tire. Bike part." },
   fuel: { id: "fuel", name: "Fuel can", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it to ready the tractor for the next pass down the lane." },
+  // v15.4: Harmony town quest item (comes in through leaveTown). Half of the Greenville / Moosehead Lake unlock.
+  moosehead_map: { id: "moosehead_map", name: "Moosehead Lake map", kind: "supply", family: "supply", quality: "good", atk: 0, def: 0, heal: 0, note: "A creased lake chart: Greenville, the landing, the ferry route. North of the North Woods." },
   baitpack: { id: "baitpack", name: "Bait tin", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Use it to drop a cache where you stand. Raiders come for it." },
 };
 

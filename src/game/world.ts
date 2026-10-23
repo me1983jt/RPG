@@ -647,6 +647,23 @@ function finishFarm(world: World): void {
         }
       }
     }
+    if (kind !== "farmhouse" && kind !== "barn") return;
+    // v15.4: the 3x3 home buildings must always exist (raids target the farmhouse); clear the lot.
+    const [hx, hy] = home;
+    const keep = new Set(["farmhouse", "barn"]);
+    world.props = world.props.filter((p) => {
+      const ps = PROP_SPEC[p.kind];
+      const hit = hx < p.tx + ps.w + 1 && hx + spec.w + 1 > p.tx && hy < p.ty + ps.h + 1 && hy + spec.h + 1 > p.ty;
+      if (!hit || keep.has(p.kind)) return true;
+      vacate(world, p);
+      return false;
+    });
+    for (let y = 0; y < spec.h; y++) for (let x = 0; x < spec.w; x++) {
+      const i = idx(hx + x, hy + y);
+      if (world.tiles[i] === VOID || world.tiles[i] === RUBBLE || world.tiles[i] === ROAD) world.tiles[i] = DIRT;
+      world.blocked[i] = 0;
+    }
+    addProp(world, kind, hx, hy, extra);
   };
   restore("farmhouse", at(29, 12));
   restore("barn", at(39, 11));
@@ -1282,7 +1299,7 @@ export function asResource(kind: PropKind, loose?: boolean): Resource | null {
 }
 
 /** v14 world-map areas. 3 Lowelltown woods, 4 the Kennebec, 5 raider country, 6 the bunker, 9 a roadside encounter. */
-export const AREA_NAME: Record<number, string> = { 3: "Lowelltown Woods", 4: "The Kennebec", 5: "Raider Country", 6: "The Bunker", 9: "Roadside" };
+export const AREA_NAME: Record<number, string> = { 3: "Lowelltown Woods", 4: "The Kennebec", 5: "Raider Country", 6: "The Bunker", 7: "Greenville · Moosehead Lake", 9: "Roadside" };
 function createArea(seed: number, mapId: number, homeSides: number[]): World {
   shapingHome = false;
   const tiles = new Uint8Array(MAP_W * MAP_H);
@@ -1304,11 +1321,37 @@ function createArea(seed: number, mapId: number, homeSides: number[]): World {
       tiles[idx(x, ty)] = VOID; blocked[idx(x, ty)] = 1;
     }
   }
-  world.gates = layExits(world, [0, 1, 2, 3, 4, 5], { tx: HEX_CX, ty: HEX_CY });
+  if (mapId === 7) {
+    // v15.4 Greenville: Moosehead Lake fills the north of the hex; a wobbly shore a few tiles above the road
+    for (let tx = 0; tx < MAP_W; tx++) {
+      const shore = HEX_CY - 16 + Math.round(Math.sin(tx * 0.11) * 3 + Math.sin(tx * 0.29 + 1) * 1.5);
+      for (let ty = 0; ty < shore; ty++) { if (!inMap(tx, ty) || !inHex(tx, ty)) continue; tiles[idx(tx, ty)] = VOID; blocked[idx(tx, ty)] = 1; }
+      for (const dy of [0, 1]) { const ty = shore + dy; if (inMap(tx, ty) && inHex(tx, ty) && tiles[idx(tx, ty)] !== ROAD) tiles[idx(tx, ty)] = 0; }
+    }
+  }
+  world.gates = layExits(world, mapId === 7 ? [2, 3, 4, 5] : [0, 1, 2, 3, 4, 5], { tx: HEX_CX, ty: HEX_CY });
   scatter(world);
   clearPad(world, HEX_CX, HEX_CY, 4);
   const poi = (dx: number, dy: number, kind: PropKind, extra?: Partial<Prop>) => { const [x, y] = pullIn(HEX_CX + dx, HEX_CY + dy); clearPad(world, x, y, 2); return addProp(world, kind, x, y, extra); };
   // small points of interest (more can be added to LOOT_SPOTS in worldmap.ts)
+  if (mapId === 7) {
+    // landing area: a few lakeside cabins from the existing shack art, a cookfire and a woodpile. No hostiles (safe zone in the engine).
+    // three cabins along the shore: try spots from the middle outwards until three fit
+    let cabins = 0;
+    for (const dx of [-8, -2, 4, -14, 10, -20, 16, -26, 22]) {
+      if (cabins >= 3) break;
+      for (const dy of [-11, -10, -12, -9]) {
+        const [x, y] = pullIn(HEX_CX + dx, HEX_CY + dy);
+        clearPad(world, x + 1, y + 1, 2);
+        for (let yy = y; yy < y + 3; yy++) for (let xx = x; xx < x + 3; xx++) if (inMap(xx, yy) && tiles[idx(xx, yy)] === VOID) { tiles[idx(xx, yy)] = 0; blocked[idx(xx, yy)] = 0; }
+        if (addProp(world, "shack", x, y, cabins === 0 ? { label: "Greenville landing", locked: false } as Partial<Prop> : { locked: cabins === 1 ? false : true })) { cabins++; break; }
+      }
+    }
+    poi(2, 3, "campfire");
+    poi(-4, 4, "logs", { resource: "wood", amount: 5 });
+    shapingHome = true;
+    return world;
+  }
   poi(-14, -10, "ruin");
   poi(16, 12, "car-truck");
   poi(10, -16, "scrap", { resource: "scrap", amount: 4 });

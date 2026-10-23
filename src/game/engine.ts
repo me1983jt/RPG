@@ -1,12 +1,13 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2072;
+const ART_V = 2073;
 import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
+import { ART_SCALE, ART_SCALED } from "@/game/art-scale";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
 import { ACHIEVEMENTS, FARM_UPGRADES as FARM_UPGRADES2, SKILL_MAX, TRADE_SKILLS, TRAP_KINDS, skillNeed } from "@/game/v113";
@@ -33,7 +34,7 @@ import { facing8Hys } from "@/game/iso";
 import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { autoInfo, b64ToBytes, bytesToB64, getSlot, hasSave, restoreAutosave, setSlot, slotInfos, writeAutosave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
 import { useHud, useModeResult, useRaidMode } from "@/game/store";
-import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt, locOfMap } from "@/game/worldmap";
+import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt as locAtRaw, locLocked, mooseheadOpen, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
 import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
@@ -142,7 +143,7 @@ var ANIM_MS = { walk: 60, run: 50, idle: 150, aim: 60, fire: 45 };
 var ANIM_FRAMES = { walk: 14, run: 14, idle: 10, aim: 6, fire: 6, punch: 10, kick: 12, swing: 14, hit: 5, death: 12, crouch: 8 };
 var ENEMY_SPEED = 148;
 /** One adult body, small next to a house the way a Fallout figure is. */
-var ADULT = 86;
+var ADULT = 129; // v15.4: people 1.5x (was 86)
 var HERO_H = ADULT;
 var NPC_H = ADULT;
 var RADIUS = 14;
@@ -540,7 +541,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let shake = 0;
 	let hoverX = 0;
 	let hoverY = 0;
-	let zoom = 1;
+	let zoom = .8; // v15.4: start a little wider so the 1.5x people and buildings aren't cramped on a phone
 	let reach = 0;
 	/** Hero attack strip timer (v19 4-frame swings). */
 	let swingAnim = 0;
@@ -4443,7 +4444,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function hollowedArea(mid) {
 		if (!world || !player || world.enemies.some((e) => e.hollow)) return;
-		const groups = mid === 9 ? 0 : mid >= 3 ? 2 : 0;
+		const groups = mid === 9 || mid === 7 ? 0 : mid >= 3 ? 2 : 0; // v15.4: none at the Greenville landing
 		for (let g = 0; g < groups; g++) {
 			for (let k = 0; k < 30; k++) {
 				const a = Math.random() * Math.PI * 2, r = 900 + Math.random() * 1500;
@@ -4851,9 +4852,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog("The world map. Tap a hex to travel; tap a named place to go in.");
 		saveGame(); sync(true);
 	}
+	/** v15.4: world-map spots behind a quest lock (Greenville) don't exist until their flags are set. */
+	function locAt(q, r) { const l = locAtRaw(q, r); return l && locLocked(l, l1.tf) ? null : l; }
 	function wmGo(q, r) {
 		const m = wmState();
 		if (phase !== "worldmap") return;
+		const lockedLoc = locAtRaw(q, r);
+		if (lockedLoc && locLocked(lockedLoc, l1.tf)) { m.warn = "Nothing but timber and black water up there. You'd need a lake map and a working ferry."; sync(true); return; }
 		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); else { const lr = lootRunAt(q, r); if (lr) lootEnter(lr); } return; }
 		// v15.1: with the Pittsfield handcar running, Pittsfield <-> Skowhegan is one rail hop
 		const here = locAt(m.q, m.r), there = locAt(q, r), rail = ["pittsfield", "skowhegan", "skow"];
@@ -4979,6 +4984,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (safe15.key === key && safe15.w === world) return safe15.zones;
 		const zones = [];
 		for (const t of ISO_TOWNS) if (t.map === mapId && !SAFE15_SKIP.has(t.id) && !t.sub && townOpen(t)) { const sp = townSpot(t); if (sp) zones.push({ id: t.id, x: sp.x, y: sp.y, r: SAFE15_R }); }
+		if (mapId === 7) zones.push({ id: "greenville", x: HEX_CX * TILE + TILE / 2, y: HEX_CY * TILE + TILE / 2, r: 200 * TILE }); // v15.4: the whole Greenville landing is safe
 		if (mapId === 0) { const fh = world.props.find((p) => p.kind === "farmhouse" && inFarm(p.tx, p.ty)); const c = fh ? { x: (fh.tx + 1.5) * TILE, y: (fh.ty + 1.5) * TILE } : farmCenter(); zones.push({ id: "farm", x: c.x, y: c.y, r: SAFE15_R }); }
 		safe15 = { key, zones, w: world, said: safe15.said };
 		return zones;
@@ -5030,17 +5036,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (m.sx < -200 || m.sy < -200 || m.sx > viewW + 200 || m.sy > viewH + 200) continue;
 			const img = images.get("farmhouse");
 			ctx.save();
-			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 4 * zoom, 70 * zoom, 22 * zoom, 0, 0, Math.PI * 2); ctx.fill();
+			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 6 * zoom, 105 * zoom, 33 * zoom, 0, 0, Math.PI * 2); ctx.fill();
 			const house = (dx, dy, w) => {
 				if (img?.naturalWidth) { const h = w * img.naturalHeight / img.naturalWidth; ctx.drawImage(img, m.sx + dx * zoom - w * zoom / 2, m.sy + dy * zoom - h * zoom, w * zoom, h * zoom); }
 				else { ctx.fillStyle = "#8a6a4a"; ctx.fillRect(m.sx + (dx - w / 2) * zoom, m.sy + (dy - w * .5) * zoom, w * zoom, w * .5 * zoom); ctx.fillStyle = "#5a3a2a"; ctx.beginPath(); ctx.moveTo(m.sx + (dx - w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.lineTo(m.sx + dx * zoom, m.sy + (dy - w * .9) * zoom); ctx.lineTo(m.sx + (dx + w * .6) * zoom, m.sy + (dy - w * .5) * zoom); ctx.fill(); }
 			};
-			if (t.id === "harmony") { house(-48, -8, 88); house(50, -4, 82); house(0, 14, 104); } else house(0, 10, 96);
+			if (t.id === "harmony") { house(-72, -12, 132); house(75, -6, 123); house(0, 21, 156); } else house(0, 15, 144); // v15.4: x1.5
 			const near = Math.hypot(player.x - sp.x, player.y - sp.y) < 260;
 			const label = near ? `${t.name} · walk in` : t.name;
 			ctx.globalAlpha = 1;
 			ctx.font = `700 ${Math.round(13 * Math.max(1, zoom * .8))}px system-ui, sans-serif`; ctx.textAlign = "center";
-			const w = ctx.measureText(label).width + 16, ly = m.sy - 124 * zoom;
+			const w = ctx.measureText(label).width + 16, ly = m.sy - 186 * zoom;
 			ctx.fillStyle = "rgba(15,12,8,.82)"; ctx.fillRect(m.sx - w / 2, ly - 15, w, 21);
 			ctx.strokeStyle = "#c9a36a"; ctx.lineWidth = 1; ctx.strokeRect(m.sx - w / 2 + .5, ly - 14.5, w - 1, 20);
 			ctx.fillStyle = "#f4e6c4"; ctx.fillText(label, m.sx, ly);
@@ -5163,7 +5169,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const sp = tdef ? townSpot(tdef) : null;
 		town = null;
 		phase = "play"; townArmed = false;
-		const dest = WM_LOCS.find((l) => l.id === exit);
+		const dest = WM_LOCS.find((l) => l.id === exit && !locLocked(l, l1.tf));
 		if (sp) { player.x = sp.roadX; player.y = sp.roadY; if (pointBlocked(world, player.x, player.y, RADIUS)) { player.x = sp.x + 110; player.y = sp.y + 40; } }
 		if (dest && dest.map === mapId) { if (dest.map === 0) { const fc = farmCenter(); player.x = fc.x; player.y = fc.y + 150; } pushLog(`You leave town for ${dest.name}.`); }
 		else if (dest) { const m = wmState(); const here = locOfMap(mapId); m.from = [here.q, here.r]; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
@@ -5361,7 +5367,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function wmHud() {
 		if (phase !== "worldmap" || !v14.map) return null;
 		const m = v14.map;
-		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, here: locAt(m.q, m.r)?.name ?? lootRunAt(m.q, m.r)?.name ?? null, loot: lootHud(), clock: clockLabel(clock), bike: bikeBuilt(), town: town ? { id: town.id, src: town.src, n: town.n } : null, tq: l1.tq ?? [] };
+		return { q: m.q, r: m.r, fog: m.fog, path: m.path, warn: m.warn, locked: WM_LOCS.filter((l) => locLocked(l, l1.tf)).map((l) => l.id), moosehead: mooseheadOpen(l1.tf), here: locAt(m.q, m.r)?.name ?? lootRunAt(m.q, m.r)?.name ?? null, loot: lootHud(), clock: clockLabel(clock), bike: bikeBuilt(), town: town ? { id: town.id, src: town.src, n: town.n } : null, tq: l1.tq ?? [] };
 	}
 	// ---- workbench: repair, patch, dye
 	function benchMenu() {
@@ -7012,6 +7018,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		farmhouse: { q: [[58, 146], [67, 147], [67, 172], [58, 171]], g: [40, 196] },
 		ruin: { q: [[31, 73], [39, 72], [39, 96], [31, 98]], g: [35, 108] }
 	};
+
 	function standingDoor(kind) {
 		return kind === "shack" || kind === "shelter" || kind === "workshop" || kind === "farmhouse" || kind === "barn" || kind === "ruin";
 	}
@@ -7026,8 +7033,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!house) return null;
 		const dh = spec.drawH;
 		const dw = dh * (house.width / house.height);
-		const ox = (px / house.width - .5) * dw;
-		const oy = -dh * (house.foot ?? .92) + py / house.height * dh;
+		const k = house.artScale || 1; // v15.4: door coords are in the original (pre-1.5x) art px
+		const ox = (px * k / house.width - .5) * dw;
+		const oy = -dh * (house.foot ?? .92) + py * k / house.height * dh;
 		return { x: oy + ox / 2, y: oy - ox / 2 };
 	}
 	function doorPoint(prop) {
@@ -9776,7 +9784,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dw = dh * (house.width / house.height);
 		const top = p.sy - dh * (house.foot ?? .92);
 		const left = p.sx - dw / 2;
-		const pt = (q) => [left + q[0] / house.width * dw, top + q[1] / house.height * dh];
+		const ak = house.artScale || 1;
+		const pt = (q) => [left + q[0] * ak / house.width * dw, top + q[1] * ak / house.height * dh];
 		const [a, b, c2, d] = painted.q.map(pt);
 		ctx.save();
 		ctx.globalAlpha *= Math.min(1, swing * 1.4);
@@ -10084,8 +10093,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	var groundPat = new Map();
-	function groundFill(tile, seed = 0) {
-		const name = terrainPick([
+	function groundFill(tile, seed = 0, roadY = false) {
+		// v15.4: roads running along world Y use the rotated ground-road-y variants (ruts follow the road)
+		const name = roadY && tile === 2 && TERRAIN.variants.get("ground-road-y")?.length ? terrainPick("ground-road-y", seed) : terrainPick([
 			"ground-mat-dirt",
 			"ground-mat-scrub",
 			"ground-mat-road",
@@ -10139,24 +10149,98 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return (low - .5) * 1.35 + (high - .5) * .65;
 	}
 	function landFadeAt(wx, wy, tile) {
-		let d = hexInside(wx, wy) + edgeWave(wx, wy) * 2.4;
+		let d = hexInside(wx, wy) + edgeWave(wx, wy) * 4; // v15.4: wider, wobblier fade (was 2.4 / 3.6)
 		if (tile === 2) d += 2;
-		if (d >= 3.6) return 1;
+		if (d >= 6) return 1;
 		if (d <= 0) return 0;
-		const t = d / 3.6;
+		const t = d / 6;
 		return t * t * (3 - 2 * t);
 	}
-	function paintGroundRect(x, y, w, h, tile, alpha, snow) {
+	function paintGroundRect(x, y, w, h, tile, alpha, snow, roadY = false) {
 		if (alpha < .02 || w <= 0 || h <= 0) return;
 		const pad = alpha > .98 ? 1.5 : 0;
 		ctx.globalAlpha = alpha;
-		ctx.fillStyle = groundFill(tile, TERRAIN.variants.size ? Math.floor(x / TILE) * 131 + Math.floor(y / TILE) * 977 : 0);
+		ctx.fillStyle = groundFill(tile, TERRAIN.variants.size ? Math.floor(x / TILE) * 131 + Math.floor(y / TILE) * 977 : 0, roadY);
 		ctx.fillRect(x, y, w + pad, h + pad);
 		if (snow) {
 			ctx.globalAlpha = alpha * .52;
 			ctx.fillStyle = groundFill(4);
 			ctx.fillRect(x, y, w + pad, h + pad);
 		}
+	}
+	/** v15.4: per-tile variant fills are batched into one path per texture (one fill call each, not one per tile). */
+	const groundQueue = new Map();
+	function queueGroundRect(x, y, tile, alpha, snow, roadY) {
+		const fill = groundFill(tile, Math.floor(x / TILE) * 131 + Math.floor(y / TILE) * 977, roadY);
+		let q = groundQueue.get(fill);
+		if (!q) { q = new Map(); groundQueue.set(fill, q); }
+		const k2 = `${alpha}|${snow ? 1 : 0}`;
+		let list = q.get(k2);
+		if (!list) { list = []; q.set(k2, list); }
+		list.push(x, y);
+	}
+	function flushGroundQueue() {
+		for (const [fill, byAlpha] of groundQueue) for (const [k2, list] of byAlpha) {
+			const [as, ss] = k2.split("|"), alpha = +as, snow = ss === "1";
+			ctx.globalAlpha = alpha; ctx.fillStyle = fill; ctx.beginPath();
+			const pad = alpha > .98 ? 1.5 : 0;
+			for (let i = 0; i < list.length; i += 2) ctx.rect(list[i], list[i + 1], 64 + pad, 64 + pad);
+			ctx.fill();
+			if (snow) { ctx.globalAlpha = alpha * .52; ctx.fillStyle = groundFill(4); ctx.fill(); }
+		}
+		groundQueue.clear();
+	}
+	/** v15.4: a road tile runs along world Y when its road neighbours are above/below rather than left/right. */
+	function roadRunsY(tx, ty) {
+		const t = (x, y) => x >= 0 && y >= 0 && x < 156 && y < 156 && world.tiles[y * 156 + x] === 2 ? 1 : 0;
+		return t(tx, ty - 1) + t(tx, ty + 1) > t(tx - 1, ty) + t(tx + 1, ty);
+	}
+	/** v15.4: no square ground edges. Where two ground types meet, the "stronger" one (grass over road edges,
+	 * dirt over pavement) spills a few px into its neighbour as a wobbly, soft-edged blob painted with its own
+	 * world-anchored texture. The wobble comes from edgeWave in world space, so it is continuous across tiles. */
+	const SPILL_RANK = [2, 3, 0, 1, -1]; // dirt, scrub, road, rubble, snow
+	const spillQ = new Map();
+	function paintGroundSpill(tx0, ty0, tx1, ty1) {
+		const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+		for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+			const i = ty * 156 + tx;
+			const tile = world.tiles[i] ?? 0;
+			if (explored[i] !== 1 || tile < 0 || tile > 3) continue;
+			if (landFadeAt(tx + .5, ty + .5, tile) < .98) continue;
+			for (const [dx, dy] of SIDES) {
+				const nx = tx + dx, ny = ty + dy;
+				if (nx < 0 || ny < 0 || nx >= 156 || ny >= 156) continue;
+				const j = ny * 156 + nx, nt = world.tiles[j] ?? 0;
+				if (nt === tile || nt < 0 || nt > 3 || explored[j] !== 1 || SPILL_RANK[nt] <= SPILL_RANK[tile]) continue;
+				const fog = visible[j] !== 1 ? .42 : 1;
+				const fill = groundFill(nt, nx * 131 + ny * 977, nt === 2 && roadRunsY(nx, ny));
+				// edge runs along the shared side; depth goes into this tile
+				const ex = dx === 1 ? tx * 64 + 64 : tx * 64, ey = dy === 1 ? ty * 64 + 64 : ty * 64;
+				const along = dx === 0 ? [1, 0] : [0, 1], inward = [-dx, -dy];
+				for (const [layer, alpha] of [[1, .4], [.5, .6]]) {
+					const key = `${alpha * fog}`;
+					let byFill = spillQ.get(key); if (!byFill) { byFill = new Map(); spillQ.set(key, byFill); }
+					let pts = byFill.get(fill); if (!pts) { pts = []; byFill.set(fill, pts); }
+					const poly = []; pts.push(poly);
+					// start/end a little past the tile corners so neighbouring spills overlap smoothly
+					for (let s = -8; s <= 72; s += 16) {
+						const wx = ex + along[0] * s, wy = ey + along[1] * s;
+						const depth = Math.max(0, (14 + edgeWave(wx / 6, wy / 6) * 16) * layer) * (s < 0 || s > 64 ? .3 : 1);
+						const px = wx + inward[0] * depth, py = wy + inward[1] * depth;
+						if (s === -8) poly.push(ex + along[0] * s, ey + along[1] * s);
+						poly.push(px, py);
+					}
+					poly.push(ex + along[0] * 72, ey + along[1] * 72);
+				}
+			}
+		}
+		for (const [a, byFill] of spillQ) for (const [fill, polys] of byFill) {
+			ctx.globalAlpha = +a; ctx.fillStyle = fill; ctx.beginPath();
+			for (const poly of polys) { ctx.moveTo(poly[0], poly[1]); for (let i = 2; i < poly.length; i += 2) ctx.lineTo(poly[i], poly[i + 1]); ctx.closePath(); }
+			ctx.fill();
+		}
+		spillQ.clear();
+		ctx.globalAlpha = 1;
 	}
 	function drawGround(dcx, dcy) {
 		if (!world) return;
@@ -10174,9 +10258,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			let runX = 0;
 			let runFog = false;
 			let runSnow = false;
+			const perTile = TERRAIN.variants.size > 0; // v15.4: a variant per tile, not per run
 			const flush = (x) => {
 				if (runTile < 0) return;
-				paintGroundRect(runX * 64, ty * 64, (x - runX) * 64, 64, runTile, runFog ? .42 : 1, runSnow);
+				if (perTile) for (let k = runX; k < x; k++) queueGroundRect(k * 64, ty * 64, runTile, runFog ? .42 : 1, runSnow, runTile === 2 && roadRunsY(k, ty));
+				else paintGroundRect(runX * 64, ty * 64, (x - runX) * 64, 64, runTile, runFog ? .42 : 1, runSnow);
 				runTile = -2;
 			};
 			for (let tx = tx0; tx <= tx1 + 1; tx++) {
@@ -10207,17 +10293,21 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const base = fog ? .42 : 1;
 					for (let oy = 0; oy < 64; oy += step) for (let ox = 0; ox < 64; ox += step) {
 						const a = landFadeAt(tx + (ox + step / 2) / 64, ty + (oy + step / 2) / 64, tile) * base;
-						paintGroundRect(tx * 64 + ox, ty * 64 + oy, step, step, tile, a, snow);
+						paintGroundRect(tx * 64 + ox, ty * 64 + oy, step, step, tile, a, snow, tile === 2 && roadRunsY(tx, ty));
 					}
 				}
 			}
 		}
+		flushGroundQueue();
+		paintGroundSpill(tx0, ty0, tx1, ty1);
 		// v15 map scan: the frozen stream along the west edge of the farm lot (walkable ice)
 		if (world.stream?.length) for (const [sx, sy] of world.stream) {
 			if (sx < tx0 - 1 || sx > tx1 + 1 || sy < ty0 - 1 || sy > ty1 + 1 || explored[sy * 156 + sx] !== 1) continue;
 			ctx.globalAlpha = visible[sy * 156 + sx] === 1 ? .9 : .4;
-			ctx.fillStyle = "#8fa9b8"; ctx.fillRect(sx * 64 - 6, sy * 64 - 6, 76, 76);
-			ctx.fillStyle = "#c9dbe4"; ctx.fillRect(sx * 64 + 14, sy * 64 + 18, 36, 10);
+			// v15.4: round ice pools instead of squares (they overlap into a continuous stream)
+			const wob = edgeWave(sx * 3.1, sy * 2.7);
+			ctx.fillStyle = "#8fa9b8"; ctx.beginPath(); ctx.ellipse(sx * 64 + 32, sy * 64 + 32, 46 + wob * 6, 42 - wob * 5, wob, 0, Math.PI * 2); ctx.fill();
+			ctx.fillStyle = "#c9dbe4"; ctx.beginPath(); ctx.ellipse(sx * 64 + 30 + wob * 6, sy * 64 + 24, 18, 6, .3 + wob, 0, Math.PI * 2); ctx.fill();
 		}
 		ctx.globalAlpha = 1;
 	}
@@ -10239,7 +10329,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return DEEP * (1 - ease((h - 4) / 3));
 	}
 	// v13.5: glow heights follow the real-size art (farmhouse 500, barn 450, smithy 46, stall 91, porch deck 58, loft 99)
-	const LIT_BUILDINGS = { farmhouse: [150, -58, .8], shack: [110, -53, .65], workshop: [90, -18, .65], stall: [110, -36, .7], barn: [120, -79, .55], "post-porch": [90, -22, .75], "post-loft": [90, -55, .6] };
+	const LIT_BUILDINGS = { farmhouse: [225, -87, .8], shack: [165, -80, .65], workshop: [135, -27, .65], stall: [165, -54, .7], barn: [180, -118, .55], "post-porch": [135, -33, .75], "post-loft": [135, -82, .6] }; // v15.4: x1.5 with the buildings
 	const FIRES = { campfire: 230, firepot: 170, "firepot-up": 180, "firepot-3": 190 };
 	let nightCv = null;
 	/** Darkness layer with holes cut around light sources, then a warm additive glow on top. */
@@ -12648,6 +12738,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v153: () => ({ clock, map: mapId, phase, town: town ? { id: town.id, src: town.src } : null, px: player?.x, py: player?.y }),
 		v153Ft: (ft) => leaveTown({ type: "leaveTown", exit: "worldmap", state: {}, fastTravel: ft }),
 		v15Leave: () => leaveTown({ type: "leaveTown", exit: "town", state: {} }),
+		// v15.4 Greenville / Moosehead unlock
+		v154Wm: () => ({ open: mooseheadOpen(l1.tf), loc: locAt(5, 0)?.id ?? null, locked: WM_LOCS.filter((l) => locLocked(l, l1.tf)).map((l) => l.id), phase, map: mapId, warn: v14.map?.warn ?? "", bag: player.bag.filter((x) => x.id === "moosehead_map").map((x) => x.qty), icon: itemIcon(GEAR.moosehead_map) }),
+		v154Go: () => { openWorldMap(); const m = wmState(); m.q = 5; m.r = 0; m.path = []; wmGo(5, 0); return { phase, map: mapId, name: world?.name ?? "", warn: m.warn, safe: player ? safeAt(player.x, player.y)?.id ?? null : null, shacks: world ? world.props.filter((p) => p.kind === "shack").length : 0, hostiles: world ? world.enemies.filter((e) => !e.dead).length : 0, town: !!town }; },
 		v15Hit: () => { const before = player.hp; player.invuln = 0; hurtPlayer(5, player.x + 40, player.y); return { before, after: player.hp }; },
 		v15Strike: () => { const e = world.enemies.find((x) => !x.dead); if (!e) return null; const hp = e.hp; strikeEnemy(e); return { hp, after: e.hp, pending: !!pendingHit }; },
 		v15Spawn: (dx, dy) => { spawnRaider("scout", { x: player.x + dx, y: player.y + dy }, null); const e = world.enemies[world.enemies.length - 1]; if (e) { e.aggro = true; e.temper = "hostile"; e.raid = false; } return e ? { id: e.id, x: e.x, y: e.y } : null; },
@@ -13042,7 +13135,7 @@ function footXOf(img, cols, rows, sw, sh) {
 /** v14.1 scale check: NPC and raider sheets were drawn at 98-104 px against the hero's 69 px. At 11 px/ft every
  * person is drawn at real height: grown men and women 66 px (6 ft), kids (Cyndal, Loki) 58 px. Each character is
  * measured once from its walk/base sheet so all its poses share one scale. */
-const FIG_ADULT = 66, FIG_KID = 58;
+const FIG_ADULT = 99, FIG_KID = 87; // v15.4: 1.5x (was 66 / 58)
 const figCache = new Map();
 function figFamily(name) {
 	if (/^(v2\/)?hero|^pl\/|^overlay-/.test(name)) return null;
@@ -13094,7 +13187,8 @@ function heroScale(name) {
 function sheetCols(img) {
 	if (img && img.cols) return img.cols;
 	// v14.1: any frame count loads; the count comes from the sheet width (88 px cells, or square-ish cells by height)
-	if (img && img.width % 88 === 0 && img.width >= 88) { const c = img.width / 88; if (c >= 1 && c <= 32) return c; }
+	const cw = 88 * (img && img.artScale || 1); // v15.4: upscaled sheets have 132 px cells
+	if (img && img.width % cw === 0 && img.width >= cw) { const c = img.width / cw; if (c >= 1 && c <= 32) return c; }
 	if (img && img.height) { for (const rows of [8, 4, 1]) { const ch = img.height / rows, c = Math.round(img.width / (ch * 88 / 124)); if (c >= 1 && c <= 32 && Math.abs(img.width / c - ch * 88 / 124) < 2) return c; } }
 	return 4;
 }
@@ -13182,7 +13276,8 @@ function softenSprite(img, radius, protectRows = 0) {
 	}
 	if (protectRows > 0) {
 		const ch = Math.floor(h / protectRows);
-		const cols = (w % 88 === 0 && (w / 88 === 4 || w / 88 === 6 || w / 88 === 8)) ? w / 88 : 4;
+		const c88 = 88 * (img.artScale || 1);
+		const cols = (w % c88 === 0 && (w / c88 === 3 || w / c88 === 4 || w / c88 === 6 || w / c88 === 8)) ? w / c88 : 4;
 		const cw = Math.floor(w / cols);
 		for (let row = 0; row < protectRows; row++) for (let col = 0; col < cols; col++) {
 			const x0 = col * cw;
@@ -13258,17 +13353,20 @@ function loadSet(images, list) {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
+			if (ART_SCALED.has(ART_ALIAS[name] ?? name)) img.artScale = ART_SCALE;
 			if (V2_COLS[name]) img.cols = V2_COLS[name];
 			if ((name.endsWith("-atk") || name.endsWith("-dead")) && img.height > img.width * 1.2) TALL_COMBAT.add(name);
 			const rows = sheetRowsOf(name);
 			const strips = stripFrames(name, img) > 1;
 			const posed = (V2_COLS[name] || V2_FOLK.test(name)) && !TALL_COMBAT.has(name) || !strips && !name.endsWith("-atk") && !name.endsWith("-dead") && (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow");
-			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" ? 0 : posed ? 1 : 1;
+			// v15.4: the 1.5x touch-up sheets are already edge-cleaned and antialiased, so skip the (costly) soften pass
+			const radius = name.startsWith("ground-") || name === "farm-room" || name === "bunker-room" || img.artScale ? 0 : posed ? 1 : 1;
 			const tall = TALL_COMBAT.has(name);
 			const soft = softenSprite(img, radius, posed || tall ? rows : 0);
 			if ((posed || strips || tall) && /^(v2\/)?hero/.test(name)) soft.sharp = img;
 			const pose = measurePose(img, posed || strips || tall, strips ? 1 : rows);
 			if (img.cols) soft.cols = img.cols;
+			if (img.artScale) soft.artScale = img.artScale;
 			soft.foot = pose.foot;
 			soft.feet = pose.feet;
 			soft.footX = pose.footX;

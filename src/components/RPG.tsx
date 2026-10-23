@@ -152,7 +152,7 @@ function WorldMap14({ wm, go }: { wm: any; go: (q: number, r: number) => void })
       g.fillStyle = "#f4e6c4"; g.fillText(name, o.x, y + 12);
       if (sub) { g.font = "12px sans-serif"; g.fillStyle = color; g.fillText(sub, o.x, y + 28); }
     };
-    for (const l of WM_LOCS) if (fog.has(`${l.q},${l.r}`)) label(l.name, l.q, l.r, "#c9a36a");
+    for (const l of WM_LOCS) if (fog.has(`${l.q},${l.r}`) && !(wm.locked ?? []).includes(l.id)) label(l.name, l.q, l.r, l.lock ? "#7fb8d8" : "#c9a36a"); // v15.4: locked spots stay hidden
     for (const l of (wm.loot ?? [])) if (fog.has(`${l.q},${l.r}`)) label(l.name, l.q, l.r, l.ready ? "#9fd07a" : "#9a8a70", l.ready ? "Loot restocked" : `Picked over · ${l.days}d`);
     for (const t of (wm.tq ?? [])) { const p = hexCenter(t.q, t.r); const o = sc(p.x, p.y); g.fillStyle = "#f0c040"; g.strokeStyle = "#1c1814"; g.lineWidth = 3; g.beginPath(); g.moveTo(o.x, o.y - 30); g.lineTo(o.x + 9, o.y - 14); g.lineTo(o.x - 9, o.y - 14); g.closePath(); g.fill(); g.stroke(); g.font = "600 12px sans-serif"; g.fillStyle = "#f0c040"; g.fillText(t.label, o.x, o.y - 38); }
     const m = sc(st.x, st.y);

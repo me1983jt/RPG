@@ -545,3 +545,11 @@ export const FARM = { tx: 36 + WORLD_OX, ty: 16 + WORLD_OY, r: 12 } as const;
 export function inFarm(tx: number, ty: number): boolean {
   return (tx - FARM.tx) ** 2 + (ty - FARM.ty) ** 2 <= FARM.r * FARM.r;
 }
+
+// v15.4: buildings are drawn 1.5x along with the 1.5x people (touch-up art). The big houses also get a
+// 3x3 footprint so collision and doors match the bigger art. Walls, gates and small props stay grid-sized.
+const BUILD_15: PropKind[] = ["shack", "ruin", "workshop", "shelter", "farmhouse", "barn", "orchard", "stall", "stand", "stand-up", "stand-3", "stand-x",
+  "blind", "blind-up", "blind-3", "blind-x", "nest", "nest-up", "nest-3", "nest-x", "post-loft", "post-porch", "post-roof",
+  "lookout", "lookout-x", "smokehouse", "raincollector", "still"];
+for (const k of BUILD_15) PROP_SPEC[k].drawH = Math.round(PROP_SPEC[k].drawH * 1.5);
+for (const k of ["shack", "ruin", "shelter", "farmhouse", "barn"] as PropKind[]) { PROP_SPEC[k].w = 3; PROP_SPEC[k].h = 3; }
