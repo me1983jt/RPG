@@ -20,7 +20,7 @@ check("farmBikeExists", !!b.farmBike && !b.built, b);
 check("optionalManifestLoaded", Array.isArray(b.optional), b);
 // broken bike can't be ridden
 await T("giveItem", "gas", 2);
-await T("setPos", b.farmBike.x + 40, b.farmBike.y + 30); await wait(400);
+await T("setPos", b.farmBike.x + 40, b.farmBike.y + 30); await wait(1500); // v15.7: was 400 ms (flaky)
 check("rideButtonShown", await page.getByTestId("ride-btn").isVisible());
 await T("mountNow"); await wait(200);
 check("brokenNoRide", !(await T("bikeInfo")).mounted);
@@ -57,7 +57,7 @@ check("bikeBuilt", b.built, b);
 const gas0 = await T("countOf", "gas");
 check("gasReward", gas0 >= 3, gas0);
 const walkNotice = b.notice;
-await T("setPos", b.farmBike.x + 40, b.farmBike.y + 30); await wait(400);
+await T("setPos", b.farmBike.x + 40, b.farmBike.y + 30); await wait(1500); // v15.7: was 400 ms (flaky)
 await page.getByTestId("ride-btn").click(); await wait(300);
 b = await T("bikeInfo");
 check("mounted", b.mounted, b);

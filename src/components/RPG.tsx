@@ -1386,6 +1386,16 @@ export function RPG() {
                 </>
               ) : (
                 <>
+                  {hud.hasSave && step === "trade" ? (
+                    <button
+                      type="button"
+                      data-testid="continue-btn"
+                      className="plank border border-primary bg-primary/20 px-4 py-3 font-semibold"
+                      onClick={() => apiRef.current?.continueGame()}
+                    >
+                      Continue
+                    </button>
+                  ) : null}
                   {step === "trade" ? (
                     <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => setStep("points")}>
                       Next
@@ -1473,15 +1483,6 @@ export function RPG() {
                     >
                       <span className="block font-semibold">Autosave · Slot {hud.auto.slot}{hud.auto.where ? ` · ${hud.auto.where}` : ""}</span>
                       <span className="block truncate text-muted">{hud.auto.label} · tap to load</span>
-                    </button>
-                  ) : null}
-                  {hud.hasSave && step === "trade" ? (
-                    <button
-                      type="button"
-                      className="plank border border-border bg-surface-2 px-4 py-3 font-semibold"
-                      onClick={() => apiRef.current?.continueGame()}
-                    >
-                      Continue
                     </button>
                   ) : null}
                 </>

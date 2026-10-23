@@ -5,8 +5,8 @@ const ART_V = 2073;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
- * through this one number. Alternates: 0.42 (subtle), 0.34 (low). A ?isoy=0.4 URL param overrides it for testing. */
-const CAM_ISO_Y_DEFAULT = 0.38;
+ * through this one number. Alternates: 0.42 (subtle), 0.38 (mid); v15.7 uses the lowest, 0.34. A ?isoy=0.4 URL param overrides it for testing. */
+const CAM_ISO_Y_DEFAULT = 0.34;
 const CAM_ISO_Y = (() => { try { const v = parseFloat(new URLSearchParams(globalThis.location?.search ?? "").get("isoy") ?? ""); return v >= 0.2 && v <= 0.7 ? v : CAM_ISO_Y_DEFAULT; } catch { return CAM_ISO_Y_DEFAULT; } })();
 setIsoY(CAM_ISO_Y);
 import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
@@ -1755,6 +1755,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			dialogue = null;
 			phase = "play";
 			startRaid();
+			if (!raid) { const why = raidBlockReason(); if (why) pushLog(why); }
 			sync(true);
 			return;
 		}
@@ -5163,7 +5164,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (st.extra && typeof st.extra === "object" && !Array.isArray(st.extra)) { l1.tx = l1.tx ?? {}; l1.tx[townApp(town.id)] = JSON.parse(JSON.stringify(st.extra)); l1.tx.shared = { ...(l1.tx.shared ?? {}), ...JSON.parse(JSON.stringify(st.extra)), from: townApp(town.id) }; }
 		// v15.3: the town's motor bike hands over a fast-travel pick; ride straight to that town instead of the normal exit
 		const ft = typeof msg.fastTravel === "string" ? msg.fastTravel : "";
-		if (FT15_HOURS[ft] !== undefined && ft !== townApp(town.id)) { townQuestsDone(); fastTravel15(ft); return true; }
+		const ftId = FT15_ALIAS[ft] ?? ft;
+		if (ft && FT15_HOURS[ft] === undefined) pushLog(`You can't ride to "${ft}" from here.`);
+		if (FT15_HOURS[ftId] !== undefined && ftId !== townApp(town.id)) { townQuestsDone(); fastTravel15(ftId); return true; }
 		const exit = typeof msg.exit === "string" ? msg.exit : "town";
 		const tdef = ISO_TOWNS.find((t) => t.id === town.id);
 		// v15.1: Skowhegan's bridge hotspot (Fur & Mask still hold it) hands over to quest-harmony's Skowhegan bridge crossing
@@ -5187,7 +5190,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	/** v15.3 fast travel: ride time in hours from any town to the named one. */
-	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5 };
+	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5, skow: 2.5 }; // v15.7: 'skow' (the bridge entry) rides to Skowhegan
+	const FT15_ALIAS = { skow: "skowhegan" };
 	function fastTravel15(ft) {
 		const from = townDef(town?.id ?? "")?.name ?? "town";
 		const td = townDef(ft);
@@ -8838,7 +8842,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 				if (enemy.raid && raid) {
 					const fh = raidHouse();
-					if (fh && dist > 300) {
+					if (fh && dist > 640) { // v15.7: raiders that see you inside ~10 tiles come for you (was 300 px: they walked past you to the house)
 						const d = Math.hypot(fh.x - enemy.x, fh.y - enemy.y);
 						goalX = fh.x;
 						goalY = fh.y;
@@ -9310,6 +9314,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function raidWaves(n) {
 		return Math.min(6, 3 + Math.floor((n - 1) / 3) + moon13().waves);
 	}
+	/** v15.7: why a raid can't start right now (null = it can). */
+	function raidBlockReason() {
+		if (!player || !world) return "The game isn't running yet.";
+		if (raid) return "A raid is already under way.";
+		if (inside) return "Step outside first. Raids come to the farm yard.";
+		if (mapId !== 0) return "Raids only hit the farm. Head home to Cambridge Road first.";
+		if (!ok14()) return "No raid yet: the story hasn't reached the raids (finish First Snow with Sarah).";
+		if (snow < 3) return `No raid yet: the snow isn't deep enough (${snow}/3). The raiders wait for real winter.`;
+		if (nightShade(clock) <= .22) return "No raid yet: they only come after dark. Wait for night.";
+		return null;
+	}
 	function raidCanStart() {
 		if (!player || !world || raid || inside || snow < 3 || mapId !== 0 || !ok14()) return false;
 		return nightShade(clock) > .22;
@@ -9425,7 +9440,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const boss = last && (raid.night % 5 === 0) ? (raid.night >= 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raid.night >= 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 }) : null;
 				const pool = raidPool(raid.night, raid.wave);
 				const variant = boss ? boss.variant : pool[Math.floor(Math.random() * pool.length)];
-				const spot = raidSpawnAt(fh.x, fh.y, raid.ang, 13 * 64, 17 * 64) || raidSpawnAt(fh.x, fh.y, raid.ang + Math.PI, 11 * 64, 15 * 64);
+				const spot = raidSpawnAt(fh.x, fh.y, raid.ang, 10 * 64, 13 * 64) || raidSpawnAt(fh.x, fh.y, raid.ang + Math.PI, 10 * 64, 13 * 64);
 				if (spot) {
 					spawnRaider(variant, spot, boss);
 					raid.left -= 1;
@@ -11295,13 +11310,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let key = Math.round(rx);
 		let cv = shadowCache.get(key);
 		if (!cv) {
-			cv = document.createElement("canvas"); cv.width = key * 2 + 4; cv.height = Math.ceil(key * .84) + 4;
+			const SQ = CAM_ISO_Y * .84; // v15.7: contact shadow squashed to the camera angle
+			cv = document.createElement("canvas"); cv.width = key * 2 + 4; cv.height = Math.ceil(key * SQ * 2) + 4;
 			const g2 = cv.getContext("2d");
-			g2.scale(1, .42);
-			const cy = cv.height / 2 / .42;
+			g2.scale(1, SQ);
+			const cy = cv.height / 2 / SQ;
 			const g = g2.createRadialGradient(cv.width / 2, cy, 0, cv.width / 2, cy, key);
-			g.addColorStop(0, "rgba(10,8,6,0.46)"); g.addColorStop(.55, "rgba(10,8,6,0.26)"); g.addColorStop(1, "rgba(10,8,6,0)");
-			g2.fillStyle = g; g2.fillRect(0, 0, cv.width, cv.height / .42);
+			g.addColorStop(0, "rgba(14,16,20,0.62)"); g.addColorStop(.55, "rgba(14,16,20,0.34)"); g.addColorStop(1, "rgba(10,8,6,0)");
+			g2.fillStyle = g; g2.fillRect(0, 0, cv.width, cv.height / SQ);
 			if (shadowCache.size > 200) shadowCache.clear();
 			shadowCache.set(key, cv);
 		}
@@ -11358,7 +11374,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!layer && !person && !gfxHigh && !noShadow141) {
 			ctx.fillStyle = "rgba(12,10,8,0.4)";
 			ctx.beginPath();
-			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 8 * zoom, 0, 0, Math.PI * 2);
+			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 18 * CAM_ISO_Y * .89 * zoom, 0, 0, Math.PI * 2);
 			ctx.fill();
 		}
 		if (!img) return;
@@ -11382,6 +11398,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sy = (sheet ? facingRow(dir, rows, !!img.diag4) : 0) * sh;
 		}
 		const footSrc = layer ? images.get(overlayBase) ?? img : img;
+		// v15.7: every sprite stands on its real lowest opaque row (measured once, per frame for sheets), not a
+		// guessed 0.92, so transparent padding under the feet no longer lifts it off the ground.
+		if (footSrc.foot == null && footSrc.width && !footSrc.footTried) {
+			footSrc.footTried = true;
+			try { const m = measurePose(footSrc, sheet, rows); footSrc.foot = m.foot; if (sheet) footSrc.feet = m.feet; } catch { /* tainted/unloaded: keep default */ }
+		}
 		let frac = footSrc.foot ?? (sheet || strips ? .92 : .9);
 		if ((sheet || strips) && footSrc.feet) {
 			const fcols = sheetCols(footSrc);
@@ -12229,7 +12251,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cur = tbCur(), e = cur && cur.id !== "p" ? tbFoe(cur.id) : null;
 		const ring = e ?? player, p = pt(ring.x, ring.y);
 		ctx.strokeStyle = e ? "rgba(220, 90, 60, .9)" : "rgba(240, 200, 90, .9)"; ctx.lineWidth = 2.5;
-		ctx.beginPath(); ctx.ellipse(p.sx, p.sy, 24 * zoom, 11 * zoom, 0, 0, Math.PI * 2); ctx.stroke();
+		ctx.beginPath(); ctx.ellipse(p.sx, p.sy, 24 * zoom, 24 * CAM_ISO_Y * .92 * zoom, 0, 0, Math.PI * 2); ctx.stroke();
 		ctx.restore();
 	}
 	function setAim(part) {
@@ -12986,7 +13008,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		town146Set: (o) => { if (o.snow != null) snow = o.snow; if (o.dog != null) q10.dog = o.dog; for (const k of ["meds", "school", "bike"]) if (o[k] != null) q11St(k).s = o[k]; },
 		v15Safe: () => ({ zones: safeZones().map((z) => ({ ...z })), here: safeAt(player.x, player.y)?.id ?? null, hud: !!safeAt(player.x, player.y) }),
 		v15Spot: (id) => { const t = ISO_TOWNS.find((x) => x.id === id); return t ? { map: t.map, open: townOpen(t), spot: t.map === mapId ? townSpot(t) : null } : null; },
-		v15Towns: () => ISO_TOWNS.map((t) => ({ id: t.id, map: t.map, act: t.act ?? 0, src: townSrc(t.id) })),
+		v15Towns: () => ISO_TOWNS.filter((t, i, a) => a.findIndex((u) => u.id === t.id) === i).map((t) => ({ id: t.id, map: t.map, act: t.act ?? 0, src: townSrc(t.id), ...(FT15_ALIAS[t.id] ? { rideTo: FT15_ALIAS[t.id] } : {}) })),
 		v15Flags: (f) => { l1.tf = { ...(l1.tf ?? {}), ...f }; const moved = townMapFlags(l1.tf); townQuestsDone(); return { moved, main: JSON.parse(JSON.stringify(w13.main)), jack: w13.loyal.jack, mira: w13.loyal.mira, q10: { planks: q10.planks, rope: q10.rope, winch: q10.winch, ferry: q10.ferry }, grok: q11.q.grok?.s ?? 0, wolves: q11.q.wolves?.s ?? 0, freed: w13.freed, tq: (l1.tq ?? []).map((q) => q.id), unite: uniteWaived() }; },
 		v15State: () => townState(),
 		v15Open: (id, scene) => { openTown({ id, town: id, name: id, scene }); return { town: { ...town }, msg: townEnterMsg() }; },
@@ -13258,7 +13280,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		raidHouseHit: (n) => { if (raid) raid.house -= n; },
 		raidMode: () => api.raidMode(),
 		setSnow: (n) => { snow = n; sync(true); },
-		startRaidNow: () => { startRaid(); return !!raid; },
+		startRaidNow: () => { const why = raidBlockReason(); if (why) { pushLog(why); floater(player?.x ?? 0, (player?.y ?? 0) - 8, "No raid yet"); sync(true); return false; } startRaid(); return !!raid; },
+		raidWhyNot: () => raidBlockReason(),
 		saveNow: () => saveGame(),
 		q11State: () => JSON.parse(JSON.stringify({ ...q11, mode11, m11, season: seasonNow(), day: curDay(), escort: !!escortBodies, fishing: !!fishGame })),
 		q11Set: (patch) => { Object.assign(q11, patch); q11World(); sync(true); },
