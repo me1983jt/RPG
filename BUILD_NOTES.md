@@ -22,3 +22,6 @@
 - Never alter existing sprites.
 - Keep sheet layouts the same.
 - No photos.
+
+## Terrain update (Oct 22, 2026)
+For the new terrain rules (no square ground; realistic dirt and paved roads with pebbles, cracks and graffiti spots; worn patchy grass; few repeats; scaled to the larger characters), see "Justin's additions" in `TERRAIN_SPEC.md`.

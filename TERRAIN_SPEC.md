@@ -37,3 +37,11 @@ The engine draws each prop at its own fixed height, so the image's aspect ratio 
 Water and details (reserved, loaded but not drawn yet)
 - `river-<straight|bend|fork|end>-<n>.png`, `stream-<straight|bend|end>-<n>.png`: 256x256 top-down pieces, transparent around the water.
 - `detail-<dirt|scrub|road|rubble|snow>-<n>.png`: small top-down decals (64x64 to 128x128) to scatter on that ground.
+
+## Justin's additions (Oct 22, 2026)
+- The hex grid stays for movement and combat, but nothing on the ground may look square. No square tiles, edges or features.
+- Dirt roads should look real: ruts, little pebbles, uneven edges.
+- Paved roads should look beat up: cracks, potholes, faded lines, and occasional graffiti spots.
+- Grass should be worn, with bare dirt patches and mixed tufts.
+- Avoid visible repeats. Use many variants and random rotation or flips.
+- Draw everything to scale with the characters, which are getting bigger and more detailed. Check every piece against the hero sprite.
