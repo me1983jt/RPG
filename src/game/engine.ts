@@ -10,7 +10,7 @@ const CAM_ISO_Y_DEFAULT = 0.34;
 const CAM_ISO_Y = (() => { try { const v = parseFloat(new URLSearchParams(globalThis.location?.search ?? "").get("isoy") ?? ""); return v >= 0.2 && v <= 0.7 ? v : CAM_ISO_Y_DEFAULT; } catch { return CAM_ISO_Y_DEFAULT; } })();
 setIsoY(CAM_ISO_Y);
 import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
-import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
+import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, classId, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
@@ -36,6 +36,7 @@ import {
   townOf,
   type PerkId,
   type SkillId,
+	STATS_RULES,
 } from "@/game/progress";
 import { facing8Hys } from "@/game/iso";
 import { setIsoY } from "@/game/iso";
@@ -199,6 +200,10 @@ var IMAGES = [
 	"npc-etta",
 	"npc-gus",
 	"v4/npc-gus",
+	"v4/icons/harmony_icon_v4",
+	"v4/icons/pittsfield_icon_v4",
+	"v4/icons/skowhegan_icon_v4",
+	"v4/icons/greenville_icon_v4",
 	"v4/overlays/boarded_window_house_v4",
 	"v4/overlays/boarded_window_hall_v4",
 	"v4/overlays/shingle_holes_v4",
@@ -1147,7 +1152,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.skillPoints = 0;
 		player.perks = [];
 		player.karma = 0;
-		player.rep = { lowelltown: 0, attean: 0, holeb: 0, ponds: 0 };
+		player.rep = Object.fromEntries(STATS_RULES.rep.keys.map((k) => [k, 0])); // v15.9: + harmony, pittsfield, skowhegan
 		party = null;
 		partyReturn = null;
 		refreshGear(player);
@@ -1267,7 +1272,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.respawnX = data.respawnX;
 		player.respawnY = data.respawnY;
 		player.dir = data.dir || 0;
-		if (data.role && data.bag && data.weaponId !== void 0 && data.coatId) {
+		// v15.9: one class list everywhere; old saves move to the current ids (Woodsman -> Camp hand, Scrounger -> Prowler, Fixer -> Medic)
+		if (data.role) data.role = classId(data.role) ?? "fighter";
+		if (data.role && data.bag && data.weaponId !== void 0 && data.coatId !== void 0) { // v15.9: an empty coat slot ("") is a real save, not a legacy one
 			player.role = data.role;
 			player.baseAtk = data.baseAtk ?? roleKit(data.role).atk;
 			player.bag = data.bag.map((s) => ({
@@ -1533,10 +1540,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			intellect: p.intellect,
 			perception: p.perception,
 			luck: p.luck,
-			trait: p.trait || ""
+			trait: p.trait || "",
+			agility: w13?.core?.agility ?? 1, grit: w13?.core?.grit ?? 1, tradeMech: v3?.skills?.mechanics?.lv ?? 0
 		};
 	}
 	function ensureProgress(p) {
+		if (p.rep) for (const k of STATS_RULES.rep.keys) if (typeof p.rep[k] !== "number") p.rep[k] = 0;
 		if (!p.tags || p.tags.length !== 3) p.tags = tagsForRole(p.role);
 		if (!p.invested) p.invested = {};
 		if (p.skillPoints == null) p.skillPoints = 0;
@@ -1642,6 +1651,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function vision() {
 		if (!world || !player) return;
+		if (typeof window !== "undefined" && window.__noFog) { visible.fill(1); explored.fill(1); return; } // v15.9: full-world render (tests/screenshots only)
 		visible.fill(0);
 		const p = tileOf(player.x, player.y);
 		reveal(p.tx, p.ty, sightRadius(), true);
@@ -1741,7 +1751,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		}
 		if (id.startsWith("q10-") && q10Choice(id)) return;
-		if (id.startsWith("v13-") && v13Choice(id)) return;
+		if ((id.startsWith("v13-") || id.startsWith("v159-")) && v13Choice(id)) return;
 		if ((id.startsWith("v14-") || id.startsWith("v141-")) && v14Choice(id)) { sync(true); return; }
 		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id.startsWith("q113-") && v3Choice(id)) return;
@@ -4514,7 +4524,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		{ const my = piles.filter((q) => q.title.startsWith(run.name + ":")); if (my.length) lrSetup(run, my[0], my[my.length - 1]); else lrSetup(run, player, { x: player.x + dx / dm * 1000, y: player.y + dy / dm * 1000 }); }
 		pushLog(fresh ? `${run.name}. ${run.blurb} The good stuff is deeper in.` : `${run.name}. Picked over. It'll be worth a look again in ${restockLeft(run, l1.loot[run.id], today)} day${restockLeft(run, l1.loot[run.id], today) === 1 ? "" : "s"}.`);
-		pushLog("Walk to the tinted edge to get back on the world map.");
+		pushLog("Walk to the tinted edge to get back on the road.");
 		saveGame(); sync(true);
 	}
 	// ---- loot-run side quests (gb-handoff/lootruns.md): Dale's Key, Roy's Trapline, Wendell's Load
@@ -4854,58 +4864,62 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return v14.map;
 	}
 	function wmReveal(q, r) { const m = wmState(); for (const [a, b] of [[q, r], ...hexNeighbors(q, r)]) { const k = hexKey(a, b); if (!m.fog.includes(k)) m.fog.push(k); } }
+	/** v15.9: the walkable iso world IS the world map. The old hex overview screen is gone; leaving a region
+	 * (a gate, the bike, a town exit) opens a plain destination menu and the trip runs in the background. */
+	function travelDests() {
+		const m = wmState(), here = mapId === 9 ? null : locOfMap(mapId);
+		const bike = bikeBuilt();
+		const out = [];
+		for (const l of WM_LOCS) {
+			if (locLocked(l, l1.tf) || (here && l.id === here.id)) continue;
+			if (l.town && !w13.seen[l.id] && !bike) continue;
+			const hrs = hexPath([m.q, m.r], [l.q, l.r], bike).reduce((a, [q, r]) => a + hexHours(q, r, bike), 0);
+			out.push({ kind: "loc", id: l.id, name: l.name, hrs });
+		}
+		for (const r of LOOT_RUNS) if (m.fog.includes(hexKey(r.q, r.r))) out.push({ kind: "loot", id: r.id, name: r.name, hrs: hexPath([m.q, m.r], [r.q, r.r], bike).reduce((a, [q, rr]) => a + hexHours(q, rr, bike), 0) });
+		return out;
+	}
 	function openWorldMap() {
 		if (!player || !world) return;
 		parkBike(false);
 		const m = wmState();
 		if (mapId !== 9) { const l = locOfMap(mapId); m.q = l.q; m.r = l.r; }
 		wmReveal(m.q, m.r);
-		regions.set(mapId, captureRegion());
 		m.path = [];
-		phase = "worldmap"; intent = null; buildOpen = false; craftOpen = false; dialogue = null;
-		pushLog("The world map. Tap a hex to travel; tap a named place to go in.");
-		saveGame(); sync(true);
+		const opts = travelDests().map((d) => ({ label: `${d.name} (${Math.max(1, Math.round(d.hrs))} h)`, id: `v159-go-${d.kind}-${d.id}` }));
+		openD13(bikeBuilt() ? "Bike" : "On foot", "Where to?", [...opts, { label: "Stay here", id: "close" }]);
+	}
+	function travel159(kind, id) {
+		const m = wmState();
+		const dest = kind === "loot" ? LOOT_RUNS.find((r) => r.id === id) : WM_LOCS.find((l) => l.id === id && !locLocked(l, l1.tf));
+		if (!dest || !player) return;
+		regions.set(mapId, captureRegion());
+		const bike = bikeBuilt();
+		// v15.1: with the Pittsfield handcar running, Pittsfield <-> Skowhegan is one rail hop
+		const here = locAt(m.q, m.r), rail = ["pittsfield", "skowhegan", "skow"];
+		if (kind === "loc" && w13.main?.flags?.handcar && here && here.id !== dest.id && rail.includes(here.id) && rail.includes(dest.id) && (here.id === "pittsfield" || dest.id === "pittsfield")) {
+			m.from = [m.q, m.r]; m.q = dest.q; m.r = dest.r; clock += DAY_LENGTH_SEC / 24; needsTick(1); wmReveal(dest.q, dest.r);
+			w13.main.flags.railRidden = true; townQuestsDone();
+			pushLog(`You pump the handcar down the Maine Central line to ${dest.name}. An hour, and your arms know it.`);
+			wmEnter(dest); return;
+		}
+		const path = hexPath([m.q, m.r], [dest.q, dest.r], bike);
+		const rc = WM_LOCS.find((l) => l.id === "raiders");
+		for (const [q, r] of path) {
+			m.from = [m.q, m.r]; m.q = q; m.r = r;
+			const hrs = hexHours(q, r, bike);
+			clock += hrs / 24 * DAY_LENGTH_SEC; needsTick(hrs); wmReveal(q, r); wmAwayRaid();
+			const last = q === dest.q && r === dest.r;
+			const near = !!rc && Math.abs(q - rc.q) + Math.abs(r - rc.r) <= 3;
+			const roll = typeof window !== "undefined" && window.__wmEnc != null ? window.__wmEnc : Math.random();
+			if (!last && !locAt(q, r) && !lootRunAt(q, r) && roll < (near ? .22 : .07)) { wmEncounter(near); return; }
+		}
+		if (kind === "loot") { lootEnter(dest); return; }
+		pushLog(`${bike ? "You ride" : "You walk"} to ${dest.name}.`);
+		wmEnter(dest);
 	}
 	/** v15.4: world-map spots behind a quest lock (Greenville) don't exist until their flags are set. */
 	function locAt(q, r) { const l = locAtRaw(q, r); return l && locLocked(l, l1.tf) ? null : l; }
-	function wmGo(q, r) {
-		const m = wmState();
-		if (phase !== "worldmap") return;
-		const lockedLoc = locAtRaw(q, r);
-		if (lockedLoc && locLocked(lockedLoc, l1.tf)) { m.warn = "Nothing but timber and black water up there. You'd need a lake map and a working ferry."; sync(true); return; }
-		if (q === m.q && r === m.r) { const l = locAt(q, r); if (l) wmEnter(l); else { const lr = lootRunAt(q, r); if (lr) lootEnter(lr); } return; }
-		// v15.1: with the Pittsfield handcar running, Pittsfield <-> Skowhegan is one rail hop
-		const here = locAt(m.q, m.r), there = locAt(q, r), rail = ["pittsfield", "skowhegan", "skow"];
-		if (w13.main?.flags?.handcar && here && there && here.id !== there.id && rail.includes(here.id) && rail.includes(there.id) && (here.id === "pittsfield" || there.id === "pittsfield")) {
-			m.from = [m.q, m.r]; m.q = q; m.r = r; m.path = []; clock += DAY_LENGTH_SEC / 24; needsTick(1); wmReveal(q, r);
-			w13.main.flags.railRidden = true; townQuestsDone();
-			pushLog(`You pump the handcar down the Maine Central line to ${there.name}. An hour, and your arms know it. Tap it again to go in.`);
-			sync(true); return;
-		}
-		m.path = hexPath([m.q, m.r], [q, r], bikeBuilt());
-		sync(true);
-	}
-	function wmTick(dt) {
-		const m = wmState();
-		if (!m.path.length) return;
-		wmAcc += dt;
-		if (wmAcc < .32) return;
-		wmAcc = 0;
-		const [q, r] = m.path.shift();
-		m.from = [m.q, m.r];
-		m.q = q; m.r = r;
-		const hrs = hexHours(q, r, bikeBuilt());
-		clock += hrs / 24 * DAY_LENGTH_SEC;
-		needsTick(hrs);
-		wmReveal(q, r);
-		wmAwayRaid();
-		const rc = WM_LOCS.find((l) => l.id === "raiders");
-		const near = Math.abs(q - rc.q) + Math.abs(r - rc.r) <= 3;
-		const roll = typeof window !== "undefined" && window.__wmEnc != null ? window.__wmEnc : Math.random();
-		if (!locAt(q, r) && !lootRunAt(q, r) && roll < (near ? .22 : .07)) { m.path = []; wmEncounter(near); return; }
-		if (!m.path.length) { const l = locAt(q, r) ?? lootRunAt(q, r); pushLog(l ? `${l.name}. Tap it again to go in.` : "You stop and look around."); }
-		sync(true);
-	}
 	/** A raid night hits the farm while you're out: dents the walls in the save, and the world map warns you. */
 	function wmAwayRaid() {
 		const m = wmState();
@@ -5087,6 +5101,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	const townFade = new Map();
+	const TOWN_ICON159 = { harmony: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville" };
 	function paintTowns(camX, camY) {
 		if (!world || !player || inside) return;
 		const sx = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
@@ -5105,6 +5120,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.fillStyle = "rgba(15,12,8,.82)"; ctx.fillRect(m.sx - w / 2, ly - 15, w, 21);
 			ctx.strokeStyle = "#c9a36a"; ctx.lineWidth = 1; ctx.strokeRect(m.sx - w / 2 + .5, ly - 14.5, w - 1, 20);
 			ctx.fillStyle = "#f4e6c4"; ctx.fillText(label, m.sx, ly);
+			const ic = images.get(`v4/icons/${TOWN_ICON159[t.id] ?? ""}_icon_v4`); // v15.9: Quest's town icon as the entrance sign
+			if (ic && (ic.naturalWidth || ic.width)) { const d = 46 * Math.max(1, zoom * .8); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 6; ctx.drawImage(ic, m.sx - d / 2, ly - 20 - d, d, d); }
 			ctx.restore();
 		}
 		// town quests: an arrow at the screen edge toward the exit that leads there
@@ -5160,18 +5177,24 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const [k, id] of INJ_MAP) inj[k] = injured(id);
 		const id = townApp(town?.id ?? "harmony");
 		return {
-			inventory: (p?.bag ?? []).filter((s) => s.qty > 0).map((s) => ({ id: s.id, qty: s.qty, name: GEAR[s.id]?.name ?? s.id })),
-			// v15.8: the town class follows the RPG role, so no town ever asks again (a class picked in a town still wins via extra.cls)
-			class: ({ fighter: "woodsman", hunter: "woodsman", thief: "scrounger", medic: "fixer" })[p?.role] ?? "woodsman",
+			inventory: (p?.bag ?? []).filter((s) => s.qty > 0).map((s) => ({ ...(l1.itemProps?.[s.id] ?? {}), id: s.id, qty: s.qty, name: GEAR[s.id]?.name ?? s.id })), // v15.9: unknown item props ride along
+			// v15.9: one shared class list (shared-rules/stats.json); the id goes straight through. A class the town sent back is returned exactly.
+			class: l1.tClass ?? p?.role ?? "fighter", className: roleKit(p?.role ?? "fighter").title,
+			name: p?.name ?? "", look: p?.look ?? "", hair: p?.hair ?? "", appearance: { coatId: p?.coatId ?? "", headId: p?.headId ?? "", legsId: p?.legsId ?? "", feetId: p?.feetId ?? "" },
+			perks: [...(p?.perks ?? [])], role: p?.role ?? "fighter", trait: p?.trait ?? "", backstory: w13.backstory ?? "", level: p?.level ?? 1, xp: p?.xp ?? 0, points: p?.points ?? 0,
+			tags: [...(p?.tags ?? [])], invested: { ...(p?.invested ?? {}) }, skillPoints: p?.skillPoints ?? 0,
+			skills: JSON.parse(JSON.stringify({ ...(l1.tSkills ?? {}), ...(v3.skills ?? {}) })), karma: p?.karma ?? 0, rep: { ...(p?.rep ?? {}) },
+			skillScores: p ? Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])) : {},
 			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
 			injuries: inj,
-			companions: [
+			companions: (l1.tComp ?? []).length ? JSON.parse(JSON.stringify(l1.tComp)) : [
 				{ id: "cyndal", name: "Cyndal", withYou: !!escortBodies?.length },
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
 			],
 			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
-			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => [k, Number(p?.[k]) || 1])),
+			// v15.9: agility/grit live in w13.core; a real 0 stays 0
+			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => { const v = Number(k === "agility" || k === "grit" ? w13.core?.[k] : p?.[k]); return [k, Number.isFinite(v) ? v : 1]; })),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
 			// v15.1: one character carries between towns: the town's own extra, with the latest class/skills/stats from any town on top
 			extra: JSON.parse(JSON.stringify({ ...(l1.tx?.[id] ?? {}), ...sharedTownExtra() })),
@@ -5185,7 +5208,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const k of ["schema", "cls", "skills", "stats"]) if (sh[k] !== undefined) o[k] = sh[k];
 		return o;
 	}
-	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: townEntry(town.id), state: { ...townState(), ...(town.scene ? { scene: town.scene } : {}) } } : null; }
+	function townEnterMsg() { return town ? { type: "enterTown", protocol: TOWN_PROTOCOL, town: townEntry(town.id), state: { ...townState(), ...(town.scene ? { scene: town.scene } : town.id === "harmony" ? { scene: "harmony" } : {}) } } : null; } // v15.9: the Harmony marker opens Main Street, not the farm
 	/** Apply a {type:'leaveTown', exit, state} from the town game. Anything missing or malformed is left as it was. */
 	function leaveTown(msg) {
 		if (!town || !player || !msg || msg.type !== "leaveTown") return false;
@@ -5193,10 +5216,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const inv = cleanInventory(st.inventory, (id) => !!GEAR[id]);
 		if (inv) {
 			const want = new Map(inv.map((q) => [q.id, q.qty]));
-			for (const s of [...player.bag]) { const n = want.get(s.id) ?? 0; if (s.qty > n) takeItem(s.id, s.qty - n); }
+			// v15.9 (audit A1): the town only keeps ids in its own ITEMS table. Only take items the town is known to
+			// handle (it has handed them back before, now or on an earlier visit); anything else stays in the bag untouched.
+			l1.tKnown = l1.tKnown ?? {}; const app = townApp(town.id); const known = new Set([...(l1.tKnown[app] ?? []), ...want.keys()]); l1.tKnown[app] = [...known];
+			// a town that hands back the whole pack (v1.9 towns keep unknown items; they send points/tags) is a full list: missing = used up
+			const sent = player.bag.filter((b) => b.qty > 0).map((b) => b.id), back = sent.filter((x) => want.has(x)).length;
+			const full = typeof st.points === "number" || Array.isArray(st.tags) || (sent.length > 0 && back / sent.length >= .6);
+			for (const s of [...player.bag]) { if (!full && !known.has(s.id)) continue; const n = want.get(s.id) ?? 0; if (s.qty > n) takeItem(s.id, s.qty - n); }
 			for (const [id, n] of want) { const have = countOf(id); if (n > have) giveItem(id, n - have); }
 			refreshGear(player);
 		}
+		townAccept159(st);
 		if (Number.isFinite(Number(st.hp))) player.hp = Math.max(1, Math.min(player.maxHp ?? 44, Math.round(Number(st.hp))));
 		if (st.injuries && typeof st.injuries === "object") for (const [k, id] of INJ_MAP) {
 			if (st.injuries[k] === false && w13.ail[id]) delete w13.ail[id];
@@ -5236,6 +5266,46 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		snapPrev();
 		saveGame(); autosave15(`Left ${tdef?.name ?? "town"}`); sync(true);
 		return true;
+	}
+	/** v15.9: write back the character fields the RPG sent (the town returns them unchanged unless it changed them). */
+	function townAccept159(st) {
+		const p = player; if (!p || !st) return;
+		const str = (v) => typeof v === "string", num = (v) => typeof v === "number" && Number.isFinite(v);
+		if (str(st.name) && st.name.trim()) p.name = cleanName(st.name);
+		if (str(st.look) && st.look) p.look = st.look;
+		if (str(st.hair) && st.hair) p.hair = st.hair;
+		if (Array.isArray(st.perks) && st.perks.every(str)) p.perks = st.perks.filter((x) => PERKS.some((d) => d.id === x));
+		if (str(st.trait)) p.trait = traitOf(st.trait)?.id ?? p.trait;
+		if (num(st.level) && st.level >= 1) p.level = Math.floor(st.level);
+		if (num(st.xp) && st.xp >= 0) p.xp = st.xp;
+		if (Array.isArray(st.tags) && st.tags.length === 3 && st.tags.every((x) => SKILLS.some((d) => d.id === x))) p.tags = st.tags;
+		if (st.invested && typeof st.invested === "object") { const o = {}; for (const [k, v] of Object.entries(st.invested)) if (SKILLS.some((d) => d.id === k) && num(v) && v >= 0) o[k] = v; p.invested = o; }
+		if (num(st.skillPoints) && st.skillPoints >= 0) p.skillPoints = st.skillPoints;
+		if (num(st.points) && st.points >= 0) p.points = Math.floor(st.points);
+		const app = town ? townApp(town.id) : "harmony";
+		// Justin (Oct 23): 1 town score point = 1 XP
+		if (num(st.score)) { l1.tScore = l1.tScore ?? {}; const gain = Math.floor(st.score - (l1.tScore[app] ?? 0)) * (STATS_RULES.townScoreXp ?? 1); l1.tScore[app] = st.score; if (gain > 0) { pushLog(`Town work: +${gain} XP.`); grantXp(gain); } }
+		// Justin (Oct 23): an old town save's learn-by-use skill levels are halved into invested points, once per town
+		const ex = st.extra; if (ex && typeof ex === "object" && ex.skills && typeof ex.skills === "object" && ex.schema !== "character/1" && !l1.tConv?.[app]) {
+			l1.tConv = { ...(l1.tConv ?? {}), [app]: true }; p.invested = p.invested ?? {};
+			for (const [k0, v] of Object.entries(ex.skills)) { const k = STATS_RULES.skills.aliases[k0] ?? k0; const lvl = Number(v?.lv ?? v); if (!SKILLS.some((d) => d.id === k) || !(lvl > 0)) continue; const add = Math.floor(lvl * (STATS_RULES.oldTownSkillConversion?.learnByUseLvToInvested ?? .5)); if (add > 0) p.invested[k] = (p.invested[k] ?? 0) + add; }
+		}
+		if (str(st.backstory)) w13.backstory = st.backstory;
+		{ const r = classId(st.role); if (r && r !== p.role) { p.role = r; refreshGear(p); } }
+		// v3 trade skills come back as {lv, xp}; entries the town generated for its own skills carry a score and aren't trade levels
+		if (st.skills && typeof st.skills === "object") for (const [k, v] of Object.entries(st.skills)) if (v3.skills[k] && v && typeof v === "object" && !("score" in v) && num(v.lv) && v.lv >= 0) { v3.skills[k].lv = Math.min(SKILL_MAX, Math.floor(v.lv)); if (num(v.xp) && v.xp >= 0) v3.skills[k].xp = v.xp; }
+		if (num(st.karma)) p.karma = st.karma;
+		if (st.rep && typeof st.rep === "object") for (const [k, v] of Object.entries(st.rep)) if (num(v)) p.rep[k] = v;
+		if (st.stats && typeof st.stats === "object") for (const [k0, v] of Object.entries(st.stats)) {
+			const k = STATS_RULES.statAliases[k0] ?? k0; if (!num(v)) continue;
+			if (k === "agility" || k === "grit") w13.core[k] = v; else if (["strength", "vigor", "endurance", "intellect", "perception", "luck"].includes(k)) p[k] = v;
+		}
+		// stored, not applied: the town's own skill data and the exact class it sent (Tinker included)
+		if (st.skills && typeof st.skills === "object") { l1.tSkills = {}; for (const [k, v] of Object.entries(st.skills)) if (!v3.skills[k]) l1.tSkills[k] = JSON.parse(JSON.stringify(v)); }
+		if (str(st.class) && st.class) l1.tClass = st.class;
+		if (Array.isArray(st.companions)) l1.tComp = st.companions.filter((c) => c && str(c.id)).map((c) => ({ ...c, withYou: !!c.withYou }));
+		if (Array.isArray(st.inventory)) { l1.itemProps = l1.itemProps ?? {}; for (const it of st.inventory) if (it && str(it.id) && GEAR[it.id]) { const { id, qty, name, ...rest } = it; if (Object.keys(rest).length) l1.itemProps[id] = JSON.parse(JSON.stringify(rest)); } }
+		refreshGear(p);
 	}
 	/** v15.3 fast travel: ride time in hours from any town to the named one. */
 	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5, skow: 2.5 }; // v15.7: 'skow' (the bridge entry) rides to Skowhegan
@@ -5421,7 +5491,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (pick === "migration") { for (let i = 0; i < 5; i++) q10Spawn("deer", "", "Deer", at(-200 + i * 70, 220), [16, 2, 6], "enc", false); pushLog("A line of deer crossing the road, heading south for the yards."); }
 		else if (pick === "caravan") { openD13("Caravan", "A sledge caravan out of Skowhegan, two horses and a dog. They'll trade a little for iron.", [{ label: "Six shells — 8 iron", id: "q10-buy-shells" }, { label: "Wave them by", id: "close" }]); }
 		else startRoadEvent(pickRoadEvent(Math.random()));
-		pushLog("Walk to the tinted edge to get back on the world map.");
+		pushLog("Walk to the tinted edge to get back on the road.");
 		saveGame(); sync(true);
 	}
 	function wmHud() {
@@ -5758,6 +5828,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return close13();
 		}
 		if ((m = id.match(/^v13-go-(.+)$/))) { close13(); fastTravel(m[1]); return true; }
+		if ((m = id.match(/^v159-go-(loc|loot)-(.+)$/))) { close13(); travel159(m[1], m[2]); return true; }
 		if (id === "v13-road-car") { const ok = lv("mechanics") >= 2 || perk13("mechanics", 9) || Math.random() < .5; if (ok) { giveItem("gas", 2); player.scrap += 3; pushLog("Two cans of gas and a box of hose clamps."); } else { giveItem("gas", 1); pushLog("A cup of stale gas. Better than nothing."); } train("mechanics", 6); train("scavenging", 5); return close13(); }
 		if (id === "v13-road-help") { if (countOf("jerky") > 0) takeItem("jerky", 1); loyalty("stranger-help"); pushLog("He tells you raiders have been working the Forks road at night. He thanks you and goes."); return close13(); }
 		if (id === "v13-road-rob") { giveItem("shells", 3); player.karma = (player.karma ?? 0) - 3; loyalty("stranger-rob"); pushLog("Three shells and a can of beans. He doesn't look back."); return close13(); }
@@ -7026,7 +7097,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function isGun(family) {
 		return family === "carbine" || family === "revolver" || family === "scatter";
 	}
-	function usePick() {
+	function pickAction() {
 		if (!player) return false;
 		const id = [
 			"lockpick-good",
@@ -7137,7 +7208,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		parkBike(true);
 		const own = prop.built || prop.kind === "shelter" || prop.kind === "workshop" || prop.kind === "farmhouse" || prop.kind === "barn" || prop.kind === "hatch";
 		if (prop.locked && !own && !openedDoors.has(prop.id)) {
-			if (!usePick()) return;
+			if (!pickAction()) return;
 			openedDoors.add(prop.id);
 			pushLog("The lock gives. The door opens.");
 		} else pushLog(prop.kind === "hatch" ? "You lift the hatch." : "The door opens.");
@@ -7220,7 +7291,46 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog("You step back outside.");
 		sync(true);
 	}
-	function useFarm(prop) {
+	/** v15.9: Climbing and Electronics in the main game. Rubble and fences: climb for high loot or a shortcut over.
+	 * Dead cars and the tractor: hotwire for gas. The lookout radio: fix it for raid and weather news. The bunker hatch's
+	 * powered cabinet: open it. One try per thing per day; a failed climb costs a little skin. */
+	const USE159 = { ruin: "climbing", rock: "climbing", fence: "climbing", "wall-x": "climbing", "car-sedan": "electronics", "car-truck": "electronics", tractor: "electronics", lookout: "electronics", hatch: "electronics" };
+	function check159(skill, dc) { return Math.random() * 100 < checkChance(skillOf(skill), dc, 0, player.karma ?? 0); }
+	function use159(prop) {
+		const skill = USE159[prop.kind]; if (!skill || !player) return false;
+		l1.u159 = l1.u159 ?? {}; const key = `${mapId}:${prop.id}`, day = curDay();
+		if (l1.u159[key] === day) { pushLog(skill === "climbing" ? "You already went over that today." : "Nothing left to coax out of that today."); sync(true); return true; }
+		l1.u159[key] = day;
+		const name = skill === "climbing" ? "Climbing" : "Electronics";
+		if (skill === "climbing") {
+			const dc = prop.kind === "ruin" ? 35 : prop.kind === "rock" ? 30 : 20;
+			if (!check159("climbing", dc)) { player.hp = Math.max(1, player.hp - 3); pushLog(`${name}: your boot slips on the ice and you come down hard. (-3)`); sync(true); return true; }
+			if (prop.kind === "fence" || prop.kind === "wall-x") {
+				const c = propCenter(prop); const dx = c.x - player.x, dy = c.y - player.y, m = Math.hypot(dx, dy) || 1;
+				const tx = c.x + dx / m * 70, ty = c.y + dy / m * 70;
+				if (!pointBlocked(world, tx, ty, RADIUS)) { player.x = tx; player.y = ty; snapPrev(); }
+				pushLog(`${name}: up and over the ${prop.kind === "fence" ? "fence" : "wall"}. Saves the long way round.`);
+			} else {
+				const n = 2 + Math.floor(Math.random() * 3); player.scrap += n;
+				if (Math.random() < .4) giveItem("wire", 1);
+				pushLog(`${name}: you work up the ${prop.kind === "ruin" ? "rubble to a second-floor shelf nobody could reach" : "ledge to a dry crack"}. ${n} iron${Math.random() < .4 ? " and a twist of wire" : ""}.`);
+			}
+		} else if (prop.kind === "lookout") {
+			if (!check159("electronics", 30)) { pushLog(`${name}: the lookout radio hums and dies. Bad solder.`); sync(true); return true; }
+			const nextRaid = raidBlockReason() ? "No raid in the air yet." : "Talk on the band of a raid party moving tonight.";
+			pushLog(`${name}: you get the lookout radio talking. ${w13.weather?.id === "clear" ? "Clear skies on the county band." : "Weather coming in on the county band."} ${nextRaid}`);
+		} else if (prop.kind === "hatch") {
+			if (!check159("electronics", 40)) { pushLog(`${name}: the keypad on the bunker's power cabinet stays dark.`); sync(true); return true; }
+			giveItem("shells", 4); player.scrap += 3;
+			pushLog(`${name}: you bridge the dead keypad off a lantern battery. The power cabinet clicks open: 4 shells and some iron.`);
+		} else {
+			if (!check159("electronics", 35)) { pushLog(`${name}: you pull the wires under the dash. Nothing but a spark.`); sync(true); return true; }
+			giveItem("gas", 1); player.scrap += 1;
+			pushLog(`${name}: you hotwire it. The engine coughs once, long enough to pump a quart of gas out of the lines.`);
+		}
+		sync(true); return true;
+	}
+	function farmAction(prop) {
 		if (!player) return;
 		if (ART14.has(prop.kind)) return v14Use(prop);
 		if (prop.kind === "press") {
@@ -7307,7 +7417,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("The chest is empty.");
 			return;
 		}
-		if (!usePick()) return;
+		if (!pickAction()) return;
 		lootedChests.add(inside.id);
 		player.scrap = Math.min(999, player.scrap + 5);
 		const found = rollDrop(false, player.luck);
@@ -8465,7 +8575,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog(world.props.some((p) => p.built && (p.kind === "shelter" || p.kind === "shack")) ? "You wake at the lean-to, sore but breathing." : "You wake on the cot at Cambridge Road. The stove is still warm.");
 			saveGame();
 		}
-		if (phase === "worldmap") { wmTick(dt); prevHeld = currentHeld(); clearEdges(); return; }
 		if (!world || !player || phase !== "play") {
 			prevHeld = currentHeld();
 			clearEdges();
@@ -9657,21 +9766,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		raidClock -= dt;
 		const cap = raid ? 0 : 3 + Math.min(4, raidNight);
-		if (false) {
-			bossThisNight = true;
-			const boss = raidNight === 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raidNight === 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 };
-			const spot = raidSpawn(12 * 64, 15 * 64);
-			if (!spot) bossThisNight = false;
-			else world.enemies.push({
-				id: world.nextEnemyId++,
-				x: spot.x, y: spot.y, homeX: spot.x, homeY: spot.y,
-				hp: boss.hp, maxHp: boss.hp, atk: boss.atk, xp: boss.xp,
-				elite: true, quest: false, kind: "bandit", pack: 90, temper: "hostile",
-				crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0,
-				path: null, pathT: 0, aggro: true, dead: false, hurt: 0,
-				variant: boss.variant, name: boss.name, slow: 0, death: 0
-			});
-		}
 		if (!raid && raidClock <= 0 && raiders.length < cap && !(mapId === 0 && v14.st < 99)) {
 			raidClock = 14 + Math.random() * 8;
 			const pool = ["scout"];
@@ -10819,7 +10913,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		drawGround(drawCamX, drawCamY);
-		if (world) { const dprG = canvas.width / Math.max(1, viewW); drawGroundDepth(); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
+		const shotMode = typeof window !== "undefined" && !!window.__noFog; // v15.9: full-world render: no screen-space haze/grade/weather
+		if (world && !shotMode) { const dprG = canvas.width / Math.max(1, viewW); drawGroundDepth(); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
 		q10DrawGround(drawCamX, drawCamY, dpr);
 		// v15.8: combat hexes, move highlights and the turn ring sit on the ground, under every sprite
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0); townGround(drawCamX, drawCamY); paintHex15(drawCamX, drawCamY);
@@ -10916,7 +11011,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 							if (b === player && standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y)) continue;
 							const hr = worldToScreen(b.x, b.y, drawCamX, drawCamY);
 							const hs = zoomPoint(hr.sx, hr.sy);
-							if (Math.abs(hs.sx - ps.sx) < pw / 2 && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph) { seeThrough = true; break; }
+							if (Math.abs(hs.sx - ps.sx) < pw / 2 + 18 * zoom && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph) { seeThrough = true; break; }
 						}
 					}
 					// ease the fade in and out instead of popping
@@ -11230,9 +11325,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			g.addColorStop(0, "rgba(10,6,4,0)"); g.addColorStop(.55, "rgba(30,10,8,.55)"); g.addColorStop(1, "rgba(12,4,4,.92)");
 			ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH); ctx.restore();
 		}
-		if (gfxHigh && !inside) paintDaylight(dark);
-		if (!inside) paintWeather13();
-		paintSeason();
+		if (gfxHigh && !inside && !shotMode) paintDaylight(dark);
+		if (!inside && !shotMode) paintWeather13();
+		if (!shotMode) paintSeason();
 		paintRipples(drawCamX, drawCamY);
 		paintFish();
 		if (world && player && shade > .12) {
@@ -11908,8 +12003,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const p = world.props.find((pp) => pp.id === picked.id);
 			const c = propCenter(p);
 			const near = Math.hypot(c.x - player.x, c.y - player.y) < 72;
+			if (USE159[p.kind] && Math.hypot(c.x - player.x, c.y - player.y) < 120) { use159(p); return; }
 			if ((p.kind === "press" || p.kind === "crates" || p.kind === "orchard" || p.kind === "maple" || ART14.has(p.kind))) {
-				if (near || ART14.has(p.kind) && Math.hypot(c.x - player.x, c.y - player.y) < 110) useFarm(p);
+				if (near || ART14.has(p.kind) && Math.hypot(c.x - player.x, c.y - player.y) < 110) farmAction(p);
 				else intent = {
 					kind: "walk",
 					x: c.x,
@@ -12479,7 +12575,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (cmd === "rotate") { buildFlip = !buildFlip; sync(true); }
 			else if (cmd === "tool") { buildTool = arg; sync(true); }
 			else if (cmd === "repairAll") repairAll14();
-			else if (cmd === "wmGo") wmGo(arg[0], arg[1]);
 			else if (cmd === "wmOpen") openWorldMap();
 			return hud14();
 		},
@@ -12758,7 +12853,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (stat === "wits") player.intellect += 1;
 			else player[stat] += 1;
 			refreshGear(player);
-			pushLog(`${stat === "vigor" ? "health" : stat === "intellect" ? "intelligence" : stat === "perception" ? "perception" : stat === "endurance" ? "endurance" : stat === "luck" ? "luck" : stat === "agility" ? "agility" : stat === "grit" ? "grit" : stat === "wits" ? "wits" : "strength"} rises.`);
+			pushLog(`${stat === "vigor" ? "vigor" : stat === "intellect" ? "intellect" : stat === "perception" ? "perception" : stat === "endurance" ? "endurance" : stat === "luck" ? "luck" : stat === "agility" ? "agility" : stat === "grit" ? "grit" : stat === "wits" ? "wits" : "strength"} rises.`);
 			saveGame();
 			sync(true);
 		},
@@ -12994,7 +13089,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		l141Hollow: (n, dx, dy) => spawnHollowed(n, { x: player.x + dx, y: player.y + dy }).map((e) => e.id),
 		l141Enemies: () => world.enemies.filter((e) => !e.dead).map((e) => ({ id: e.id, hollow: !!e.hollow, x: e.x, y: e.y, aggro: !!e.aggro, heard: !!e.heard, name: e.name, hp: e.hp, kind: e.kind, d: Math.hypot(e.x - player.x, e.y - player.y) })),
 		l141Noise: (n, dx = 0, dy = 0) => emitNoise(n, player.x + dx, player.y + dy),
-		l141Loot: (id) => { const r = LOOT_RUNS.find((x) => x.id === id); openWorldMap(); const m = wmState(); m.q = r.q; m.r = r.r; m.path = []; m.from = [r.q - 1, r.r]; lootEnter(r); return piles.filter((p) => p.title.startsWith(r.name)).map((p) => ({ title: p.title, items: p.items.map((i) => ({ ...i })), d: Math.round(Math.hypot(p.x - player.x, p.y - player.y)) })); },
+		l141Loot: (id) => { const r = LOOT_RUNS.find((x) => x.id === id); openWorldMap(); close13(); const m = wmState(); m.q = r.q; m.r = r.r; m.path = []; m.from = [r.q - 1, r.r]; lootEnter(r); return piles.filter((p) => p.title.startsWith(r.name)).map((p) => ({ title: p.title, items: p.items.map((i) => ({ ...i })), d: Math.round(Math.hypot(p.x - player.x, p.y - player.y)) })); },
 		l141Hours: (h) => { prodAcc = 2; prodTick(0); clock += h / 24 * DAY_LENGTH_SEC; prodAcc = 2; prodTick(0); },
 		l141Hard: (on) => { w13.hard = !!on; },
 		l141Strike: (id) => { const e = world.enemies.find((q) => q.id === id); if (!e) return null; const hp = e.hp; player.cooldown = 0; aim = "chest"; const r0 = Math.random; Math.random = () => 0; try { strikeEnemy(e); } finally { Math.random = r0; } return { before: hp, after: e.hp, dead: !!e.dead }; },
@@ -13033,7 +13128,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			window.__wmForce = 1;
 			if (opts.enc) { window.__wmKind = opts.enc; window.__wmEnc = 0; }
 			openWorldMap();
-			const st = wmState(); if (opts.enc) { st.path = hexPath([st.q, st.r], [st.q + 1, st.r], bikeBuilt()); }
+			if (opts.enc) { close13(); const st = wmState(); m159: for (const l of WM_LOCS) if (hexPath([st.q, st.r], [l.q, l.r], bikeBuilt()).length > 1 && !locLocked(l, l1.tf)) { travel159("loc", l.id); break m159; } }
 			pushLog(opts.enc ? `Test: world map, forced ${opts.enc} encounter on the next hex.` : "Test: world map.");
 		} else return "unknown test";
 		sync(true);
@@ -13073,7 +13168,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v14Defend: () => startDefend14(),
 		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
 		wmOpen: () => openWorldMap(),
-		wmGo: (q, r) => wmGo(q, r),
+		// v15.9: travel through the destination menu (the hex overview is gone). Returns the same summary v154Go used to.
+		use159: (kind) => { const p = world.props.find((q) => q.kind === kind); if (!p) return null; const c = propCenter(p); player.x = c.x + 60; player.y = c.y + 60; const before = { scrap: player.scrap, hp: player.hp, gas: countOf("gas") }; const r = use159(p); return { r, before, after: { scrap: player.scrap, hp: player.hp, gas: countOf("gas") } }; },
+		skillScores: () => Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])),
+		travelGo: (id, kind = "loc") => { openWorldMap(); const offered = !!dialogue?.choices?.some((c) => c.id === `v159-go-${kind}-${id}`); if (offered) applyChoice(`v159-go-${kind}-${id}`); else close13(); const m = wmState(); return { offered, phase, map: mapId, name: world?.name ?? "", warn: m.warn, safe: player ? safeAt(player.x, player.y)?.id ?? null : null, shacks: world ? world.props.filter((p) => p.kind === "shack").length : 0, hostiles: world ? world.enemies.filter((e) => !e.dead).length : 0, town: !!town }; },
 		town143: () => ({ state: townState(), tq: l1.tq, tf: l1.tf, tx: l1.tx, town, phase }),
 		town144Spot: () => townSpot(ISO_TOWNS[0]),
 		tb15: () => ({ ...tbHud(), hex: player ? hexOf15(player.x, player.y) : null, foes: (world?.enemies ?? []).filter((e) => !e.dead && tb?.order.some((o) => o.id === e.id)).map((e) => ({ id: e.id, hp: e.hp, hex: hexOf15(e.x, e.y), blind: !!e.blind141, arm: e.crippleArm || 0, leg: e.crippleLeg || 0, x: e.x, y: e.y })), px: player?.x, py: player?.y }),
@@ -13095,7 +13193,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Leave: () => leaveTown({ type: "leaveTown", exit: "town", state: {} }),
 		// v15.4 Greenville / Moosehead unlock
 		v154Wm: () => ({ open: mooseheadOpen(l1.tf), loc: locAt(5, 0)?.id ?? null, locked: WM_LOCS.filter((l) => locLocked(l, l1.tf)).map((l) => l.id), phase, map: mapId, warn: v14.map?.warn ?? "", bag: player.bag.filter((x) => x.id === "moosehead_map").map((x) => x.qty), icon: itemIcon(GEAR.moosehead_map) }),
-		v154Go: () => { openWorldMap(); const m = wmState(); m.q = 5; m.r = 0; m.path = []; wmGo(5, 0); return { phase, map: mapId, name: world?.name ?? "", warn: m.warn, safe: player ? safeAt(player.x, player.y)?.id ?? null : null, shacks: world ? world.props.filter((p) => p.kind === "shack").length : 0, hostiles: world ? world.enemies.filter((e) => !e.dead).length : 0, town: !!town }; },
 		v15Hit: () => { const before = player.hp; player.invuln = 0; hurtPlayer(5, player.x + 40, player.y); return { before, after: player.hp }; },
 		v15Strike: () => { const e = world.enemies.find((x) => !x.dead); if (!e) return null; const hp = e.hp; strikeEnemy(e); return { hp, after: e.hp, pending: !!pendingHit }; },
 		v15Spawn: (dx, dy) => { spawnRaider("scout", { x: player.x + dx, y: player.y + dy }, null); const e = world.enemies[world.enemies.length - 1]; if (e) { e.aggro = true; e.temper = "hostile"; e.raid = false; } return e ? { id: e.id, x: e.x, y: e.y } : null; },

@@ -1,6 +1,5 @@
 import { WM_COLS, WM_HEX, WM_H, WM_LOCS, WM_ROWS, WM_W, hexAt, hexCenter } from "@/game/worldmap";
 /** v15.8: world-map location id -> Quest RPG town icon (public/game/v4/icons/<name>_icon_v4.png). */
-const TOWN_ICONS: Record<string, string> = { farm: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville" };
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
@@ -89,105 +88,6 @@ function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { l
   return <canvas ref={ref} aria-label="Character preview" className="h-36 w-auto short:h-24" />;
 }
 
-function WorldMap14({ wm, go }: { wm: any; go: (q: number, r: number) => void }) {
-  // v14.1: fills its box; drag to pan, pinch or wheel to zoom, tap a hex to travel. Labels draw at screen size so they stay readable.
-  const ref = useRef<HTMLCanvasElement | null>(null);
-  const img = useRef<HTMLImageElement | null>(null);
-  const view = useRef<{ s: number; x: number; y: number; w: number; h: number; init: boolean }>({ s: 1, x: 0, y: 0, w: 0, h: 0, init: false });
-  const ptr = useRef(new Map<number, { x: number; y: number; sx: number; sy: number }>());
-  const pinch = useRef<{ d: number; s: number } | null>(null);
-  const [tick, setTick] = useState(0);
-  const redraw = () => setTick((n) => n + 1);
-  useEffect(() => { const i = new Image(); i.onload = redraw; i.src = "/game/v14/worldmap.jpg"; img.current = i; }, []);
-  // v15.8: Quest RPG painted town icons replace the plain house-block markers
-  const icons = useRef<Record<string, HTMLImageElement>>({});
-  useEffect(() => { for (const [loc, f] of Object.entries(TOWN_ICONS)) { const i = new Image(); i.onload = redraw; i.src = `/game/v4/icons/${f}_icon_v4.png`; icons.current[loc] = i; } }, []);
-  useEffect(() => {
-    const c = ref.current; if (!c) return;
-    const ro = new ResizeObserver(() => redraw()); ro.observe(c); return () => ro.disconnect();
-  }, []);
-  const clamp = () => {
-    const v = view.current; const mw = WM_W * v.s, mh = WM_H * v.s;
-    v.x = mw <= v.w ? (v.w - mw) / 2 : Math.min(0, Math.max(v.w - mw, v.x));
-    v.y = mh <= v.h ? (v.h - mh) / 2 : Math.min(0, Math.max(v.h - mh, v.y));
-  };
-  const zoomAt = (f: number, px: number, py: number) => {
-    const v = view.current; const min = Math.min(v.w / WM_W, v.h / WM_H), max = Math.max(min * 4, 2.2);
-    const ns = Math.max(min, Math.min(max, v.s * f)); const k = ns / v.s;
-    v.x = px - (px - v.x) * k; v.y = py - (py - v.y) * k; v.s = ns; clamp(); redraw();
-  };
-  useEffect(() => {
-    const c = ref.current; if (!c) return;
-    const g = c.getContext("2d"); if (!g) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
-    if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-    const v = view.current; v.w = W; v.h = H;
-    if (!v.init) {
-      // fill the screen: scale so the map covers the box, then centre on where you are
-      v.s = Math.max(W / WM_W, H / WM_H) * (H > W ? 1 : 1.15);
-      const p = hexCenter(wm.q, wm.r); v.x = W / 2 - p.x * v.s; v.y = H / 2 - p.y * v.s; v.init = true;
-    }
-    clamp();
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.fillStyle = "#1c1814"; g.fillRect(0, 0, W, H);
-    g.save(); g.translate(v.x, v.y); g.scale(v.s, v.s);
-    if (img.current?.complete && img.current.naturalWidth) g.drawImage(img.current, 0, 0, WM_W, WM_H);
-    const fog = new Set<string>(wm.fog);
-    const hexPathD = (x: number, y: number, s: number) => { g.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); g.lineTo(x + s * Math.cos(a), y + s * Math.sin(a)); } g.closePath(); };
-    for (let r = 0; r < WM_ROWS; r++) for (let q = 0; q < WM_COLS; q++) {
-      const { x, y } = hexCenter(q, r);
-      hexPathD(x, y, WM_HEX);
-      if (!fog.has(`${q},${r}`)) { g.fillStyle = "rgba(24,20,16,0.88)"; g.fill(); }
-      g.strokeStyle = "rgba(240,220,170,0.4)"; g.lineWidth = 1.5 / v.s; g.stroke();
-    }
-    g.strokeStyle = "#f0d090"; g.lineWidth = 3 / v.s; g.setLineDash([6 / v.s, 6 / v.s]); g.beginPath();
-    const st = hexCenter(wm.q, wm.r); g.moveTo(st.x, st.y);
-    for (const [q, r] of wm.path) { const p = hexCenter(q, r); g.lineTo(p.x, p.y); }
-    g.stroke(); g.setLineDash([]);
-    for (const l of WM_LOCS) {
-      const ic = icons.current[l.id];
-      if (!ic?.complete || !ic.naturalWidth || !fog.has(`${l.q},${l.r}`) || (wm.locked ?? []).includes(l.id)) continue;
-      const p = hexCenter(l.q, l.r), sz = WM_HEX * 1.55;
-      g.save(); g.shadowColor = "rgba(0,0,0,.55)"; g.shadowBlur = 6; g.drawImage(ic, p.x - sz / 2, p.y - sz * .62, sz, sz); g.restore();
-    }
-    g.restore();
-    const sc = (x: number, y: number) => ({ x: v.x + x * v.s, y: v.y + y * v.s });
-    g.textAlign = "center"; g.textBaseline = "middle";
-    const label = (name: string, q: number, r: number, color: string, sub?: string) => {
-      const p = hexCenter(q, r); const o = sc(p.x, p.y);
-      g.font = "600 15px sans-serif"; const w = Math.max(g.measureText(name).width, sub ? g.measureText(sub).width * 0.85 : 0) + 14;
-      const h = sub ? 38 : 24; const y = o.y + 18 * Math.min(1.6, v.s * 1.1);
-      g.fillStyle = "rgba(20,16,12,0.85)"; g.fillRect(o.x - w / 2, y, w, h);
-      g.strokeStyle = color; g.lineWidth = 1; g.strokeRect(o.x - w / 2 + .5, y + .5, w - 1, h - 1);
-      g.fillStyle = "#f4e6c4"; g.fillText(name, o.x, y + 12);
-      if (sub) { g.font = "12px sans-serif"; g.fillStyle = color; g.fillText(sub, o.x, y + 28); }
-    };
-    for (const l of WM_LOCS) if (fog.has(`${l.q},${l.r}`) && !(wm.locked ?? []).includes(l.id)) label(l.name, l.q, l.r, l.lock ? "#7fb8d8" : "#c9a36a"); // v15.4: locked spots stay hidden
-    for (const l of (wm.loot ?? [])) if (fog.has(`${l.q},${l.r}`)) label(l.name, l.q, l.r, l.ready ? "#9fd07a" : "#9a8a70", l.ready ? "Loot restocked" : `Picked over · ${l.days}d`);
-    for (const t of (wm.tq ?? [])) { const p = hexCenter(t.q, t.r); const o = sc(p.x, p.y); g.fillStyle = "#f0c040"; g.strokeStyle = "#1c1814"; g.lineWidth = 3; g.beginPath(); g.moveTo(o.x, o.y - 30); g.lineTo(o.x + 9, o.y - 14); g.lineTo(o.x - 9, o.y - 14); g.closePath(); g.fill(); g.stroke(); g.font = "600 12px sans-serif"; g.fillStyle = "#f0c040"; g.fillText(t.label, o.x, o.y - 38); }
-    const m = sc(st.x, st.y);
-    g.fillStyle = "#d0644a"; g.strokeStyle = "#1c1814"; g.lineWidth = 3;
-    g.beginPath(); g.arc(m.x, m.y - 4, 11, 0, Math.PI * 2); g.fill(); g.stroke();
-  });
-  const local = (e: React.PointerEvent | React.WheelEvent) => { const b = ref.current!.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
-  return (
-    <canvas ref={ref} data-testid="hex-map" data-zoom={view.current.s.toFixed(3)} data-tick={tick} className="block h-full w-full plank border border-border" style={{ touchAction: "none" }}
-      onWheel={(e) => { const p = local(e); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, p.x, p.y); }}
-      onPointerDown={(e) => { (e.target as HTMLCanvasElement).setPointerCapture?.(e.pointerId); const p = local(e); ptr.current.set(e.pointerId, { ...p, sx: p.x, sy: p.y });
-        if (ptr.current.size === 2) { const [a, b] = [...ptr.current.values()]; pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), s: view.current.s }; } }}
-      onPointerMove={(e) => { const o = ptr.current.get(e.pointerId); if (!o) return; const p = local(e); const v = view.current;
-        if (ptr.current.size >= 2 && pinch.current) { o.x = p.x; o.y = p.y; const [a, b] = [...ptr.current.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
-          zoomAt(pinch.current.s * d / Math.max(1, pinch.current.d) / v.s, (a.x + b.x) / 2, (a.y + b.y) / 2); return; }
-        v.x += p.x - o.x; v.y += p.y - o.y; o.x = p.x; o.y = p.y; clamp(); redraw(); }}
-      onPointerUp={(e) => { const o = ptr.current.get(e.pointerId); ptr.current.delete(e.pointerId); if (ptr.current.size < 2) pinch.current = null;
-        if (!o || ptr.current.size) return; const p = local(e); if (Math.hypot(p.x - o.sx, p.y - o.sy) > 10) return;
-        const v = view.current; const h = hexAt((p.x - v.x) / v.s, (p.y - v.y) / v.s); if (h) go(h[0], h[1]); }}
-      onPointerCancel={(e) => { ptr.current.delete(e.pointerId); pinch.current = null; }} />
-  );
-}
-
-/** v14.1 one-thumb stick: drag from the ring; the knob's offset is the walk direction and speed. */
 function Stick141({ onMove }: { onMove: (x: number, y: number) => void }) {
   const [k, setK] = useState({ x: 0, y: 0 });
   const id = useRef<number | null>(null);
@@ -305,7 +205,7 @@ export function RPG() {
   const tb = (hud as any).tb15 as Tb15 | undefined;
   const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
   const base = roleStats(role);
-  const kit = ROLES.find((item) => item.id === role) ?? ROLES[3]!;
+  const kit = ROLES.find((item) => item.id === role) ?? ROLES.find((item) => item.id === "fighter")!;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -892,9 +792,9 @@ export function RPG() {
                   {(
                     [
                       ["strength", "Strength", hud.strength, "Harder hits"],
-                      ["vigor", "Health", hud.vigor, "More life"],
+                      ["vigor", "Vigor", hud.vigor, "More life"],
                       ["endurance", "Endurance", hud.endurance, "More stamina"],
-                      ["intellect", "Wits", hud.intellect, "Skill points, better prices, sharper talk"],
+                      ["intellect", "Intellect", hud.intellect, "Skill points, better prices, sharper talk"],
                       ["perception", "Perception", hud.perception, "See farther. Guns reach farther"],
                       ["luck", "Luck", hud.luck, "Better finds. The odd hard hit"],
                       ["agility", "Agility", hud.v13?.core.agility ?? 1, "Stamina, crits"],
@@ -1230,7 +1130,7 @@ export function RPG() {
                 {GEAR[kit.weapon]?.name} · {GEAR[kit.coat]?.name}
               </p>
               <p className="mt-1">
-                Str {base.strength + bonus.strength} · Health {base.vigor + bonus.vigor} · End {base.endurance + bonus.endurance} · Int {base.intellect + bonus.intellect} · Per {base.perception + bonus.perception} · Luck {base.luck + bonus.luck}
+                Str {base.strength + bonus.strength} · Vig {base.vigor + bonus.vigor} · End {base.endurance + bonus.endurance} · Int {base.intellect + bonus.intellect} · Per {base.perception + bonus.perception} · Luck {base.luck + bonus.luck}
               </p>
             </div>
             {step === "trade" ? (
@@ -1265,7 +1165,7 @@ export function RPG() {
                 </div>
                 <p className="mt-3 text-sm text-muted short:mt-2">Backstory</p>
                 <div className="mt-1 grid grid-cols-4 gap-1" data-testid="backstory-pick">
-                  {([["veteran", "Veteran", "Rifle, grit, first aid"], ["mechanic", "Mechanic", "Engines, gas, wits"], ["farmer", "Farmer", "Crops, cooking, endurance"], ["hunter", "Woods guide", "Tracks, traps, agility"]] as const).map(([id, l, h]) => (
+                  {([["veteran", "Veteran", "Rifle, grit, first aid"], ["mechanic", "Mechanic", "Engines, gas, intellect"], ["farmer", "Farmer", "Crops, cooking, endurance"], ["hunter", "Woods guide", "Tracks, traps, agility"]] as const).map(([id, l, h]) => (
                     <button key={id} type="button" data-testid={`backstory-${id}`} aria-pressed={backstory === id} className={`plank border px-1.5 py-1.5 text-left ${backstory === id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setBackstory(id)}>
                       <span className="block text-xs font-semibold">{l}</span>
                       <span className="block text-[10px] leading-tight text-muted">{h}</span>
@@ -1354,7 +1254,7 @@ export function RPG() {
                   {(
                     [
                       ["strength", "Strength", "Harder hits"],
-                      ["vigor", "Health", "More life"],
+                      ["vigor", "Vigor", "More life"],
                       ["endurance", "Endurance", "More stamina"],
                       ["intellect", "Intelligence", "Surer locks, better prices"],
                       ["perception", "Perception", "See farther. Guns reach farther"],
@@ -1551,26 +1451,6 @@ export function RPG() {
 
       {AIMED_POPUP && tb?.on && tb.popup && hud.phase === "play" ? <AimPopup tb={tb} api={apiRef} /> : null}
       {hud.phase === "town" && (hud as any).town ? <TownLayer key={(hud as any).town.n} town={(hud as any).town} api={apiRef} /> : null}
-      {hud.phase === "worldmap" && hud.wmap ? (
-        <div data-testid="worldmap" className="absolute inset-0 z-50 bg-bg">
-          <div className="absolute inset-0"><WorldMap14 wm={hud.wmap} go={(q, r) => apiRef.current?.v14("wmGo", [q, r])} /></div>
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-1 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-            <div className="flex items-center justify-between gap-2 plank border border-border bg-surface/90 px-2 py-1">
-              <h2 className="font-display text-base leading-none">Northwestern Maine · {hud.wmap.clock}</h2>
-              <span className="text-xs text-muted">{hud.wmap.bike ? "Bike: roads go quick" : "On foot"}</span>
-            </div>
-            {hud.wmap.warn ? <p data-testid="wm-warn" className="animate-pulse plank border border-[#d0644a] bg-surface px-2 py-1 text-sm font-semibold text-[#e88a6a]">{hud.wmap.warn}</p> : null}
-          </div>
-          <div data-testid="wm-bottom" className="absolute inset-x-0 bottom-0 flex flex-col gap-2 border-t border-border bg-surface/95 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-            <p className="text-sm">{hud.wmap.path.length ? `Traveling… ${hud.wmap.path.length} hex${hud.wmap.path.length > 1 ? "es" : ""} to go.` : hud.wmap.here ? `${hud.wmap.here}. Tap it again to go in.` : "Tap a hex to travel. Drag to look around, pinch to zoom. Roads are quick; woods and the river are slow."}</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button type="button" className="min-h-11 plank border border-border bg-bg px-2 text-sm" onClick={() => { const c = document.querySelector('[data-testid="hex-map"]') as HTMLCanvasElement | null; c?.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, clientX: c.getBoundingClientRect().left + c.clientWidth / 2, clientY: c.getBoundingClientRect().top + c.clientHeight / 2, bubbles: true })); }}>Zoom out</button>
-              <button type="button" className="min-h-11 plank border border-border bg-bg px-2 text-sm" onClick={() => { const c = document.querySelector('[data-testid="hex-map"]') as HTMLCanvasElement | null; c?.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, clientX: c.getBoundingClientRect().left + c.clientWidth / 2, clientY: c.getBoundingClientRect().top + c.clientHeight / 2, bubbles: true })); }}>Zoom in</button>
-              <button type="button" data-testid="wm-enter" disabled={!hud.wmap.here || hud.wmap.path.length > 0} className="min-h-11 plank bg-primary px-2 text-sm font-semibold text-bg disabled:opacity-40" onClick={() => apiRef.current?.v14("wmGo", [hud.wmap!.q, hud.wmap!.r])}>Go in</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       {hud.phase === "pause" ? (
         <Overlay title="Paused">
           <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.tap("resume")}>

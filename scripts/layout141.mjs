@@ -27,9 +27,8 @@ for (const [vw, vh] of sizes) {
   m = await measure(page); ok(!m.off.length, `${tag} conversation ${m.off.join(",")}`); await shot("7-talk"); await T("choose", "close");
   await page.keyboard.press("KeyM"); await page.waitForTimeout(400); m = await measure(page); ok(!m.off.length, `${tag} chart ${m.off.join(",")}`); await shot("8-chart"); await page.keyboard.press("KeyM");
   await T("wmOpen"); await page.waitForTimeout(600); m = await measure(page);
-  const wm = await page.evaluate(() => { const c = document.querySelector('[data-testid="hex-map"]').getBoundingClientRect(); return { w: c.width, h: c.height, W: innerWidth, H: innerHeight }; });
-  ok(!m.off.length && wm.w * wm.h > .8 * wm.W * wm.H, `${tag} world map fills the screen (${Math.round(wm.w)}x${Math.round(wm.h)}) ${m.off.join(",")}`); await shot("9-worldmap");
-  await page.evaluate(() => window.__controlsTest.wmGo(5, 5)); await page.waitForTimeout(800);
+  ok(!m.off.length && await page.getByTestId("hex-map").count() === 0, `${tag} travel menu fits, no hex overview ${m.off.join(",")}`); await shot("9-travel");
+  await T("choose", "close"); await page.waitForTimeout(400);
   ok(!errs.length, `${tag} no errors ${errs.slice(0, 2).join(" | ")}`);
   await browser.close();
 }

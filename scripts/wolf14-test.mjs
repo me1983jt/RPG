@@ -12,7 +12,7 @@ const src = await page.evaluate(async () => (await fetch("/game/v2/wolf-walk.png
 ok(src, "wolf stand-in art at /game/v2/wolf-walk.png");
 await page.evaluate(() => { window.__controlsTest.v14Set({ st: 5 }); window.__v14Skip = false; });
 await page.evaluate(() => { window.__wmEnc = 0; window.__wmKind = "wildlife"; });
-await T("wmOpen"); await T("wmGo", 6, 5);
+await T("travelGo", "kennebec"); // v15.9: the trip to the Kennebec crosses 6,5 (no overview screen)
 for (let i = 0; i < 10; i++) { const w = await T("wm"); if (w.mapId === 9) break; await page.waitForTimeout(300); }
 const wolves = await page.evaluate(() => window.__controlsTest.enemies ? window.__controlsTest.enemies().filter((e) => e.kind === "wolf" && !e.dead).length : -1);
 ok(wolves >= 3 && wolves <= 5, `world-map wolf encounter brings a pack of 3-5 (${wolves})`);

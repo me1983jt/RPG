@@ -29,5 +29,8 @@ for (const t of towns) {
   } else copyFileSync(t.stub, join(out, "index.html"));
   mkdirSync(join(root, "public/towns/_stub"), { recursive: true });
   copyFileSync(t.stub, join(root, "public/towns/_stub", `${t.id}.html`));
+  // v15.9: the towns load shared/stats_rules.js (../shared-rules doesn't exist inside the APK); keep it the current master
+  const rules = process.env.SHARED_RULES_JS || "/workspace/shared-rules/stats_rules.js";
+  if (existsSync(rules)) { mkdirSync(join(out, "shared"), { recursive: true }); copyFileSync(rules, join(out, "shared/stats_rules.js")); }
   console.log(`town ${t.id}: ${used} -> public/towns/${t.id}/index.html`);
 }

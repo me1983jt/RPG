@@ -1,4 +1,5 @@
-export type RoleId = "hunter" | "medic" | "thief" | "fighter";
+import { RULES } from "./rules";
+export type RoleId = "hunter" | "medic" | "thief" | "fighter" | "tinker";
 export type TraitId = "eye" | "hide" | "step" | "camp";
 export type LookId = "wool" | "spruce" | "linen" | "soot";
 export type GearKind = "weapon" | "coat" | "supply";
@@ -236,6 +237,25 @@ export const ROLES: RoleKit[] = [
       { id: "lockpick", qty: 1 },
     ],
   },
+  {
+    // v15.9: the 5th shared class (stats in shared-rules/stats.json; kit provisional pending Justin)
+    id: "tinker",
+    title: "Tinker",
+    blurb: "A poor knife, a work shirt, wire, lamp oil and picks.",
+    hp: 40,
+    atk: 2,
+    weapon: "knife",
+    coat: "shirt",
+    bag: [
+      { id: "knife", qty: 1 },
+      { id: "boots", qty: 1 },
+      { id: "shirt", qty: 1 },
+      { id: "gloves", qty: 1 },
+      { id: "wire", qty: 2 },
+      { id: "oil", qty: 1 },
+      { id: "lockpick", qty: 2 },
+    ],
+  },
 ];
 
 export function armorSlot(g: GearDef | undefined): ArmorSlot | null {
@@ -278,7 +298,7 @@ export const CRAFT: CraftRecipe[] = [
 ];
 
 export function roleKit(id: RoleId): RoleKit {
-  return ROLES.find((r) => r.id === id) ?? ROLES[3]!;
+  return ROLES.find((r) => r.id === id) ?? ROLES.find((r) => r.id === (RULES as any).classDefault)!;
 }
 
 export const LOOKS: { id: LookId; label: string; hint: string }[] = [
@@ -292,14 +312,21 @@ export function defaultLook(id: RoleId): LookId {
   if (id === "hunter") return "spruce";
   if (id === "medic") return "linen";
   if (id === "thief") return "soot";
+  if (id === "tinker") return "wool";
   return "wool";
 }
 
 export function roleStats(id: RoleId): { strength: number; vigor: number; endurance: number; intellect: number; perception: number; luck: number } {
-  if (id === "fighter") return { strength: 3, vigor: 2, endurance: 2, intellect: 1, perception: 1, luck: 1 };
-  if (id === "medic") return { strength: 1, vigor: 2, endurance: 1, intellect: 2, perception: 2, luck: 1 };
-  if (id === "thief") return { strength: 1, vigor: 1, endurance: 2, intellect: 3, perception: 2, luck: 2 };
-  return { strength: 1, vigor: 1, endurance: 2, intellect: 2, perception: 3, luck: 2 };
+  const c = (RULES as any).classes.find((x: any) => x.id === id) ?? (RULES as any).classes.find((x: any) => x.id === (RULES as any).classDefault);
+  return { ...c.stats };
+}
+
+/** v15.9: one class id everywhere. Old save / town names (woodsman, scrounger, fixer, ...) map to the current ids. */
+export function classId(raw: unknown): RoleId | null {
+  const k = String(raw ?? "").toLowerCase().trim();
+  const c = ((RULES as any).classAliases[k] ?? k) as string;
+  const hit = (RULES as any).classes.find((x: any) => x.id === c || x.name.toLowerCase() === c);
+  return hit ? hit.id : null;
 }
 
 export const TRAITS: { id: TraitId; title: string; blurb: string }[] = [

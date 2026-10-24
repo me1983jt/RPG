@@ -1,4 +1,8 @@
-export type SkillId = "rifle" | "melee" | "doctor" | "lock" | "speech" | "barter" | "sneak" | "trail";
+import { RULES } from "./rules";
+
+/** v15.9: skills, perks, class tags and stat weights come from the shared rules (/workspace/shared-rules/stats.json). */
+export const STATS_RULES = RULES as any;
+export type SkillId = "rifle" | "melee" | "doctor" | "lock" | "speech" | "barter" | "sneak" | "trail" | "mechanics" | "climbing" | "electronics";
 export type PerkId = "steady" | "logger" | "stitch" | "soft" | "haggle" | "pins" | "deadeye" | "wool" | "quick" | "known";
 export type TownId = "lowelltown" | "attean" | "holeb" | "ponds";
 
@@ -15,29 +19,9 @@ export interface PerkDef {
   need?: { skill: SkillId; score: number };
 }
 
-export const SKILLS: SkillDef[] = [
-  { id: "rifle", name: "Rifle", blurb: "Carbines, revolvers, scatterguns." },
-  { id: "melee", name: "Melee", blurb: "Axes, knives, picks, iron bars." },
-  { id: "doctor", name: "Doctor", blurb: "Bandages and kits do more." },
-  { id: "lock", name: "Lockpick", blurb: "Pins, hatches, and stubborn doors." },
-  { id: "speech", name: "Speech", blurb: "Talk a person into the hard choice." },
-  { id: "barter", name: "Barter", blurb: "Iron goes further at a stall." },
-  { id: "sneak", name: "Sneak", blurb: "Hostile eyes pick you up later." },
-  { id: "trail", name: "Trail", blurb: "See farther. Pull a little more from a node." },
-];
+export const SKILLS: SkillDef[] = STATS_RULES.skills.list.map((x: any) => ({ id: x.id, name: x.name, blurb: x.blurb }));
 
-export const PERKS: PerkDef[] = [
-  { id: "steady", name: "Steady hands", blurb: "Rifle +15, and a gun hits a little harder.", need: { skill: "rifle", score: 25 } },
-  { id: "logger", name: "Logger", blurb: "Melee +15, and close work hits harder.", need: { skill: "melee", score: 25 } },
-  { id: "stitch", name: "Field stitch", blurb: "Doctor +15. Wraps heal more.", need: { skill: "doctor", score: 25 } },
-  { id: "soft", name: "Soft step", blurb: "Sneak +15.", need: { skill: "sneak", score: 25 } },
-  { id: "haggle", name: "Horse trade", blurb: "Barter +15.", need: { skill: "barter", score: 20 } },
-  { id: "pins", name: "Sure pins", blurb: "Lockpick +15. Picks slip less.", need: { skill: "lock", score: 25 } },
-  { id: "deadeye", name: "Deadeye", blurb: "Called shots to the head land more often.", need: { skill: "rifle", score: 40 } },
-  { id: "known", name: "Known face", blurb: "Speech +12. Towns take your word a little further.", need: { skill: "speech", score: 30 } },
-  { id: "wool", name: "Thick wool", blurb: "Defense +2." },
-  { id: "quick", name: "Quick hands", blurb: "Two more action points in a turn." },
-];
+export const PERKS: PerkDef[] = STATS_RULES.perks.map((x: any) => ({ id: x.id, name: x.name, blurb: x.blurb, ...(x.need ? { need: x.need } : {}) }));
 
 export const TOWN_NAME: Record<TownId, string> = {
   lowelltown: "Lowelltown",
@@ -78,6 +62,10 @@ export interface SkillStats {
   perception: number;
   luck: number;
   trait: string;
+  agility?: number;
+  grit?: number;
+  /** v15.9: trade-skill (learn-by-use) mechanics level, folded into the 0-120 Mechanics score */
+  tradeMech?: number;
 }
 
 export function clampScore(n: number, lo = -100, hi = 100): number {
@@ -85,10 +73,8 @@ export function clampScore(n: number, lo = -100, hi = 100): number {
 }
 
 export function tagsForRole(role: string): SkillId[] {
-  if (role === "hunter") return ["rifle", "sneak", "trail"];
-  if (role === "medic") return ["doctor", "speech", "barter"];
-  if (role === "thief") return ["lock", "sneak", "speech"];
-  return ["melee", "trail", "doctor"];
+  const c = STATS_RULES.classes.find((x: any) => x.id === role) ?? STATS_RULES.classes.find((x: any) => x.id === STATS_RULES.classDefault);
+  return [...c.tags];
 }
 
 export function townOf(role: string): TownId | null {
@@ -110,33 +96,18 @@ export function skillScore(
   tags: SkillId[] | undefined,
   perks: PerkId[] | undefined,
 ): number {
-  const s = stats;
-  let base = 8;
-  if (id === "rifle") base = 4 + s.perception * 6 + s.luck * 2;
-  else if (id === "melee") base = 8 + s.strength * 6 + s.endurance * 2;
-  else if (id === "doctor") base = 4 + s.intellect * 5 + s.vigor * 2;
-  else if (id === "lock") base = 4 + s.intellect * 4 + s.perception * 3;
-  else if (id === "speech") base = 8 + s.intellect * 5 + s.luck * 2;
-  else if (id === "barter") base = 6 + s.intellect * 4 + s.luck * 3;
-  else if (id === "sneak") base = 4 + s.perception * 4 + s.luck * 3;
-  else base = 8 + s.perception * 3 + s.endurance * 3;
-  if (s.trait === "eye" && id === "rifle") base += 12;
-  if (s.trait === "eye" && id === "melee") base -= 8;
-  if (s.trait === "camp" && id === "melee") base += 12;
-  if (s.trait === "camp" && id === "rifle") base -= 8;
-  if (s.trait === "step" && (id === "lock" || id === "sneak")) base += 12;
+  const def = STATS_RULES.skills.list.find((x: any) => x.id === id);
+  if (!def) return 0;
+  const st: any = { agility: 1, grit: 1, ...stats };
+  let base = def.base;
+  for (const [k, w] of Object.entries(def.gov as Record<string, number>)) base += (Number(st[k]) || 0) * w;
+  base += STATS_RULES.skills.traitMods[stats.trait]?.[id] ?? 0;
+  if (def.tradeLvBonus) base += (stats.tradeMech ?? 0) * def.tradeLvBonus;
   const put = invested?.[id] ?? 0;
   const tagged = tags?.includes(id);
   let extra = 0;
-  const owned = perks ?? [];
-  if (id === "rifle" && owned.includes("steady")) extra += 15;
-  if (id === "melee" && owned.includes("logger")) extra += 15;
-  if (id === "doctor" && owned.includes("stitch")) extra += 15;
-  if (id === "sneak" && owned.includes("soft")) extra += 15;
-  if (id === "barter" && owned.includes("haggle")) extra += 15;
-  if (id === "lock" && owned.includes("pins")) extra += 15;
-  if (id === "speech" && owned.includes("known")) extra += 12;
-  return clampScore(base + put * (tagged ? 2 : 1) + extra, 0, 120);
+  for (const p of perks ?? []) extra += STATS_RULES.perks.find((x: any) => x.id === p)?.bonus?.[id] ?? 0;
+  return clampScore(base + put * (tagged ? 2 : 1) + extra, 0, def.max ?? 120);
 }
 
 export function checkChance(score: number, dc: number, rep: number, karma: number): number {

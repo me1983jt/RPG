@@ -37,11 +37,11 @@ async function roundTrip(id, { shot, flags = {}, exit = "worldmap" } = {}) {
 // Harmony (re-copied with barnyard/sugarbush), then each town and sub-entry
 let r = await roundTrip("harmony", { shot: (process.env.SHOTPFX || "v151-town-") + "harmony.png", flags: { "harmony.gooseGuard": true, "harmony.fence": "done", "harmony.gooseTricks": "done" } });
 const tx = (await T("town143")).tx;
-ok(tx?.shared?.cls === "woodsman", `Harmony's extra stored as the shared character (${tx?.shared?.cls})`);
+ok(tx?.shared?.cls === "hunter", `Harmony's extra stored as the shared character (${tx?.shared?.cls})`); // v15.9: one shared class list, ids go straight through
 { const d = await T("dbg"); ok(d.phase === "play", `harmony: back in the world after leaveTown (${d.phase})`); }
 r = await roundTrip("pittsfield", { shot: (process.env.SHOTPFX || "v151-town-") + "pittsfield.png", flags: { "pittsfield.seed": "found", "pittsfield.beaulieu": "ally", "pittsfield.handcar": "running" } });
 ok(r.got?.flags.includes("harmony.gooseGuard"), "Harmony's flags reach Pittsfield");
-ok(r.got?.extra?.cls === "woodsman" && !!r.got?.extra?.skills && r.hadG, "shared extra: class + skills from Harmony carry into Pittsfield (no class pick)");
+ok(r.got?.extra?.cls === "hunter" && !!r.got?.extra?.skills && r.hadG, "shared extra: class + skills from Harmony carry into Pittsfield (no class pick)");
 ok((await T("dbg")).phase === "play", "pittsfield: back in the world");
 for (const id of ["pf-coop", "pf-depot"]) { await roundTrip(id); ok((await T("dbg")).phase === "play", `${id}: enter + leave`); }
 r = await roundTrip("skowhegan", { shot: (process.env.SHOTPFX || "v151-town-") + "skowhegan.png", flags: { "skowhegan.meds": "found", "skowhegan.mill": "stripped" } });

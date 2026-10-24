@@ -109,10 +109,9 @@ ok(piles.length === 3, "three days later it has restocked");
 for (const id of ["camp", "truck"]) { piles = await T("l141Loot", id); ok(piles.length === 3, `${id === "camp" ? "hunting camp" : "box truck"} loot run works`); }
 await page.evaluate(() => { window.__wmEnc = 1; });
 await T("wmOpen"); await wait(page, 400);
-const wmText = await page.evaluate(() => document.querySelector('[data-testid="worldmap"]')?.innerText || "");
-ok(!!wmText, "world map opens from the loot run");
-await page.evaluate(() => window.__controlsTest.wmGo?.(5, 5)); await wait(page, 3500);
-await page.evaluate(() => window.__controlsTest.wmGo?.(5, 5)); await wait(page, 1500);
+const wmText = await page.evaluate(() => document.body.innerText);
+ok(/Where to\?/.test(wmText) && /Harmony/.test(wmText), "travel menu opens from the loot run (v15.9: no hex overview)");
+await T("choose", "v159-go-loc-farm"); await wait(page, 2500);
 s = await T("l141"); ok(s.mapId === 0, `back on the farm map (${s.mapId})`);
 // ---- farm production and storage
 await T("l141Mats");

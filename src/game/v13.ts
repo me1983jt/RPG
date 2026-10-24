@@ -8,7 +8,7 @@ export const CORE_STATS: { id: CoreStat; name: string; does: string }[] = [
   { id: "endurance", name: "Endurance", does: "Stamina +16 a point, hunger and thirst drain slower." },
   { id: "agility", name: "Agility", does: "Stamina +6 and crit chance +1.5% a point." },
   { id: "perception", name: "Perception", does: "Sight +1 tile a point, gun accuracy +2%." },
-  { id: "wits", name: "Wits", does: "Trader prices -1% a point, dialogue checks +2." },
+  { id: "wits", name: "Intellect", does: "Trader prices -1% a point, dialogue checks +2." }, // v15.9: shown as Intellect (id kept for old saves)
   { id: "grit", name: "Grit", does: "Health +3 a point, colds and infection 4% less likely." },
 ];
 export type Core = Record<CoreStat, number>;
