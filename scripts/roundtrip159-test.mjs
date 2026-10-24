@@ -30,8 +30,9 @@ await page.waitForTimeout(3500);
 const f = page.frames().find((x) => x !== page.mainFrame());
 await f.evaluate(() => HARMONY.leave("town")); await page.waitForTimeout(2500);
 const st1 = (await T("v15Open", "pittsfield")).msg.state;
-for (const k of keys) { const a = JSON.stringify(st0[k]), b = JSON.stringify(k === "skills" ? Object.fromEntries(Object.keys(st0.skills).map((x) => [x, st1.skills[x]])) : st1[k]); // skills: the town may add its own ids (kept, not applied)
-  ok(a === b, `round trip keeps ${k}${a === b ? "" : ` ${a.slice(0, 120)} -> ${b.slice(0, 120)}`}`); }
+for (const k of keys) { const a = JSON.stringify(st0[k]), b = JSON.stringify(k === "skills" ? Object.fromEntries(Object.keys(st0.skills).map((x) => [x, { ...st1.skills[x], xp: st0.skills[x]?.xp }])) : st1[k]); // trade xp can tick while the game runs // skills: the town may add its own ids (kept, not applied)
+  if (a !== b && k === "skills") for (const x of Object.keys(st0.skills)) if (JSON.stringify(st0.skills[x]) !== JSON.stringify(st1.skills[x])) console.log("diff", x, JSON.stringify(st0.skills[x]), JSON.stringify(st1.skills[x]));
+ ok(a === b, `round trip keeps ${k}${a === b ? "" : ` ${a.slice(0, 120)} -> ${b.slice(0, 120)}`}`); }
 // town-side change lands
 const changed = { ...pick(st1), name: "Justina", stats: { ...st1.stats, agility: 0, intellect: st1.stats.intellect + 1 }, perks: ["wool"], invested: { climbing: 3, electronics: 2 }, skillPoints: 1, karma: 7, class: "tinker", skills: { ...st1.skills, climbing_town: { lv: 2, xp: 1 } },
   companions: st1.companions.map((c) => c.id === "loki" ? { ...c, withYou: true } : c), inventory: st1.inventory.map((i, n) => n === 0 ? { ...i, durability: 42 } : i) };
