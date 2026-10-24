@@ -5140,6 +5140,26 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sharedExtra: JSON.parse(JSON.stringify(l1.tx?.shared ?? {})),
 		};
 	}
+	/** v15.9.6: stored town flags are echoed back on the next enterTown. Forward-only keys never move back in the store:
+	 * farm.q10.* / farm.q11.* rank "accepted" < stage numbers < "done"; harmony.siegeDone keeps its first result; harmony.collectorDown stays true. */
+	function keepFlag(k, old, v) {
+		if (old === undefined) return v;
+		if (/^farm\.q1[01]\./.test(k)) {
+			const rank = (x) => x === "done" ? 1e9 : typeof x === "number" && Number.isFinite(x) ? x : x === "accepted" ? 0.5 : -1;
+			// an early "done" the main game refused (quest not at its turn-in yet) doesn't block a later stage number
+			if (old === "done" && typeof v === "number" && !farmQuestClosed(k)) return v;
+			return rank(v) >= rank(old) ? v : old;
+		}
+		if (k === "harmony.siegeDone") return [true, "done", "won", "lost"].includes(old) ? old : v;
+		if (k === "harmony.collectorDown") return old === true ? true : v;
+		return v;
+	}
+	function farmQuestClosed(k) {
+		const [, set, id] = k.split(".");
+		if (set === "q10") return (q10[id] ?? 0) >= ({ seed: 4, ferry: 2, moose: 4, dog: 3, radio: 2 }[id] ?? 0) + 1;
+		const q = Q11.find((x) => x.id === id);
+		return !!q && (q11.q[id]?.s ?? 0) > q.steps.length + 1;
+	}
 	function sharedTownExtra() {
 		const sh = l1.tx?.shared;
 		if (!sh || typeof sh !== "object") return {};
@@ -5173,7 +5193,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (st.questFlags && typeof st.questFlags === "object") {
 			l1.tf = l1.tf ?? {};
-			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = v;
+			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = keepFlag(k, l1.tf[k], v);
 		}
 		const moved = townMapFlags(l1.tf);
 		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
@@ -12736,7 +12756,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Safe: () => ({ zones: safeZones().map((z) => ({ ...z })), here: safeAt(player.x, player.y)?.id ?? null, hud: !!safeAt(player.x, player.y) }),
 		v15Spot: (id) => { const t = ISO_TOWNS.find((x) => x.id === id); return t ? { map: t.map, open: townOpen(t), spot: t.map === mapId ? townSpot(t) : null } : null; },
 		v15Towns: () => ISO_TOWNS.filter((t, i, a) => a.findIndex((u) => u.id === t.id) === i).map((t) => ({ id: t.id, map: t.map, act: t.act ?? 0, src: townSrc(t.id), ...(FT15_ALIAS[t.id] ? { rideTo: FT15_ALIAS[t.id] } : {}) })),
-		v15Flags: (f) => { l1.tf = { ...(l1.tf ?? {}), ...f }; const moved = townMapFlags(l1.tf); townQuestsDone(); return { moved, main: JSON.parse(JSON.stringify(w13.main)), jack: w13.loyal.jack, mira: w13.loyal.mira, q10: { planks: q10.planks, rope: q10.rope, winch: q10.winch, ferry: q10.ferry }, grok: q11.q.grok?.s ?? 0, wolves: q11.q.wolves?.s ?? 0, freed: w13.freed, tq: (l1.tq ?? []).map((q) => q.id), unite: uniteWaived() }; },
+		v15Flags: (f) => { l1.tf = l1.tf ?? {}; for (const [k, v] of Object.entries(f ?? {})) l1.tf[k] = keepFlag(k, l1.tf[k], v); const moved = townMapFlags(l1.tf); townQuestsDone(); return { moved, main: JSON.parse(JSON.stringify(w13.main)), jack: w13.loyal.jack, mira: w13.loyal.mira, q10: { planks: q10.planks, rope: q10.rope, winch: q10.winch, ferry: q10.ferry }, grok: q11.q.grok?.s ?? 0, wolves: q11.q.wolves?.s ?? 0, freed: w13.freed, tq: (l1.tq ?? []).map((q) => q.id), unite: uniteWaived() }; },
 		v15State: () => townState(),
 		v15Open: (id, scene) => { openTown({ id, town: id, name: id, scene }); return { town: { ...town }, msg: townEnterMsg() }; },
 		v153: () => ({ clock, map: mapId, phase, town: town ? { id: town.id, src: town.src } : null, px: player?.x, py: player?.y }),
@@ -12877,6 +12897,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v13CampSpot: (id) => { const c = CAMPS13.find((x) => x.id === id); return c ? camp13Spot(c) : null; },
 		v13Road: (id) => { w13.road.n = 0; startRoadEvent(id); return w13.roadEv; },
 		v13Travel: (id) => { fastTravel(id); return { mapId, x: player.x, y: player.y, gas: countOf("gas") }; },
+		tfEcho: () => ({ tf: { ...(l1.tf ?? {}) }, out: townState().questFlags }),
 		farm195: () => ({ q10: { seed: q10.seed, moose: q10.moose, dog: q10.dog, radio: q10.radio, ferry: q10.ferry }, q11: Object.fromEntries(Q11.map((q) => [q.id, q11.q[q.id]?.s ?? 0])), main: { act: w13.main.act, choice: w13.main.choice, siege: w13.main.siege, won: w13.main.won, ending: w13.main.ending }, gas: countOf("gas"), stew: countOf("stew"), dogMode: v3.dog.mode, hunger: w13.needs.hunger, dura: duraOf(player?.coatId), lv: lv("hunting") }),
 		v13Act: (n) => { w13.main.act = n; sync(true); },
 		v13Tick: () => v13MainTick(),
