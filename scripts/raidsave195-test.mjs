@@ -12,7 +12,10 @@ await page.addInitScript((f) => {
     let d; try { d = JSON.parse(localStorage.getItem(k)); } catch { continue; }
     if (!d || typeof d !== "object" || !d.player) continue;
     Object.assign(d, { raidNight: 6, raidsHeld: 5, raidOn: true });
-    if (d.v14) d.v14.st = 4;
+    if (d.v14) { d.v14.st = 4; d.v14.placed = [...(d.v14.placed ?? []), { k: "spikes", tx: 60, ty: 40, hp: 40 }, { k: "stand-up", tx: 62, ty: 40, hp: 52 }, { k: "wall-wood", tx: 64, ty: 40, hp: 60 }]; }
+    if (d.w13) { d.w13.needs = { hunger: 3, thirst: 2, sleep: 80 }; d.w13.dura = { shirt: 0, boots: 0 }; }
+    if (d.v3) { d.v3.up = { greenhouse: 2, bench: 2, lookout: 1 }; d.v3.skills = { ...(d.v3.skills ?? {}), hunting: { lv: 6, xp: 3 } }; d.v3.dog = { mode: "stay", hp: 30, down: -1 }; }
+    if (d.q11) d.q11.farm = { ...(d.q11.farm ?? {}), plots: 3, coop: 2, smoke: 1 };
     d.player.x = f.x + 40; d.player.y = f.y + 40; d.player.respawnX = f.x; d.player.respawnY = f.y;
     localStorage.setItem(k, JSON.stringify(d));
   }
@@ -26,6 +29,10 @@ ok(dh >= 260 && dh < 700, `moved to Harmony's entrance (${Math.round(dh)} px fro
 ok(df > 300, `moved off the old farmyard spot (${Math.round(df)} px)`);
 const kinds = (await T("propKinds")).kinds;
 ok(!kinds.farmhouse && !kinds.barn && !kinds["sign-farm"] && !kinds.workbench, "no farmhouse, barn, farm sign or farm workbench on the map");
+ok(!kinds.spikes && !kinds["stand-up"], "old base defences are cleared on load");
+const fs = await T("farm195");
+ok(fs.hunger === 100 || fs.hunger === 3, `old hunger value loads (${fs.hunger}); no drain`);
+ok(fs.lv === 0 && fs.dogMode !== "stay", `old trade-skill levels and Goose 'stay' are ignored (lv ${fs.lv}, ${fs.dogMode})`);
 await page.evaluate(() => window.__controlsTest.save()); await page.waitForTimeout(300);
 const left = await page.evaluate(() => Object.keys(localStorage).some((k) => { try { const d = JSON.parse(localStorage.getItem(k)); return d && d.player && ("raidOn" in d || "raidNight" in d) && d.savedAt == null; } catch { return false; } }));
 ok(!left, "raid fields are not written back on save");

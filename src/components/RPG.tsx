@@ -481,11 +481,6 @@ export function RPG() {
             {hud.v113?.dog && hud.phase === "play" ? (
               <div className="pointer-events-auto flex items-center gap-1 self-center" data-testid="dog-cmds">
                 <span className="px-1 text-xs font-semibold text-fg">Goose {hud.v113.dog.down ? "(laid up)" : `${hud.v113.dog.hp}/30`}</span>
-                {(["stay", "follow", "track"] as const).map((m) => (
-                  <button key={m} type="button" data-testid={`dog-${m}`} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-14 plank border px-2 text-xs font-semibold capitalize ${hud.v113?.dog?.mode === m ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.dogCommand(m)}>
-                    {m}
-                  </button>
-                ))}
                 {hud.v113.dog.hp < 30 && !hud.v113.dog.down ? (
                   <button type="button" data-testid="dog-heal" className="min-h-10 plank border border-accent bg-surface px-2 text-xs font-semibold" onClick={() => apiRef.current?.dogHeal()}>
                     Patch up
@@ -653,7 +648,7 @@ export function RPG() {
                   </button>
                 </div>
                 <div className="mt-1 grid grid-cols-4 gap-1" role="tablist">
-                  {([["main", "Main"], ["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["farm", "Farm"], ["allies", "Allies"], ["diary", "Diary"], ["gear", "Gear"]] as const).map(([k, l]) => (
+                  {([["main", "Main"], ["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["allies", "Allies"], ["diary", "Diary"], ["gear", "Gear"]] as const).map(([k, l]) => (
                     <button key={k} type="button" role="tab" aria-selected={jTab === k} data-testid={`tab-${k}`} className={`min-h-10 plank border px-1 text-xs font-semibold ${jTab === k ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`} onClick={() => setJTab(k)}>
                       {l}
                     </button>
@@ -726,17 +721,6 @@ export function RPG() {
                       ))}
                     </ul>
                   </div>
-                ) : null}
-                {jTab === "farm" ? (
-                  <ul className="mt-2 space-y-1" data-testid="farm-screen">
-                    <li className="text-xs text-muted">Build these through Sarah at the farm: "Bigger works".</li>
-                    {(hud.v113?.ups ?? []).map((u) => (
-                      <li key={u.id} className="plank border border-border bg-bg px-3 py-2">
-                        <div className="flex items-baseline justify-between"><p className="font-semibold">{u.name}</p><p className="text-sm text-primary">{u.tier}/{u.max}</p></div>
-                        <p className="text-xs text-muted">{u.next ? `Next: ${u.next}` : "Fully built."}</p>
-                      </li>
-                    ))}
-                  </ul>
                 ) : null}
                 {jTab === "quests" ? <>
                 {(["active", "done"] as const).map((group) => {
@@ -1021,7 +1005,7 @@ export function RPG() {
                   </ActionButton>
                 </div>
               </div>
-              <div data-hud="actions" className="pointer-events-auto grid grid-cols-7 gap-1 short:w-[22rem] short:shrink-0">
+              <div data-hud="actions" className="pointer-events-auto grid grid-cols-6 gap-1 short:w-[22rem] short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
                   <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />
@@ -1032,12 +1016,6 @@ export function RPG() {
                   <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <Axe className="size-4" aria-hidden />
                     Attack
-                  </span>
-                </ActionButton>
-                <ActionButton wide label="Build" pressed={hud.buildOpen} onClick={() => apiRef.current?.tap("build")}>
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <House className="size-4" aria-hidden />
-                    Build
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Pack" pressed={hud.packOpen} onClick={() => apiRef.current?.togglePack()}>
@@ -1341,16 +1319,6 @@ export function RPG() {
                         }}
                       >
                         Begin as {kit.title}
-                      </button>
-                    </div>
-                  ) : null}
-                  {step === "trade" ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("winter")}>
-                        Winter Survival
-                      </button>
-                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("watch")}>
-                        Night Watch
                       </button>
                     </div>
                   ) : null}

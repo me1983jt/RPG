@@ -18,7 +18,6 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "ride", name: "Down the Tote Road", text: "Ride the motor bicycle." },
   { id: "winter", name: "Wintered Over", text: "Live through your first winter." },
   { id: "grok", name: "The Grok Is Down", text: "Beat The Grok." },
-  { id: "area", name: "Every Chore Done", text: "Finish every quest in one area." },
   { id: "skow", name: "Into Skowhegan", text: "Reach abandoned Skowhegan." },
   { id: "bridge", name: "Held the Bridge", text: "Clear the raiders at the Skowhegan bridge." },
   { id: "meds", name: "Medicine Run", text: "Bring medicine back from Redington hospital." },
@@ -28,10 +27,6 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "tracks", name: "Read the Sign", text: "Follow tracks to an animal." },
   { id: "biscuit", name: "Good Dog", text: "Goose joins you for good." },
   { id: "fish10", name: "Stringer Full", text: "Catch 10 fish." },
-  { id: "upgrade", name: "Improvements", text: "Build your first farm upgrade." },
-  { id: "palisade", name: "Stockade", text: "Raise the palisade wall." },
-  { id: "forge", name: "Hot Iron", text: "Upgrade the workbench to a forge." },
-  { id: "skill5", name: "Old Hand", text: "Reach level 5 in any trade skill." },
   { id: "rich", name: "Iron in the Coffee Can", text: "Hold 100 iron at once." },
   { id: "level5", name: "Seasoned", text: "Reach character level 5." },
 ];

@@ -1536,7 +1536,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			perception: p.perception,
 			luck: p.luck,
 			trait: p.trait || "",
-			agility: w13?.core?.agility ?? 1, grit: w13?.core?.grit ?? 1, tradeMech: v3?.skills?.mechanics?.lv ?? 0
+			agility: w13?.core?.agility ?? 1, grit: w13?.core?.grit ?? 1, tradeMech: 0
 		};
 	}
 	function ensureProgress(p) {
@@ -1627,7 +1627,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function sightRadius() {
 		const trail = skillOf("trail");
 		const home = mapId === 0 && player && inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty);
-		const up = home ? 2 * (v3.up.lookout || 0) + (v3.up.solar && nightDark(clock) > .3 ? 3 : 0) : 0;
+		const up = 0; // v15.9.5: farm upgrades removed
 		return Math.max(2, Math.round((5 + perc() + (trail >= 45 ? 1 : 0) + (carrying("binoculars") ? 2 : 0) + up) * (inside ? 1 : weather13().sight) * (injured("blind") ? INJ_FX.blindSight : 1)));
 	}
 	function noticeRange(base) {
@@ -1917,7 +1917,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("They will not sell to you.");
 			return;
 		}
-		const price = Math.max(1, Math.round(v3Price(priceOf(cost, skillOf("barter"), rep)) * (role === "sarah" && v3.up.solar >= 2 ? .8 : 1)));
+		const price = Math.max(1, Math.round(v3Price(priceOf(cost, skillOf("barter"), rep)) * 1));
 		train("barter", 3);
 		const def = GEAR[item];
 		if (def.kind !== "supply" && player.bag.some((s) => s.id === item)) {
@@ -2103,8 +2103,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		place("rope", "crates", 2, 0);
 	}
 	/** After any home-map world build (new game, load, crossing back): find the sites and put live quest bodies back. */
+	/** v15.9.5: base defences (turrets, fences, lures, spike traps, lookouts) are gone; old saves drop any that were built. */
+	const DEF_GONE = /^(stand|blind|firepot|nest|fence|post-(loft|porch|roof)|scarecrow|bait|spikes|lookout)(-(up|2|3|x))?$/;
+	function purgeDefences() {
+		if (v14?.placed) v14.placed = v14.placed.filter((p) => !DEF_GONE.test(p.k));
+		if (!world) return;
+		world.props = world.props.filter((p) => { if (!DEF_GONE.test(p.kind)) return true; vacate(world, p); return false; });
+	}
 	function q10World() {
 		q11World();
+		purgeDefences();
 		v14World();
 		q10Spots = new Map();
 		q10Latch.clear();
@@ -2118,15 +2126,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q10.dog >= 2) q10PlaceDog();
 	}
 	function q10PlaceDog() {
-		if (q10.dog === 2) {
-			const end = q10Spot(`trail${DOG_TRAIL.length - 1}`);
-			dogBody = { x: end.x + 20, y: end.y + 10, dir: 3, frame: 0, anim: 0, moving: false };
-		} else if (q10.dog === 3 && player) dogBody = { x: player.x + 40, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
-		else if (q10.dog >= 4) {
-			const loki = world?.npcs.find((n) => n.role === "loki");
-			const f = loki ?? farmCenter();
-			dogBody = { x: f.x + 46, y: f.y + 28, dir: 1, frame: 0, anim: 0, moving: false };
-		}
+		// v15.9.5: Goose's trail and his stay-at-home spot are in Harmony now; on the world map he only exists beside you
+		if (player && (q10.dog === 3 || (q10.dog >= 4 && v3.dog.mode !== "stay" && v3.dog.down < 0))) dogBody = { x: player.x + 40, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
+		else dogBody = null;
 	}
 	function npcSpot(role) {
 		const n = world?.npcs.find((m) => m.role === role);
@@ -2146,7 +2148,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q10.ferry === 2) add("ferry", "talk");
 		if (q10.ferry >= 3) { const s = q10Spot("ferry"); out.push({ key: "ferry", x: s.x, y: s.y, mode: "talk", color: "#7fb0d8", quiet: true }); }
 		if (q10.dog === 1) npc("loki", "#c9a0e0");
-		if (q10.dog === 2) {
+		if (false && q10.dog === 2) { // v15.9.5: Goose's trail is in Harmony
 			const last = DOG_TRAIL.length - 1;
 			if (q10.dogStep < last) add(`trail${q10.dogStep}`, "arrive", "#c9a0e0");
 			else add(`trail${last}`, "talk", "#c9a0e0");
@@ -2241,7 +2243,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			q10.moose = 2;
 			q10Bull();
 			pushLog("Heald Stream bog. There he is, up to his knees in the water, a bull as tall as a truck cab. Take him clean.");
-		} else if (key.startsWith("trail") && q10.dog === 2) {
+		} else if (false && key.startsWith("trail") && q10.dog === 2) {
 			q10.dogStep += 1;
 			const left = DOG_TRAIL.length - 1 - q10.dogStep;
 			pushLog(left > 0 ? ["Paw prints in the mud, headed for the spruce.", "More tracks. He was running flat out here.", "A tuft of brown fur on a raspberry cane.", "Tracks along the old tote road. He slowed down.", "Muddy prints, close together now. He's tired.", "He went under a fence wire here. Not far now."][Math.min(5, q10.dogStep - 1)] : "You hear a whine from under a blowdown.");
@@ -2418,7 +2420,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			ctx.globalAlpha = .85;
 		}
-		if (q10.dog === 2 && mapId === 0) {
+		if (false && q10.dog === 2 && mapId === 0) {
 			ctx.globalAlpha = .92;
 			ctx.fillStyle = "#24170d";
 			const steps = Math.min(q10.dogStep + 1, DOG_TRAIL.length);
@@ -2600,6 +2602,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (q11.hunt) q11.hunt = null;
 	}
 	function q11FarmProps() {
+		return; // v15.9.5: the old bike and farm works are in Harmony now
 		if (!world.props.some((p) => p.farmBike)) {
 			const s = Q11_SITES.farmBike;
 			const tx0 = s.tx + WORLD_OX, ty0 = s.ty + WORLD_OY;
@@ -2610,7 +2613,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		const fc = farmCenter();
 		const ft = tileOf(fc.x, fc.y);
-		FARM_UPGRADES.forEach((u, i) => {
+		if (false) FARM_UPGRADES.forEach((u, i) => {
 			for (let l = 0; l < q11.farm[u.id]; l++) {
 				const tx0 = ft.tx - 6 + l * 2, ty0 = ft.ty + 5 + i * 2;
 				for (let r = 0; r < 3; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
@@ -2713,9 +2716,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (first || mode11 === "endless" || mode11 === "watch") return;
 		const f = q11.farm, mult = SEASON_CROP[seasonNow()];
 		const got = [];
-		if (f.plots && mult) { const n = f.plots * mult + Math.floor(lv("farming") / 2); giveItem("apple", n); got.push(`${n} apples and potatoes`); train("farming", 4 + f.plots); }
-		if (f.coop && day % 2 === 0) { giveItem("pork", f.coop); got.push(`${f.coop} hen${f.coop > 1 ? "s" : ""} for the pot`); }
-		if (f.smoke) { const meat = player.bag.find((s) => s.id === "meat")?.qty ?? 0; const n = Math.min(meat, f.smoke); if (n) { takeItem("meat", n); giveItem("jerky", n * 2); got.push(`${n * 2} jerky from the smokehouse`); } }
+		if (false && f.plots && mult) { const n = f.plots * mult + Math.floor(lv("farming") / 2); giveItem("apple", n); got.push(`${n} apples and potatoes`); train("farming", 4 + f.plots); }
+		if (false && f.coop && day % 2 === 0) { giveItem("pork", f.coop); got.push(`${f.coop} hen${f.coop > 1 ? "s" : ""} for the pot`); }
+		if (false && f.smoke) { const meat = player.bag.find((s) => s.id === "meat")?.qty ?? 0; const n = Math.min(meat, f.smoke); if (n) { takeItem("meat", n); giveItem("jerky", n * 2); got.push(`${n * 2} jerky from the smokehouse`); } }
 		if (got.length) { f.harvest += 1; pushLog(`Morning at the farm: ${got.join(", ")}.`); }
 		for (const trap of q11.traps) if (day > trap.day && !trap.caught) { trap.caught = trapRoll(trap); if (!trap.caught) { trap.day = day; } }
 		if (q11.traps.some((t) => t.caught)) pushLog("Something's in one of your traps. Go check it.");
@@ -2876,39 +2879,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	// -------- start-menu modes
-	function q11StartMode(kind) {
-		unlockAudio();
-		sfx("click");
-		useModeResult.setState({ result: null });
-		if (kind === "endless") return; // v15.9.5: Endless Raid was removed with raids
-		mode11 = kind;
-		bootNew("Packer", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
-		mode11 = kind;
-		snow = Math.max(snow, 3);
-		jackMet = true;
-		if (GEAR.carbine) { giveItem("carbine", 1); player.weaponId = "carbine"; }
-		giveItem("shells", 10);
-		refreshGear(player);
-		const fh = world.props.find((q) => q.kind === "farmhouse");
-		if (fh) { const d = doorPoint(fh); player.x = d.x; player.y = d.y + 48; }
-		const span = DAY_LENGTH_SEC;
-		if (kind === "winter") {
-			clock = Math.floor(clock / span) * span + (8 / 24) * span;
-			q11.seasonDay = curDay() - SEASON_DAYS;
-			player.bag = player.bag.filter((s) => !["apple", "stew", "jerky", "meat", "pork", "cider", "donut", "smokedfish"].includes(s.id));
-			giveItem("jerky", 2);
-			m11 = { kind, day0: curDay(), days: 3, warmth: 100, food: 70, ate: 0, t: 0 };
-		} else {
-			clock = Math.floor(clock / span) * span + (21.5 / 24) * span;
-			giveItem("lantern", 1);
-			m11 = { kind, t: 0, dur: 150, caught: 0, lost: 0, hens: 6, spawnT: 2, spawned: 0 };
-		}
-		setLog(MODE_TEXT[kind]);
-		camX = player.x - player.y - viewW / 2;
-		camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
-		phase = "play";
-		sync(true);
-	}
+	function q11StartMode(kind) { void kind; } // v15.9.5: Winter Survival / Night Watch / Endless were removed; story game only
 	function q11EndMode(won, why) {
 		const kind = mode11;
 		if (!kind) return;
@@ -3013,7 +2984,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function q11JournalExtra() {
 		const out = [];
-		if (snow < 3 || mode11) return out;
+		return out; // v15.9.5: the farm ledger lives in Harmony
 		const f = q11.farm;
 		out.push({ id: "q11-season", title: `${SEASONS[seasonNow()]} at Cambridge Road`, done: false, text: `Day ${curDay() + 1}. Farm: potato plots ${f.plots}, coop ${f.coop}, stone wall ${f.wall}, smokehouse ${f.smoke}. Fish caught ${q11.fish.caught}${q11.fish.rare ? ` (${q11.fish.rare} rare)` : ""}. Caravan trips ${q11.trips}.${q11.traps.length ? ` Snares set: ${q11.traps.length}.` : ""}` });
 		return out;
@@ -3066,7 +3037,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			return false;
 		}
-		if (id === "q11-farm") return openD({
+		if (id === "q11-farm") return false; if (false) return openD({
 			speaker: "Sarah", text: `What do you want to put up? You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron. It's ${SEASONS[seasonNow()].toLowerCase()}.`,
 			choices: [{ label: "Bigger works: greenhouse, barrel, solar, lookout, palisade, cellar, workbench", id: "q113-works" }, ...FARM_UPGRADES.map((u) => ({ label: `${u.name} ${q11.farm[u.id]}/${u.max}: ${[u.wood && `${u.wood} wood`, u.stone && `${u.stone} stone`, u.iron && `${u.iron} iron`].filter(Boolean).join(", ")}`, id: `q11-build-${u.id}` })), { label: "Never mind", id: "close" }],
 		});
@@ -3139,11 +3110,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	function lv(id) {
+		return 0; // v15.9.5: the 17 trade skills were removed
 		let n = v3.skills[id]?.lv ?? 0;
 		if (id === "hunting" && dogBody && q10.dog >= 4 && v3.dog.mode === "track") n += 2;
 		return n;
 	}
 	function train(id, n) {
+		return; // v15.9.5: no trade skills to train
 		const s = v3.skills[id];
 		if (!s || mode11 || s.lv >= SKILL_MAX) return;
 		s.xp += n;
@@ -3209,9 +3182,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player || mode11) return;
 		const got = [];
 		const winter = seasonNow() === 3;
-		if (v3.up.greenhouse) { const n = v3.up.greenhouse * 2; giveItem("greens", n); got.push(`${n} greens from the greenhouse${winter ? " (snow on the glass)" : ""}`); }
-		if (v3.up.barrel) { giveItem("water", v3.up.barrel); got.push(`${v3.up.barrel} jug${v3.up.barrel > 1 ? "s" : ""} of rain water`); }
-		if (v3.up.cellar) { giveItem("apple", v3.up.cellar); got.push(`${v3.up.cellar} potato${v3.up.cellar > 1 ? "es" : ""} from the cellar`); }
+		if (false && v3.up.greenhouse) { const n = v3.up.greenhouse * 2; giveItem("greens", n); got.push(`${n} greens from the greenhouse${winter ? " (snow on the glass)" : ""}`); }
+		if (false && v3.up.barrel) { giveItem("water", v3.up.barrel); got.push(`${v3.up.barrel} jug${v3.up.barrel > 1 ? "s" : ""} of rain water`); }
+		if (false && v3.up.cellar) { giveItem("apple", v3.up.cellar); got.push(`${v3.up.cellar} potato${v3.up.cellar > 1 ? "es" : ""} from the cellar`); }
 		if (got.length) pushLog(`Farm works: ${got.join(", ")}.`);
 		if (v3.windDay !== day) { v3.windDay = day; v3.wind = Math.floor(Math.random() * 8); }
 		if (curDay() - (q11.seasonDay || 0) >= SEASON_DAYS * 4) achieve("winter");
@@ -3346,7 +3319,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!player || !world || q10.dog < 4 || mode11) return;
 		if (!v3.dog.joined) { v3.dog.joined = true; achieve("biscuit"); }
 		if (v3.dog.down >= 0) { if (dogBody && mapId !== 0) dogBody = null; return; }
-		if (v3.dog.mode === "stay") { if (!dogBody && mapId === 0) q10PlaceDog(); }
+		if (v3.dog.mode === "stay") { dogBody = null; return; }
 		else if (!dogBody || Math.hypot(dogBody.x - player.x, dogBody.y - player.y) > 900) dogBody = { x: player.x + 46, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
 		if (!dogBody) return;
 		dogBody.dog = true;
@@ -3407,6 +3380,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true); return true;
 	}
 	function dogCommand(mode) {
+		mode = "follow"; // v15.9.5: no stay / track jobs; Goose just follows
 		if (q10.dog < 4) return;
 		if (v3.dog.down >= 0) { pushLog("Goose's laid up at the farm until tomorrow."); return; }
 		v3.dog.mode = mode;
@@ -3417,6 +3391,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	// -------- main tick + hud
 	function v3Tick(dt) {
 		if (!player || !world || phase !== "play" || mode11) return;
+		if (v3.dog.mode !== "follow") v3.dog.mode = "follow";
 		v3TrackTick(dt);
 		v3TrapTick();
 		v3DogTick(dt);
@@ -3440,9 +3415,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function v3Hud() {
 		return {
-			skills: TRADE_SKILLS.map((d) => ({ id: d.id, name: d.name, lv: v3.skills[d.id].lv, xp: v3.skills[d.id].xp, need: skillNeed(v3.skills[d.id].lv), perk: d.perk, how: d.how })),
+			skills: [],
 			ach: ACHIEVEMENTS.map((a) => ({ id: a.id, name: a.name, text: a.text, got: !!v3.ach[a.id] })),
-			ups: FARM_UPGRADES2.map((u) => ({ id: u.id, name: u.name, tier: v3.up[u.id], max: u.tiers.length, next: v3.up[u.id] < u.tiers.length ? u.tiers[v3.up[u.id]].effect : "" })),
+			ups: [],
 			dog: q10.dog >= 4 ? { mode: v3.dog.mode, hp: v3.dog.hp, down: v3.dog.down >= 0 } : null,
 			wind: COMPASS8[v3.wind],
 			toast: v3Toast,
@@ -3453,7 +3428,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const close = () => { dialogue = null; phase = "play"; sync(true); return true; };
 		let m;
 		if (id === "q113-skow-go") { close(); travelTo(2, null); return true; }
-		if (id === "q113-works") return openD({ speaker: "Sarah", text: `Bigger works for the farm. You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron.`, choices: [...FARM_UPGRADES2.map((u) => ({ label: upLabel(u), id: `q113-up-${u.id}` })), { label: "Never mind", id: "close" }] });
+		if (id === "q113-works") return false; if (false) return openD({ speaker: "Sarah", text: `Bigger works for the farm. You've got ${player.wood} wood, ${player.stone} stone and ${player.scrap} iron.`, choices: [...FARM_UPGRADES2.map((u) => ({ label: upLabel(u), id: `q113-up-${u.id}` })), { label: "Never mind", id: "close" }] });
 		if ((m = id.match(/^q113-up-(.+)$/))) { buildUpgrade(m[1]); return v3Choice("q113-works"); }
 		return false;
 	}
@@ -3497,7 +3472,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (k === "wits") player.intellect += n;
 			else player[k] = (player[k] ?? 0) + n;
 		}
-		for (const [k, n] of Object.entries(b.skills)) if (v3.skills[k]) v3.skills[k].lv = Math.max(v3.skills[k].lv, n);
+		if (false) for (const [k, n] of Object.entries(b.skills)) if (v3.skills[k]) v3.skills[k].lv = Math.max(v3.skills[k].lv, n);
 		for (const [it, n] of b.gear) if (n > 0 && GEAR[it]) giveItem(it, n);
 		refreshGear(player);
 		player.hp = player.maxHp;
@@ -3569,7 +3544,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// ---- armor wear, sets
 	function duraOf(id) {
-		return w13.dura[id] ?? DURA_MAX;
+		void id; return DURA_MAX; // v15.9.5: gear no longer wears
 	}
 	const ARMOR13_IDS = ["woolcap", "shirt", "trousers", "gloves", "boots"];
 	function armorPieces() {
@@ -3597,6 +3572,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return Math.round(d) + (sb?.def ?? 0) + (base - [player.coatId, player.headId, player.legsId, player.handsId, player.feetId, player.backId].reduce((n, id) => n + (GEAR[id]?.def ?? 0), 0));
 	}
 	function wearArmor(dmg) {
+		return; // v15.9.5: gear wear and repair removed
 		const ids = armorPieces();
 		if (!ids.length) return;
 		const id = ids[Math.floor(Math.random() * ids.length)];
@@ -3618,15 +3594,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const r = w13.hard ? NEED_RATE.hard : NEED_RATE.normal;
 		const mul = fx13().drainMul;
 		const n = w13.needs;
-		n.hunger = Math.max(0, n.hunger - r.hunger * mul * hours);
-		n.thirst = Math.max(0, n.thirst - r.thirst * mul * hours);
+		n.hunger = 100; n.thirst = 100; void mul; // v15.9.5: hunger and thirst removed (sleep stays)
 		n.sleep = Math.max(0, n.sleep - r.sleep * (buffOn("awake") ? .5 : 1) * hours);
 		const empty = (n.hunger <= 0 ? 1 : 0) + (n.thirst <= 0 ? 1 : 0) + (n.sleep <= 0 ? 1 : 0);
 		if (empty && player.hp > 1) player.hp = Math.max(1, player.hp - r.hurt * empty * hours * 4);
 	}
 	function needsSpeed() {
 		const n = w13.needs;
-		return (n.hunger < 15 ? .92 : 1) * (n.thirst < 15 ? .92 : 1) * (n.sleep < 15 ? .9 : 1);
+		return n.sleep < 15 ? .9 : 1;
 	}
 	function ailSpeed() {
 		let m = 1;
@@ -3925,11 +3900,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
 		const more = 1 + .05 * lv("cooking");
 		const n = w13.needs;
-		if (f.hunger) n.hunger = Math.min(100, n.hunger + f.hunger * more);
-		if (f.thirst) n.thirst = Math.min(100, n.thirst + f.thirst * more);
+		void more;
 		if (def.id === "cider" || def.id === "donut") { player.stamina = Math.min(player.maxStamina, player.stamina + 15); if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal); pushLog(def.id === "cider" ? "Hot cider. Warm all the way down. +15 stamina." : "Still warm from Sarah's kettle. +15 stamina."); }
 		if (f.sleep) n.sleep = Math.min(100, n.sleep + f.sleep);
-		if (perk13("cooking", 9) && RECIPES13.some((r) => r.makes === def.id)) n.thirst = Math.min(100, n.thirst + 10);
 		if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal);
 		const r = RECIPES13.find((x) => x.makes === def.id);
 		if (r?.buff) {
@@ -3940,15 +3913,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (def.id === "tonic") cureAil("cold", "The spruce tonic burns going down and clears you right out.");
 		sfx("click");
-		pushLog(`${def.name}: ${f.hunger ? "fed" : ""}${f.thirst ? `${f.hunger ? ", " : ""}watered` : ""}${f.sleep ? " and awake" : ""}.${r?.buff ? ` ${r.text}` : ""}`);
+		pushLog(`${def.name}${f.sleep ? ": awake" : ""}.${r?.buff ? ` ${r.text}` : ""}`);
 		return true;
 	}
 	function sleep13() {
 		const n = w13.needs;
 		n.sleep = 100;
 		if (mapId === 0 && world?.npcs.some((q) => q.role === "sarah")) healInjuries141("Sarah sits up with you through the night: eye wash, a splint, a sling. You wake up whole.");
-		n.hunger = Math.max(0, n.hunger - 10);
-		n.thirst = Math.max(0, n.thirst - 12);
 		if (w13.ail.cold) w13.ail.cold -= 1;
 	}
 	// ======== v14: roadside start, farm fortifications, defend the farm, workbench, base pieces ========
@@ -4139,7 +4110,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			grantXp(10); sfx("build"); saveGame(); sync(true); return;
 		}
 		if (prop.kind === "sign-farm") return pushLog("Hand-painted: FARM. KEEP TO THE ROAD. Somebody added: WE SHOOT.");
-		if (prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Your workbench, under a tarp. Hold the farm first; then it's back in business." : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
+		if (prop.kind === "workbench") return pushLog("An old workbench, stripped bare.");
+		if (false && prop.kind === "workbench") { if (!ok14()) return pushLog(v14.st >= 3 ? "Your workbench, under a tarp. Hold the farm first; then it's back in business." : "A workbench under a tarp."); craftOpen = true; phase = "play"; sync(true); return; }
 		if (isGate14(prop.kind)) return toggleGate14(prop);
 		if (prop.kind === "chest") return openStore(prop), void 0;
 		if (prodOf(prop.kind)) return prodUse(prop), void 0;
@@ -5150,7 +5122,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			name: p?.name ?? "", look: p?.look ?? "", hair: p?.hair ?? "", appearance: { coatId: p?.coatId ?? "", headId: p?.headId ?? "", legsId: p?.legsId ?? "", feetId: p?.feetId ?? "" },
 			perks: [...(p?.perks ?? [])], role: p?.role ?? "fighter", trait: p?.trait ?? "", backstory: w13.backstory ?? "", level: p?.level ?? 1, xp: p?.xp ?? 0, points: p?.points ?? 0,
 			tags: [...(p?.tags ?? [])], invested: { ...(p?.invested ?? {}) }, skillPoints: p?.skillPoints ?? 0,
-			skills: JSON.parse(JSON.stringify({ ...(l1.tSkills ?? {}), ...(v3.skills ?? {}) })), karma: p?.karma ?? 0, rep: { ...(p?.rep ?? {}) },
+			skills: JSON.parse(JSON.stringify({ ...(l1.tSkills ?? {}) })), karma: p?.karma ?? 0, rep: { ...(p?.rep ?? {}) },
 			skillScores: p ? Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])) : {},
 			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
 			injuries: inj,
@@ -5262,7 +5234,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (str(st.backstory)) w13.backstory = st.backstory;
 		{ const r = classId(st.role); if (r && r !== p.role) { p.role = r; refreshGear(p); } }
 		// v3 trade skills come back as {lv, xp}; entries the town generated for its own skills carry a score and aren't trade levels
-		if (st.skills && typeof st.skills === "object") for (const [k, v] of Object.entries(st.skills)) if (v3.skills[k] && v && typeof v === "object" && !("score" in v) && num(v.lv) && v.lv >= 0) { v3.skills[k].lv = Math.min(SKILL_MAX, Math.floor(v.lv)); if (num(v.xp) && v.xp >= 0) v3.skills[k].xp = v.xp; }
+		if (false && st.skills && typeof st.skills === "object") for (const [k, v] of Object.entries(st.skills)) if (v3.skills[k] && v && typeof v === "object" && !("score" in v) && num(v.lv) && v.lv >= 0) { v3.skills[k].lv = Math.min(SKILL_MAX, Math.floor(v.lv)); if (num(v.xp) && v.xp >= 0) v3.skills[k].xp = v.xp; }
 		if (num(st.karma)) p.karma = st.karma;
 		if (st.rep && typeof st.rep === "object") for (const [k, v] of Object.entries(st.rep)) if (num(v)) p.rep[k] = v;
 		if (st.stats && typeof st.stats === "object") for (const [k0, v] of Object.entries(st.stats)) {
@@ -5323,6 +5295,29 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		"skowhegan.meds": { found: ["q11:meds", 4] },
 		"skowhegan.mill": { cleared: ["q11:mill", 2], stripped: ["q11:mill", 3] },
 	};
+	/** v15.9.5: Sarah's, Loki's and Cyndal's quests are given and turned in inside Harmony (farm-handoff.md).
+	 * farm.q10.<id> / farm.q11.<id> = "accepted" | <stage number> | "done". Only moves forward; "done" pays the original
+	 * main-game rewards through the original turn-in handlers, once. */
+	function farmQuestFlags(f, v, moved) {
+		const say = dialogue, ph = phase;
+		for (const id of ["seed", "ferry", "moose", "dog", "radio"]) {
+			const val = v(`farm.q10.${id}`);
+			if (val == null) continue;
+			const doneAt = { seed: 4, ferry: 2, moose: 4, dog: 3, radio: 2 }[id], doneTo = doneAt + 1;
+			if (val === "accepted" && (q10[id] ?? 0) === 0) { q10Choice(`q10-${id}-accept`); moved.push(`${id} accepted`); }
+			else if (typeof val === "number" && val > (q10[id] ?? 0) && val < doneTo) { q10[id] = val; moved.push(`${id} ${val}`); }
+			else if (val === "done" && id !== "ferry" && (q10[id] ?? 0) === doneAt) { q10Choice(id === "ferry" ? "q10-ferry-fix" : `q10-${id}-done`); moved.push(`${id} done`); }
+		}
+		for (const q of Q11) {
+			const val = v(`farm.q11.${q.id}`);
+			if (val == null) continue;
+			const st = q11St(q.id), turnIn = q.steps.length + 1;
+			if (val === "accepted" && st.s === 0) { q11Choice(`q11-accept-${q.id}`); moved.push(`${q.id} accepted`); }
+			else if (typeof val === "number" && val > st.s && val <= turnIn) { st.s = val; st.left = 0; q11Begin(q); moved.push(`${q.id} ${val}`); }
+			else if (val === "done" && st.s === turnIn) { q11Choice(`q11-done-${q.id}`); moved.push(`${q.id} done`); }
+		}
+		dialogue = say; phase = ph;
+	}
 	function townMapFlags(f) {
 		const moved = [];
 		const fwd = (what, n, part) => {
@@ -5392,6 +5387,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (ch === "deal") { const full = v("harmony.dealTerms") === "full"; player.scrap = Math.max(0, player.scrap - (full ? 30 : 20)); w13.main.siege = 2; w13.main.won = true; mf.toll = full ? 30 : 20; }
 			if (w13.main.act === 7) mainAdvance();
 		}
+		// v15.9.5: the siege is played in Harmony for every path. harmony.siegeDone = "won" | "lost" (true / "done" read as won),
+		// harmony.collectorDown = true when the Collector fell. The deal path is already closed by harmony.choice = "deal".
+		const sd = v("harmony.siegeDone");
+		if ([true, "done", "won", "lost"].includes(sd) && w13.main.choice && w13.main.siege !== 2) {
+			w13.main.siege = 2;
+			if (w13.main.choice !== "deal") { w13.main.won = sd !== "lost"; if (w13.main.won || v("harmony.collectorDown") === true) w13.main.collectorDown = true; }
+			moved.push(`siege ${sd}`);
+		}
+		if (v("harmony.collectorDown") === true) w13.main.collectorDown = true;
+		farmQuestFlags(f, v, moved);
 		const fam = v("harmony.family");
 		if (["stay", "north"].includes(fam) && !mf.family) { mf.family = fam; moved.push(`family ${fam}`); }
 		if (v("harmony.signalVerdict") === "split" && !ap.split) { ap.split = true; pushLog("Earl and two others went south after the signal."); }
@@ -5475,7 +5480,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const ch = [];
 		for (const id of pieces) {
 			const d = duraOf(id);
-			if (d < DURA_MAX) ch.push({ label: `Repair ${GEAR[id].name} (${d}/${DURA_MAX}): ${repairCost(id)} iron`, id: `v13-repair-${id}` });
+			if (false) ch.push({ label: `Repair ${GEAR[id].name} (${d}/${DURA_MAX}): ${repairCost(id)} iron`, id: `v13-repair-${id}` });
 			if (!w13.patched[id] || d < 60) ch.push({ label: `Patch ${GEAR[id].name} with hide (+40, a bit tougher)`, id: `v13-patch-${id}` });
 		}
 		ch.push({ label: "Dye your armor", id: "v13-dyes" });
@@ -5684,7 +5689,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (role === "sarah") {
 			out.push({ label: "Cook a meal", id: "v13-cook" });
 			if (mapId === 0) out.push({ label: "Turn in and sleep till morning", id: "v13-sleep" });
-			if ((v3.up.bench ?? 0) >= 1) out.push({ label: "Use the workbench (repair, patch, dye)", id: "v13-bench" });
+			
 			out.push({ label: "Rebuild Harmony", id: "v13-rebuild" });
 			if (a === 7 && !w13.main.choice) out.push({ label: "The Long Winter: decide what we do about the Collector", id: "v13-main-choose" }, { label: "Talk it over in the kitchen", id: "v15-kitchen" });
 		}
@@ -5879,8 +5884,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			needs: { ...w13.needs }, hard: w13.hard, ail: Object.keys(w13.ail).map((k) => ({ id: k, ...AILMENTS[k] })), buffs: Object.keys(w13.buffs).filter((k) => buffOn(k)),
 			loyal: COMPANIONS.map((c) => ({ id: c, name: COMPANION_NAME[c], v: w13.loyal[c], left: !!w13.left[c], helps: w13.loyal[c] >= LOYALTY_HELP })),
 			armor: armorPieces().map((id) => ({ id, name: GEAR[id].name, dura: duraOf(id), patched: !!w13.patched[id] })), set: sb ? { name: sb.name, text: sb.text } : null,
-			skills: NEW_SKILLS.map((s) => ({ ...s, lv: v3.skills[s.id]?.lv ?? 0 })),
-			perks: Object.entries(SKILL_PERKS).map(([k, list]) => ({ skill: k, got: list.slice(0, perkCount(v3.skills[k]?.lv ?? 0)), next: list[perkCount(v3.skills[k]?.lv ?? 0)] ?? "" })),
+			skills: [],
+			perks: [],
 			rebuilt: { ...w13.rebuilt }, bounties: w13.bounties.map((b) => ({ text: b.text, got: b.got, need: b.need, pay: b.pay })),
 			diary: w13.diary.slice(-40), notes: w13.notes,
 			main: { act: w13.main.act, title: mainAct().title, goal: mainAct().goal, acts: MAIN_ACTS.map((a) => ({ n: a.n, title: a.title, goal: a.goal, done: a.n < w13.main.act, notes: a.n <= w13.main.act ? [...(MAIN_JOURNAL[a.n] ?? []), ...(a.n < w13.main.act ? [a.done] : [])] : [] })), ending: w13.main.ending ? { id: w13.main.ending, ...ENDINGS[w13.main.ending] } : null, slide: w13.main.slide },
@@ -8517,7 +8522,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		swingAnim = Math.max(0, swingAnim - dt);
 		{ const _t = performance.now(); pendingTick(dt); pAdd("u:pendingTick", _t); }
 		{ const _t = performance.now(); v14Tick(); pAdd("u:v14Tick", _t); }
-		if (edges.build) {
+		if (edges.build) edges.build = false; // v15.9.5: the Build menu was removed
+		if (false) {
 			buildOpen = !buildOpen;
 			if (buildOpen) {
 				intent = null;
@@ -11388,7 +11394,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; }
 			sync(true);
 		} else if (e.code === "KeyC" && phase === "play") {
-			if (craftOpen) craftOpen = false; else if (ok14()) craftOpen = true; else pushLog("The workbench opens once the farm is yours.");
+			craftOpen = false; // v15.9.5: no workbench; crafting is at the town shops
 			sync(true);
 		} else if (e.code === "KeyX" && phase === "play") {
 			setCrouch(!l1.crouch);
@@ -12124,7 +12130,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (cmd === "craft") craft14(arg);
 			else if (cmd === "benchUp") benchUp14();
 			else if (cmd === "closeCraft") { craftOpen = false; sync(true); }
-			else if (cmd === "openCraft") { if (ok14()) { craftOpen = true; sync(true); } }
+			else if (cmd === "openCraft") { /* v15.9.5: no workbench */ }
 			else if (cmd === "rotate") { buildFlip = !buildFlip; sync(true); }
 			else if (cmd === "tool") { buildTool = arg; sync(true); }
 			else if (cmd === "repairAll") repairAll14();
@@ -12871,6 +12877,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v13CampSpot: (id) => { const c = CAMPS13.find((x) => x.id === id); return c ? camp13Spot(c) : null; },
 		v13Road: (id) => { w13.road.n = 0; startRoadEvent(id); return w13.roadEv; },
 		v13Travel: (id) => { fastTravel(id); return { mapId, x: player.x, y: player.y, gas: countOf("gas") }; },
+		farm195: () => ({ q10: { seed: q10.seed, moose: q10.moose, dog: q10.dog, radio: q10.radio, ferry: q10.ferry }, q11: Object.fromEntries(Q11.map((q) => [q.id, q11.q[q.id]?.s ?? 0])), main: { act: w13.main.act, choice: w13.main.choice, siege: w13.main.siege, won: w13.main.won, ending: w13.main.ending }, gas: countOf("gas"), stew: countOf("stew"), dogMode: v3.dog.mode, hunger: w13.needs.hunger, dura: duraOf(player?.coatId), lv: lv("hunting") }),
 		v13Act: (n) => { w13.main.act = n; sync(true); },
 		v13Tick: () => v13MainTick(),
 		v13Caravan: () => v13Caravan(),

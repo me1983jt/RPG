@@ -11,7 +11,7 @@
    "skills.traitMods": "{traitId:{skillId:delta}}",
    "perks[]": "{id, name, blurb, need?, bonus?:{skill:delta}, def?:number, ap?:number}",
    "traits[]": "{id, name, blurb, hp:number, staminaRegenMul:number, skills:{skill:delta}}",
-   "backstories[]": "{id, name, core:{stat:delta}, trade:{tradeSkill:lv}}",
+   "backstories[]": "{id, name, core:{stat:delta}} (v15.9.5: trade-skill levels removed)",
    "classes[]": "{id, name, stats:{6 base stats}, kitHp, atk, tags:[3 skill ids]} - ids are the class names used everywhere, sent straight through",
    "classDefault": "class id used when none/invalid",
    "classAliases": "old class ids/names -> current id (save migration)",
@@ -25,7 +25,8 @@
    "townScoreXp": "RPG XP granted per town score point",
    "oldTownSkillConversion": "how pre-character/1 town skill levels become invested points"
   },
-  "regenerate_js": "node /workspace/shared-rules/tools/gen-stats-js.mjs  (writes stats_rules.js: window.STATS_RULES = <this file>)"
+  "regenerate_js": "node /workspace/shared-rules/tools/gen-stats-js.mjs  (writes stats_rules.js: window.STATS_RULES = <this file>)",
+  "removed_v15_9_5": "Trade skills (17), hunger/thirst drain, gear wear/repair, Mechanics tradeLvBonus, backstory trade levels. See CUTS.md."
  },
  "stats": {
   "list": [
@@ -45,7 +46,7 @@
     "id": "endurance",
     "name": "Endurance",
     "store": "player",
-    "effect": "maxStamina +16/pt; regen 8+3/pt; hunger/thirst drain -5%/pt (floor 0.6); melee 2, trail 3"
+    "effect": "maxStamina +16/pt; regen 8+3/pt; melee 2, trail 3"
    },
    {
     "id": "intellect",
@@ -188,8 +189,7 @@
      "agility": 2
     },
     "max": 120,
-    "blurb": "Engines, bikes, repairs. Merged with town Tinkering.",
-    "tradeLvBonus": 6
+    "blurb": "Engines, bikes, hotwiring. Merged with town Tinkering."
    },
    {
     "id": "climbing",
@@ -389,11 +389,6 @@
    "core": {
     "grit": 2,
     "perception": 1
-   },
-   "trade": {
-    "marksmanship": 2,
-    "leadership": 1,
-    "firstaid": 1
    }
   },
   {
@@ -402,11 +397,6 @@
    "core": {
     "intellect": 2,
     "agility": 1
-   },
-   "trade": {
-    "mechanics": 2,
-    "scavenging": 1,
-    "carpentry": 1
    }
   },
   {
@@ -415,11 +405,6 @@
    "core": {
     "endurance": 2,
     "grit": 1
-   },
-   "trade": {
-    "farming": 2,
-    "cooking": 1,
-    "foraging": 1
    }
   },
   {
@@ -428,11 +413,6 @@
    "core": {
     "perception": 1,
     "agility": 2
-   },
-   "trade": {
-    "hunting": 2,
-    "tracking": 1,
-    "trapping": 1
    }
   }
  ],
@@ -620,8 +600,6 @@
   "talkPerGritHalf": 1,
   "sickResistPerGrit": 0.04,
   "sickResistCap": 0.4,
-  "drainPerEndurance": 0.05,
-  "drainFloor": 0.6,
   "apBase": 8
  },
  "checksText": "clamp(5, 95, score - dc + 50 + round(rep/4 + karma/8))",

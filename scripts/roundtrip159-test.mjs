@@ -75,7 +75,7 @@ await page.evaluate(() => window.__controlsTest.v15Leave?.());
   ok(["mechanics", "climbing", "electronics"].some((k) => s3.skills[k]) || Object.keys(s3.skills).length > 0, `enterTown sends skills (${Object.keys(s3.skills).join(",")})`);
   await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, skills: { ...s.skills, mechanics: { lv: 3, xp: 0 } } } }), s3);
   const s4 = (await T("v15Open", "pittsfield")).msg.state;
-  ok(s4.skills.mechanics?.lv === 3, `a town-side skill level lands and is sent back (${JSON.stringify(s4.skills.mechanics)})`);
+  ok(s4.skills.mechanics?.lv !== 3, `v15.9.5: a town-side trade-skill level is ignored, not sent back (${JSON.stringify(s4.skills.mechanics)})`);
   await page.evaluate(() => window.__controlsTest.v15Leave?.()); }
 // v15.9.2: quest flags from the town (e.g. <town>.arrived) are saved on leave and sent back on the next visit
 { const s3 = (await T("v15Open", "harmony")).msg.state;

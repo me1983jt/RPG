@@ -206,25 +206,12 @@ export interface Recipe {
   blurb: string;
 }
 
+// v15.9.5: no turrets, fences, lures or spike traps (base defences went with raids)
 export const RECIPES: Recipe[] = [
   { kind: "shelter", wood: 8, stone: 4, scrap: 0, label: "Lean-to", blurb: "Spruce poles and canvas. You wake here if you fall." },
   { kind: "wall", wood: 2, stone: 0, scrap: 0, label: "Log wall", blurb: "A solid crib of logs. It does not burn as fast." },
   { kind: "workshop", wood: 6, stone: 2, scrap: 8, label: "Smithy", blurb: "A stump forge. Camp iron in, nails out. Slowly." },
   { kind: "campfire", wood: 3, stone: 2, scrap: 0, label: "Cookfire", blurb: "Heat, dry wool, hot water. Rest, not a blessing." },
-  { kind: "stand", wood: 6, stone: 2, scrap: 1, label: "Rifle stand", blurb: "A raised platform and sandbags. It fires on a raid." },
-  { kind: "stand-up", wood: 4, stone: 2, scrap: 4, label: "Raised stand", blurb: "Higher sandbags and a cedar roof. Hits harder." },
-  { kind: "blind", wood: 5, stone: 0, scrap: 1, label: "Hunting blind", blurb: "Brush and cedar. A long shot at night." },
-  { kind: "blind-up", wood: 4, stone: 1, scrap: 3, label: "Cedar blind", blurb: "Thicker cover and a longer slit." },
-  { kind: "firepot", wood: 1, stone: 2, scrap: 2, label: "Fire pot", blurb: "Burning pitch. Raiders slow when they pass it." },
-  { kind: "firepot-up", wood: 1, stone: 3, scrap: 3, label: "Stone fire pot", blurb: "A wider pot in a ring of stone." },
-  { kind: "nest", wood: 8, stone: 1, scrap: 4, label: "Gun nest", blurb: "Logs and a heavy gun. Mean at close range." },
-  { kind: "nest-up", wood: 6, stone: 2, scrap: 6, label: "Camp gun", blurb: "Higher walls and a mounted camp gun." },
-  { kind: "fence", wood: 2, stone: 0, scrap: 0, label: "Stake fence", blurb: "A section of sharpened spruce. Most raiders have to go around." },
-  { kind: "scarecrow", wood: 2, stone: 0, scrap: 0, label: "Scarecrow", blurb: "Draws a raid toward the row, away from the house." },
-  { kind: "bait", wood: 1, stone: 0, scrap: 1, label: "Bait cache", blurb: "Apples and a ham. They come for it." },
-  { kind: "post-loft", wood: 4, stone: 0, scrap: 2, label: "Hayloft", blurb: "A rifle slit for the barn loft. It fires on a raid." },
-  { kind: "post-porch", wood: 3, stone: 0, scrap: 1, label: "Porch post", blurb: "A chair and a lantern on the farmhouse porch." },
-  { kind: "post-roof", wood: 4, stone: 1, scrap: 2, label: "Roof stand", blurb: "Planks and a sandbag on a shack roof." },
   ...PIECES.filter((p) => p.kind !== "campfire").map((p) => ({ kind: p.kind as PropKind, wood: p.cost.wood ?? 0, stone: p.cost.stone ?? 0, scrap: p.cost.iron ?? 0, label: p.name, blurb: p.blurb, v14: true, need14: p.cost })),
 ];
 
