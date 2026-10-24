@@ -137,6 +137,8 @@ export interface GameApi {
   setTurnBased: (on: boolean) => void;
   setGraphics: (high: boolean) => void;
   setPerfMode: (on: boolean) => void;
+  setShowFps: (on: boolean) => void;
+  setFpsCap: (n: number) => void;
   endTurn: () => void;
   takeLoot: (key: string) => void;
   /** Android back button: close the open panel, else open/close the pause menu. False on the main menu. */
@@ -375,7 +377,7 @@ var emptyEdges = () => ({
 	save: false
 });
 export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): GameApi {
-	const ctx = canvas.getContext("2d");
+	let ctx: CanvasRenderingContext2D = canvas.getContext("2d")!; // v15.9.4: swapped briefly to fill the cached ground layer
 	const mctx = mini.getContext("2d");
 	if (!ctx || !mctx) throw new Error("Canvas unsupported");
 	const images = /* @__PURE__ */ new Map();
@@ -441,6 +443,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const hiFx = () => gfxHigh && !perfMode;
 	let shadow193 = false; // v15.9.3: contact shadows only while the hero, the companion, Goose or an enemy draws
 	let aiPausedN = 0;
+	const AI_DT = 1 / 20;
+	let aiAcc = 0;
 	let precipForce = null; // test hook: force a rain / snow event on or off
 	const frameMs = { avg: 16, n: 0, worst: 0, list: [] };
 	// v15.9.3: per-section frame profiler (test hooks perfReset / perfStats)
@@ -677,6 +681,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function sync(force = false) {
 		if (!force) return;
+		const _tS = performance.now();
+		try { sync0(); } finally { pAdd("u:sync(HUD)", _tS); }
+	}
+	// v15.9.4: the HUD sync (~7 Hz) re-read and parsed every save slot from localStorage; keep it for 2 s unless a save just happened
+	let slotCache = null, slotCacheT = -1e9;
+	function slotsCached() {
+		const now = performance.now();
+		if (!slotCache || now - slotCacheT > 2000 || phase === "menu" || phase === "pause") { slotCache = { hasSave: hasSave(), slot: getSlot(), slots: slotInfos() }; slotCacheT = now; }
+		return slotCache;
+	}
+	function sync0() {
 		// v14.1: Stats never sits over Build (level-ups while building wait for you to close it)
 		if (buildOpen && statsOpen) { statsOpen = false; statsWait = true; }
 		if (!buildOpen && statsWait) { statsWait = false; statsOpen = true; }
@@ -685,9 +700,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		useHud.setState({
 			phase,
 			ready: useHud.getState().ready,
-			hasSave: hasSave(),
-			slot: getSlot(),
-			slots: slotInfos(),
+			...slotsCached(),
 			auto: autoInfo(),
 			name: p?.name ?? "Packer",
 			hp: p?.hp ?? 44,
@@ -742,6 +755,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			turnBased,
 			gfxHigh,
 			perfMode,
+			showFps,
+			fpsCap,
 			ap,
 			maxAp: apMax,
 			statsOpen,
@@ -3574,7 +3589,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const quiet13 = () => typeof window !== "undefined" && !!window.__v13Quiet;
 	function weather13() {
 		if (quiet13()) return WEATHER.clear;
-		return WEATHER[w13.weather.id] ?? WEATHER.clear;
+		const id = w13.weather.id;
+		// v15.9.4: rain, snow and nor'easter only slow you and cut sight while the shower is actually falling
+		if ((id === "rain" || id === "snow" || id === "noreaster") && !precipOn193()) return WEATHER.clear;
+		return WEATHER[id] ?? WEATHER.clear;
 	}
 	function moon13() {
 		if (quiet13()) return moonEffect(2);
@@ -5058,7 +5076,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			for (const [cx, cy] of [[ex, ey], [rx, ry]]) {
 				const dx = p.tx - cx, dy = p.ty - cy;
 				if (dx * dx + dy * dy <= 81) return true;
-				if (dx + dy > 0 && dx + dy <= 16 && Math.abs(dx - dy) <= 9) return true; // camera side: tall art would cover the icon
+				if (dx + dy > 0 && dx + dy <= 18 && Math.abs(dx - dy) <= 12) return true; // camera side: tall art would cover the icon
 			}
 			for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (roadNear.has((p.ty + dy) * MAP_W + p.tx + dx)) return true;
 			return false;
@@ -8629,9 +8647,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	function step(dt) {
-		tickLog(dt);
-		q11ModeTick(dt);
-		v3Tick(dt);
+		{ const _t = performance.now(); tickLog(dt); pAdd("u:tickLog", _t); }
+		{ const _t = performance.now(); q11ModeTick(dt); pAdd("u:q11ModeTick", _t); }
+		{ const _t = performance.now(); v3Tick(dt); pAdd("u:v3Tick", _t); }
 		if (edges.pause && phase === "play") {
 			phase = "pause";
 			sync(true);
@@ -8695,8 +8713,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.hurt = Math.max(0, player.hurt - dt);
 		reach = Math.max(0, reach - dt);
 		swingAnim = Math.max(0, swingAnim - dt);
-		pendingTick(dt);
-		v14Tick();
+		{ const _t = performance.now(); pendingTick(dt); pAdd("u:pendingTick", _t); }
+		{ const _t = performance.now(); v14Tick(); pAdd("u:v14Tick", _t); }
 		if (edges.build) {
 			buildOpen = !buildOpen;
 			if (buildOpen) {
@@ -8787,7 +8805,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const pace141 = pace * (l1.crouch && !mounted ? CROUCH_SPEED : 1);
 		const fromX = player.x;
 		const fromY = player.y;
-		tickWork(dt);
+		{ const _t = performance.now(); tickWork(dt); pAdd("u:tickWork", _t); }
 		const sticked = stickMove(pace141, dt);
 		if (!sticked) autoTick();
 		if (intent && player) {
@@ -8905,9 +8923,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (deal > 0) deal = Math.max(0, deal - dt);
 		const swinging = work && work.swing > 0;
 		const stepDist = Math.hypot(player.x - fromX, player.y - fromY);
-		noiseTick(dt, stepDist > .45);
-		dropTick();
-		prodTick(dt);
+		{ const _t = performance.now(); noiseTick(dt, stepDist > .45); pAdd("u:noiseTick", _t); }
+		{ const _t = performance.now(); dropTick(); pAdd("u:dropTick", _t); }
+		{ const _t = performance.now(); prodTick(dt); pAdd("u:prodTick", _t); }
 		if (stepDist <= .45 && performance.now() - (player.easeT ?? 0) > 60) player.ease = 0;
 		if (stepDist > .45 && !swinging) {
 			player.dir = facing8Hys(player.dir, player.x - fromX, player.y - fromY);
@@ -8973,9 +8991,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (!turnBased) stepParty(dt);
 		if (!turnBased) stepRaid(dt);
-		stepEncounters();
-		q10Step(dt);
-		q11Step(dt);
+		{ const _t = performance.now(); stepEncounters(); pAdd("u:stepEncounters", _t); }
+		{ const _t = performance.now(); q10Step(dt); pAdd("u:q10Step", _t); }
+		{ const _t = performance.now(); q11Step(dt); pAdd("u:q11Step", _t); }
 		snowAcc += dt;
 		if (snowAcc > .28 && particles.length < 24) {
 			snowAcc = 0;
@@ -8994,6 +9012,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const tAI = performance.now();
 		const aiFar = Math.max(viewW, viewH) / Math.max(.3, zoom) * (perfMode ? 1.25 : 1.5);
 		let aiPaused = 0;
+		// v15.9.4: animals and foes think and move on a 20 Hz tick; the renderer interpolates them every frame
+		aiAcc += dt;
+		const aiRun = turnBased || aiAcc >= AI_DT - 1e-6;
+		if (aiRun) ((dt) => {
+		if (!turnBased) for (const e of world.enemies) { e.px = e.x; e.py = e.y; }
+		aiAcc = 0;
 		if (!turnBased) for (const enemy of world.enemies) {
 			if (enemy.lineup141) continue;
 			if (enemy.death > 0) enemy.death = Math.max(0, enemy.death - dt);
@@ -9196,8 +9220,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (enemyMoving) enemy.anim += dt * 10;
 			enemy.frame = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52) ? 2 : enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 		}
-		separateEnemies();
-		pAdd("ai", tAI); aiPausedN = aiPaused;
+		{ const _t = performance.now(); separateEnemies(aiFar); pAdd("u:separateEnemies", _t); }
+		aiPausedN = aiPaused;
+		})(aiAcc);
+		pAdd("ai", tAI);
 		workAcc += dt;
 		if (workAcc >= 10) {
 			workAcc = 0;
@@ -9216,8 +9242,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const open = piles.find((p) => p.id === lootId);
 			if (!open || !hasLoot(open) || Math.hypot(open.x - player.x, open.y - player.y) > 140) lootId = -1;
 		}
-		stepCrows(dt);
-		vision();
+		{ const _t = performance.now(); stepCrows(dt); pAdd("u:stepCrows", _t); }
+		{ const _t = performance.now(); vision(); pAdd("u:vision", _t); }
 		for (const part of particles) {
 			part.life -= dt;
 			part.x += part.vx * dt;
@@ -9241,7 +9267,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			sync(true);
 		}
 		prevHeld = currentHeld();
-		clearEdges();
+		{ const _t = performance.now(); clearEdges(); pAdd("u:clearEdges", _t); }
 	}
 	function currentHeld() {
 		const s = new Set(keys);
@@ -9251,14 +9277,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function edgeKey(code) {
 		return held(code) && !prevHeld.has(code);
 	}
-	function separateEnemies() {
+	function separateEnemies(far = Infinity) {
 		if (!world) return;
-		const list = world.enemies.filter((e) => !e.dead);
+		const list = player && far < Infinity ? world.enemies.filter((e) => !e.dead && Math.abs(e.x - player.x) < far && Math.abs(e.y - player.y) < far) : world.enemies.filter((e) => !e.dead);
 		for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
 			const a = list[i];
 			const b = list[j];
 			const dx = b.x - a.x;
 			const dy = b.y - a.y;
+			if (dx > 26 || dx < -26 || dy > 26 || dy < -26) continue;
 			const d = Math.hypot(dx, dy);
 			if (d > 0 && d < 26) {
 				const push = (26 - d) / 2;
@@ -10524,7 +10551,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * and the result gets the muted overcast regrade. Chunks are drawn through the same isometric matrix as
 	 * everything else, so details are foreshortened with the view; pebbles and tufts get relief (shadow to the
 	 * lower right, blades standing up on screen). Chunks are cached (LRU) and rebaked only if their tiles change. */
-	const CH_T = 16, CH_W = CH_T * 64, CH_S = .5, CH_PX = CH_W * CH_S, CH_MAX = 16;
+	const CH_T = 16, CH_W = CH_T * 64, CH_S = .5, CH_PX = CH_W * CH_S, CH_MAX = 20;
 	const chunkCache = new Map();
 	let chunkWorld = null;
 	const v155Pats = new Map();
@@ -10810,10 +10837,42 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		gr.addColorStop(.75, "rgba(18,22,28,0)"); gr.addColorStop(1, "rgba(18,22,28,.16)");
 		ctx.fillStyle = gr; ctx.fillRect(0, 0, viewW, viewH);
 	}
+	/** v15.9.4: the static ground (painted terrain chunks, roads, the frozen stream) is drawn once into a screen-sized
+	 * layer with a margin and blitted 1:1 with an offset as the camera moves. It is redrawn only when the camera
+	 * leaves the margin, the zoom or screen size changes, the map changes, or every ~1.2 s (fog of war). */
+	let gLayer = null, gCtx = null, gKey = "", gCX = 0, gCY = 0, gT = -1e9;
+	const G_M = 160;
+	function drawGroundCached(dcx, dcy, dpr) {
+		if (!world) return;
+		const W = Math.ceil((viewW + G_M * 2) * dpr), H = Math.ceil((viewH + G_M * 2) * dpr);
+		const key = `${W}x${H}|${zoom}|${dpr}|${mapId}|${v155Fog().h}`;
+		const ox = (dcx - gCX) * zoom, oy = (dcy - gCY) * zoom;
+		if (!gLayer || gKey !== key || gW !== world || Math.abs(ox) > G_M * .8 || Math.abs(oy) > G_M * .8 || renderNow - gT > 3000 || renderNow < gT) {
+			if (!gLayer) { gLayer = document.createElement("canvas"); gCtx = gLayer.getContext("2d"); }
+			if (gLayer.width !== W) gLayer.width = W;
+			if (gLayer.height !== H) gLayer.height = H;
+			gCtx.setTransform(1, 0, 0, 1, 0, 0); gCtx.clearRect(0, 0, W, H);
+			gCtx.fillStyle = "#101410"; gCtx.fillRect(0, 0, W, H);
+			gKey = key; gCX = dcx; gCY = dcy; gT = renderNow; gW = world;
+			const main = ctx; ctx = gCtx;
+			const vw0 = viewW, vh0 = viewH;
+			try {
+				// draw as if the screen were G_M bigger on every side, centred on the same camera
+				viewW = vw0 + G_M * 2; viewH = vh0 + G_M * 2;
+				gDpr = dpr;
+				drawGround(dcx - G_M, dcy - G_M);
+			} finally { viewW = vw0; viewH = vh0; ctx = main; gDpr = 0; }
+		}
+		const ox2 = (dcx - gCX) * zoom, oy2 = (dcy - gCY) * zoom;
+		ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(gLayer, Math.round((-G_M - ox2) * dpr), Math.round((-G_M - oy2) * dpr));
+		ctx.restore();
+	}
+	let gW = null, gDpr = 0;
 	function drawGround(dcx, dcy) {
 		if (!world) return;
 		const b = viewTiles(dcx, dcy);
-		const dpr = canvas.width / Math.max(1, viewW);
+		const dpr = gDpr || canvas.width / Math.max(1, viewW);
 		const z = zoom;
 		ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
 		const tx0 = Math.max(0, b.tx0);
@@ -10996,7 +11055,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const tG = performance.now();
-		drawGround(drawCamX, drawCamY);
+		drawGroundCached(drawCamX, drawCamY, dpr);
 		pAdd("ground", tG);
 		const shotMode = typeof window !== "undefined" && !!window.__noFog; // v15.9: full-world render: no screen-space haze/grade/weather
 		if (world && !shotMode) { const dprG = canvas.width / Math.max(1, viewW); const tH = performance.now(); if (typeof window !== "undefined" && window.__haze193) drawGroundDepth(); pAdd("haze", tH); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
@@ -11053,7 +11112,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const CULL = 96;
 		const onScr = (x, y, hh, ww = hh * .6) => { const r = worldToScreen(x, y, drawCamX, drawCamY); const q = zoomPoint(r.sx, r.sy); const H = hh * zoom * 1.15, W = ww * zoom; return q.sx > -CULL - W && q.sx < viewW + CULL + W && q.sy > -CULL && q.sy - H < viewH + CULL; };
 		const fadePick = new Map(); // body -> { id, d }
-		const fadeIds = new Set();
+		// v15.9.4: the fade pick runs every 4th frame (~15 Hz); in between the last pick is reused (the fade itself still eases every frame)
+		const fadeTick = (fadeFrame++ & 3) === 0;
+		const fadeIds = fadeTick ? new Set() : fadeKeep;
 		for (const prop of world.props) {
 			const t = prop.tx + prop.ty;
 			const i = prop.ty * 156 + prop.tx;
@@ -11068,7 +11129,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const tF = performance.now();
 				const tree = prop.kind.startsWith("tree-");
 				const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
-				if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
+				if (fadeTick && player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
 					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
 					const scale = tree ? .84 + n % 5 * .07 : 1;
 					const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
@@ -11168,7 +11229,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						ctx.translate(pt.sx, pt.sy);
 						if (prop.flip14) ctx.scale(-1, 1);
 						ctx.imageSmoothingEnabled = true;
-						ctx.drawImage(img, -W / 2, -H * (1 - up), W, H);
+						scaledDraw(img, 0, 0, img.width, img.height, -W / 2, -H * (1 - up), W, H);
 						ctx.restore();
 						ctx.globalAlpha = a0;
 						void dh; void sc;
@@ -11192,7 +11253,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 			});
 		}
-		for (const v of fadePick.values()) fadeIds.add(v.id);
+		if (fadeTick) { for (const v of fadePick.values()) fadeIds.add(v.id); fadeKeep = fadeIds; }
 		for (const npc of world.npcs) {
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
@@ -11477,7 +11538,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		// v14.1 playtest: the thing E / tap-to-use will pick up glows, so the camp's spruce wood is obvious
 		if (world && player && !buildOpen && phase === "play") {
-			const node = nearestResource(v14.st === 1 ? 640 : 96);
+			if (renderNow - nrT > 100 || renderNow < nrT) { nrT = renderNow; nrNode = nearestResource(v14.st === 1 ? 640 : 96); }
+			const node = nrNode && world.props.includes(nrNode) ? nrNode : null; // v15.9.4: looked up at 10 Hz
 			const npcD = (() => { const n = nearestNpc(72); return n ? Math.hypot(n.x - player.x, n.y - player.y) : 999; })();
 			if (node && (npcD > 72 || v14.st === 1)) {
 				const c = propCenter(node), raw = worldToScreen(c.x, c.y, drawCamX, drawCamY), m = zoomPoint(raw.sx, raw.sy);
@@ -11643,6 +11705,31 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	const xfStats = { n: 0 };
 	let occl141 = false, noShadow141 = false;
+	/** v15.9.4: sprites, buildings and props are pre-scaled once to the size they land on screen (device pixels) and
+	 * kept in an LRU cache, so each frame is a 1:1 copy instead of a high-quality downscale of the full-size art. */
+	const spriteCache = new Map();
+	let spriteBytes = 0, spriteIds = 0;
+	const SPRITE_BUDGET = 72e6;
+	function scaledDraw(src, sx, sy, sw, sh, dx, dy, dw, dh) {
+		const t = ctx.getTransform();
+		const kx = Math.hypot(t.a, t.b), ky = Math.hypot(t.c, t.d);
+		const pw = Math.round(Math.abs(dw) * kx), ph = Math.round(Math.abs(dh) * ky);
+		if (pw < 4 || ph < 4 || pw >= sw * .97 || pw * ph > 1400 * 1400 || !ctx.imageSmoothingEnabled) { ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh); return; }
+		const id = src.__sc || (src.__sc = ++spriteIds);
+		const key = `${id}|${sx}|${sy}|${sw}|${sh}|${pw}|${ph}`;
+		let c = spriteCache.get(key);
+		if (c) { spriteCache.delete(key); spriteCache.set(key, c); }
+		else {
+			c = document.createElement("canvas"); c.width = pw; c.height = ph;
+			const g = c.getContext("2d");
+			if (!g) { ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh); return; }
+			g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+			g.drawImage(src, sx, sy, sw, sh, 0, 0, pw, ph);
+			spriteCache.set(key, c); spriteBytes += pw * ph * 4;
+			while (spriteBytes > SPRITE_BUDGET && spriteCache.size > 1) { const [k0, v0] = spriteCache.entries().next().value; spriteCache.delete(k0); spriteBytes -= v0.width * v0.height * 4; }
+		}
+		ctx.drawImage(c, dx, dy, dw, dh);
+	}
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		// v14.1: characters use the 6 hex facings; a leftover N/S facing draws its neighbouring diagonal
 		if (sheet && (dir === 0 || dir === 4) && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = dir === 0 ? 1 : 3;
@@ -11728,9 +11815,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (tilt) ctx.rotate(tilt);
 			if (flip) ctx.scale(-1, 1);
 			if (flatten !== 1) ctx.scale(1, flatten);
-			ctx.drawImage(src, sx, sy, sw, sh, -dw / 2, spriteY, dw, dh);
+			scaledDraw(src, sx, sy, sw, sh, -dw / 2, spriteY, dw, dh);
 			ctx.restore();
-		} else ctx.drawImage(src, sx, sy, sw, sh, p.sx - dw / 2, p.sy + spriteY, dw, dh);
+		} else scaledDraw(src, sx, sy, sw, sh, p.sx - dw / 2, p.sy + spriteY, dw, dh);
 		if (!sheet && !strips && !tilt && !flip && PROP_OVERLAYS[name]) paintOverlays(name, p.sx - dw / 2, p.sy + spriteY, dw / img.width);
 		ctx.imageSmoothingEnabled = smooth;
 	}
@@ -11903,6 +11990,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		g.beginPath(); g.arc(pt.tx * sx, pt.ty * sy, 5, 0, Math.PI * 2); g.fill();
 		g.strokeStyle = "#101410"; g.lineWidth = 2; g.stroke();
 	}
+	let nrT = -1e9, nrNode = null;
+	let fadeFrame = 0, fadeKeep = new Set();
 	let miniT = -1e9, miniBase = null, miniBaseT = -1e9, miniBaseW = null;
 	function drawMini() {
 		// v15.9.3: the minimap repaints a few times a second, not every frame
@@ -12010,20 +12099,39 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || !player) return;
 		player.px = player.x; player.py = player.y;
 		if (party) { party.px = party.x; party.py = party.y; }
-		for (const e of world.enemies) { e.px = e.x; e.py = e.y; }
+		if (turnBased) for (const e of world.enemies) { e.px = e.x; e.py = e.y; } // v15.9.4: otherwise snapped on the AI tick
 		for (const n of world.npcs) { n.px = n.x; n.py = n.y; }
 		// v14.1: the tractor's charge and the parked bike interpolate too
 		for (const p of world.props) if (p.kind === "tractor" || p.kind === "bike") { p.pc = p.charge || 0; p.ppx = p.x; p.ppy = p.y; }
 	}
+	// v15.9.4: FPS counter (pause menu, off by default) and a 30 / 60 fps cap (default 60)
+	let showFps = (() => { try { return localStorage.getItem("maine-rpg-fps") === "on"; } catch { return false; } })();
+	let fpsCap = (() => { try { return localStorage.getItem("maine-rpg-cap") === "30" ? 30 : 60; } catch { return 60; } })();
+	const fpsTimes = [];
+	let fpsNow = 0;
+	function paintFps() {
+		if (!showFps) return;
+		const dpr = canvas.width / Math.max(1, viewW);
+		ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+		const label = `${fpsNow} fps`;
+		ctx.font = "700 13px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+		const w = ctx.measureText(label).width + 12;
+		ctx.fillStyle = "rgba(10,8,6,.72)"; ctx.fillRect(10, 50, w, 20);
+		ctx.fillStyle = fpsNow >= 50 ? "#9be07a" : fpsNow >= 28 ? "#f0d070" : "#f07a5a"; ctx.fillText(label, 16, 60);
+		ctx.restore();
+	}
 	function frame(now) {
 		if (!running) return;
+		if (fpsCap === 30 && now - last < 1000 / 30 - 4) { requestAnimationFrame(frame); return; }
+		fpsTimes.push(now); while (fpsTimes.length && now - fpsTimes[0] > 1000) fpsTimes.shift();
+		fpsNow = fpsTimes.length;
 		const dt = Math.min(.1, (now - last) / 1e3);
 		last = now;
 		acc += dt;
 		let guard = 0;
 		const tStep = performance.now();
 		while (acc >= STEP && guard < 5) {
-			snapPrev();
+			{ const _t = performance.now(); snapPrev(); pAdd("u:snapPrev", _t); }
 			step(STEP);
 			acc -= STEP;
 			guard++;
@@ -12037,11 +12145,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (world && player && phase === "play" && !inside) {
 			const put = (b) => { if (b && b.px != null && Math.abs(b.x - b.px) < 40 && Math.abs(b.y - b.py) < 40) { lerpBodies[nl++] = b; b.sx0 = b.x; b.sy0 = b.y; b.x = b.px + (b.x - b.px) * alpha; b.y = b.py + (b.y - b.py) * alpha; } };
 			put(player); put(party);
-			for (const e of world.enemies) if (!e.dead) put(e);
+			// v15.9.4: foes move on the 20 Hz AI tick, so they blend across it
+			const alphaE = turnBased ? alpha : Math.min(1, (aiAcc + acc) / AI_DT);
+			for (const e of world.enemies) if (!e.dead && e.px != null && Math.abs(e.x - e.px) < 40 && Math.abs(e.y - e.py) < 40) { lerpBodies[nl++] = e; e.sx0 = e.x; e.sy0 = e.y; e.x = e.px + (e.x - e.px) * alphaE; e.y = e.py + (e.y - e.py) * alphaE; }
 			for (const n of world.npcs) put(n);
 			for (const p of world.props) if (p.kind === "tractor" && p.pc != null && (p.charge || 0) > 0 && p.charge >= p.pc) { p.c0 = p.charge; p.charge = p.pc + (p.charge - p.pc) * alpha; tractorLerp.push(p); }
 		}
 		render();
+		paintFps();
 		for (let i = 0; i < nl; i++) { const b = lerpBodies[i]; b.x = b.sx0; b.y = b.sy0; }
 		for (const p of tractorLerp) p.charge = p.c0;
 		tractorLerp.length = 0;
@@ -13225,6 +13336,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		craft,
 		setAim,
 		setTurnBased,
+		setShowFps(on) { showFps = !!on; try { localStorage.setItem("maine-rpg-fps", showFps ? "on" : "off"); } catch {} sync(true); },
+		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; try { localStorage.setItem("maine-rpg-cap", String(fpsCap)); } catch {} sync(true); },
 		setPerfMode(on) { perfMode = !!on; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
 		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
@@ -13660,6 +13773,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		treeCount: () => world ? { trees: world.props.filter(isTree193).length, thinned: world.thin193 || 0 } : null,
 		weatherEvent: (on) => { precipForce = on === undefined ? null : !!on; return precipOn193(); },
 		aiPaused: () => aiPausedN,
+		fpsNow: () => fpsNow,
 		perfMode: (on) => { if (on !== undefined) { perfMode = !!on; sync(true); } return perfMode; },
 		perfReset: () => { perf.on = true; perf.frames = 0; perf.acc = {}; return true; },
 		perfStats: () => { const o = { frames: perf.frames }; for (const k in perf.acc) o[k] = +(perf.acc[k] / Math.max(1, perf.frames)).toFixed(3); return o; },

@@ -1474,6 +1474,12 @@ export function RPG() {
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!(hud as any).tb15?.enabled)}>
             {(hud as any).tb15?.enabled ? "Turn-based combat: on" : "Turn-based combat: off"}
           </button>
+          <button type="button" data-testid="fps-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setShowFps(!hud.showFps)}>
+            FPS counter: {hud.showFps ? "On" : "Off"}
+          </button>
+          <button type="button" data-testid="fps-cap" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setFpsCap((hud.fpsCap ?? 60) === 60 ? 30 : 60)}>
+            Frame rate cap: {hud.fpsCap ?? 60} fps
+          </button>
           <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
             Performance mode: {hud.perfMode ? "On" : "Off"}
           </button>
