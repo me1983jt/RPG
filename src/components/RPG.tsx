@@ -1474,6 +1474,9 @@ export function RPG() {
           <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!(hud as any).tb15?.enabled)}>
             {(hud as any).tb15?.enabled ? "Turn-based combat: on" : "Turn-based combat: off"}
           </button>
+          <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
+            Performance mode: {hud.perfMode ? "On" : "Off"}
+          </button>
           <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
             Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
           </button>

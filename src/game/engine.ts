@@ -74,7 +74,7 @@ import {
 } from "@/game/types";
 import {
   cellBlocked,
-  createWorld,
+  createWorld as createWorld0,
   footprintFree,
   pathTo,
   pickSides,
@@ -136,6 +136,7 @@ export interface GameApi {
   setAim: (part: AimPart) => void;
   setTurnBased: (on: boolean) => void;
   setGraphics: (high: boolean) => void;
+  setPerfMode: (on: boolean) => void;
   endTurn: () => void;
   takeLoot: (key: string) => void;
   /** Android back button: close the open panel, else open/close the pause menu. False on the main menu. */
@@ -432,7 +433,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let turnBased = false;
 	// v13.4 graphics: High adds smooth sprite scaling, soft shadows, daylight tint, vignette and blended weather
 	let gfxHigh = (() => { try { return localStorage.getItem("maine-rpg-gfx") !== "low"; } catch { return true; } })();
+	// v15.9.3 Performance mode: on by default on phones (touch + small screen / Android / iPhone). Lower internal
+	// resolution, Low-graphics effects, fewer weather particles, nearer AI pause.
+	const phone193 = typeof navigator !== "undefined" && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820));
+	let perfMode = (() => { try { const v = localStorage.getItem("maine-rpg-perf"); return v ? v === "on" : phone193; } catch { return phone193; } })();
+	/** High-graphics effects actually in use (Performance mode forces the Low look). */
+	const hiFx = () => gfxHigh && !perfMode;
+	let shadow193 = false; // v15.9.3: contact shadows only while the hero, the companion, Goose or an enemy draws
+	let aiPausedN = 0;
+	let precipForce = null; // test hook: force a rain / snow event on or off
 	const frameMs = { avg: 16, n: 0, worst: 0, list: [] };
+	// v15.9.3: per-section frame profiler (test hooks perfReset / perfStats)
+	const perf = { on: false, frames: 0, acc: {} };
+	const pAdd = (k, t0) => { if (perf.on) perf.acc[k] = (perf.acc[k] || 0) + performance.now() - t0; };
 	const weatherMix = {};
 	let weatherT = 0;
 	let ap = 8;
@@ -728,6 +741,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			aim,
 			turnBased,
 			gfxHigh,
+			perfMode,
 			ap,
 			maxAp: apMax,
 			statsOpen,
@@ -2499,8 +2513,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const frame = dogBody.moving ? Math.floor(dogBody.anim) % 4 : 0;
 				// art hook: public/game/v2/biscuit-walk.png (and biscuit-idle.png) when present, else the coyote sheet
 				const own = dogBody.moving ? "v2/biscuit-walk" : images.get("v2/biscuit-idle") ? "v2/biscuit-idle" : "v2/biscuit-walk";
+				shadow193 = true;
 				if (images.get(own)) blit(own, dogBody.x, dogBody.y, 27, true, frame, dogBody.dir, dcx, dcy);
 				else blit("coyote", dogBody.x, dogBody.y, realH("coyote", 27), true, frame, dogBody.dir, dcx, dcy);
+				shadow193 = false;
 				if (q10.dog >= 4 && v3.dog.hp < 30) { const r = worldToScreen(dogBody.x, dogBody.y, dcx, dcy); const p = zoomPoint(r.sx, r.sy); ctx.fillStyle = "#1a1410"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32, 4); ctx.fillStyle = "#c8503c"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32 * v3.dog.hp / 30, 4); }
 			} });
 		}
@@ -4992,13 +5008,76 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * spawning disarms them all; each re-arms once you're 170 px from it. */
 	const townArm = {};
 	function townDisarm() { for (const t of ISO_TOWNS) townArm[t.id] = false; }
+	/** v15.9.3: every generated map is thinned by ~45% (open ground, roads and the farm most; forest interiors and the
+	 * North Woods least). Deterministic per tile, ids untouched, so saves (removed / placed ids) still line up. */
+	function createWorld(seed, map, exits) {
+		const w = createWorld0(seed, map, exits);
+		thinTrees193(w, map);
+		return w;
+	}
+	const isTree193 = (p) => p.kind.startsWith("tree-");
+	function thinTrees193(w, map) {
+		const H = w.tiles.length / MAP_W;
+		const grid = new Uint8Array(w.tiles.length);
+		for (const p of w.props) if (isTree193(p)) grid[p.ty * MAP_W + p.tx] = 1;
+		const nearRoad = new Uint8Array(w.tiles.length);
+		for (let y = 0; y < H; y++) for (let x = 0; x < MAP_W; x++) if (w.tiles[y * MAP_W + x] === 2) {
+			for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H) nearRoad[yy * MAP_W + xx] = 1; }
+		}
+		const before = w.props.length;
+		// town entrance spots are still picked as if the cut trees stood (so arrivals land where they always did)
+		const ghost = new Uint8Array(w.tiles.length);
+		w.thinGhost193 = ghost;
+		w.props = w.props.filter((p) => {
+			if (!isTree193(p)) return true;
+			let nb = 0;
+			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H && grid[yy * MAP_W + xx]) nb++; }
+			let cut;
+			if (map === 0 && inFarm(p.tx, p.ty)) cut = .8;
+			else if (nearRoad[p.ty * MAP_W + p.tx]) cut = .72;
+			else if (nb <= 3) cut = .55;
+			else if (nb <= 7) cut = .35;
+			else cut = .18;
+			if (map === 1) cut *= .6; // the North Woods stay woods
+			const h = ((Math.imul(p.tx, 73856093) ^ Math.imul(p.ty, 19349663) ^ 0x5bd1e995) >>> 0) % 1000 / 1000;
+			if (h >= cut) return true;
+			ghost[p.ty * MAP_W + p.tx] = 1;
+			vacate(w, p);
+			return false;
+		});
+		w.thin193 = before - w.props.length;
+	}
+	/** v15.9.3: no trees or tall bushes around a town's entrance, its icon, the camera side of it, or the road leading in. */
+	function clearTown193(spot) {
+		if (!world || !spot) return;
+		const ex = Math.floor(spot.x / TILE), ey = Math.floor(spot.y / TILE), rx = Math.floor(spot.roadX / TILE), ry = Math.floor(spot.roadY / TILE);
+		const H = world.tiles.length / MAP_W;
+		const roadNear = new Set();
+		for (let y = ey - 14; y <= ey + 14; y++) for (let x = ex - 14; x <= ex + 14; x++) if (x >= 0 && y >= 0 && x < MAP_W && y < H && world.tiles[y * MAP_W + x] === 2) roadNear.add(y * MAP_W + x);
+		const hit = (p) => {
+			for (const [cx, cy] of [[ex, ey], [rx, ry]]) {
+				const dx = p.tx - cx, dy = p.ty - cy;
+				if (dx * dx + dy * dy <= 81) return true;
+				if (dx + dy > 0 && dx + dy <= 16 && Math.abs(dx - dy) <= 9) return true; // camera side: tall art would cover the icon
+			}
+			for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (roadNear.has((p.ty + dy) * MAP_W + p.tx + dx)) return true;
+			return false;
+		};
+		world.props = world.props.filter((p) => {
+			if (!isTree193(p) && p.kind !== "maple") return true;
+			if (!hit(p)) return true;
+			vacate(world, p);
+			return false;
+		});
+	}
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
 		world.townSpots = world.townSpots ?? {};
 		if (world.townSpots[t.id] !== undefined) return world.townSpots[t.id];
 		const fc = t.at ? { tx: t.at[0] + WORLD_OX, ty: t.at[1] + WORLD_OY } : t.map === 0 ? tileOf(farmCenter().x, farmCenter().y) : { tx: MAP_W >> 1, ty: MAP_H >> 1 };
 		let spot = null;
-		const free = (x, y) => x > 6 && y > 6 && x < MAP_W - 6 && !inFarm(x, y) && world.tiles[y * MAP_W + x] !== 2 && !pointBlocked(world, x * TILE + 32, y * TILE + 32, 40);
+		const ghost = world.thinGhost193;
+		const free = (x, y) => x > 6 && y > 6 && x < MAP_W - 6 && !inFarm(x, y) && world.tiles[y * MAP_W + x] !== 2 && !(ghost && ghost[y * MAP_W + x]) && !pointBlocked(world, x * TILE + 32, y * TILE + 32, 40);
 		const r0 = t.id === "harmony" ? 14 : t.at ? 3 : 0, r1 = t.id === "harmony" ? 30 : 26;
 		for (const road of [true, false]) for (let r = r0; r <= r1 && !spot; r++) for (let a = 0; a < 360 && !spot; a += 8) {
 			const x = Math.round(fc.tx + Math.cos(a * Math.PI / 180) * r), y = Math.round(fc.ty + Math.sin(a * Math.PI / 180) * r);
@@ -5007,6 +5086,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			for (const [dx, dy] of [[2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [-2, -2]]) if (free(x + dx, y + dy) && free(x + dx + 1, y + dy) && free(x + dx, y + dy + 1)) { spot = { x: (x + dx) * TILE + 32, y: (y + dy) * TILE + 32, roadX: x * TILE + 32, roadY: y * TILE + 32 }; break; }
 		}
 		world.townSpots[t.id] = spot;
+		clearTown193(spot);
 		return spot;
 	}
 	/** v15 no-attack zones: ~10 tiles around each town marker (not the raider-camp / Grok / depot scenes) and the farmhouse. Raids and the siege ignore them. */
@@ -5901,16 +5981,23 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(vignetteCv, 0, 0, viewW, viewH); ctx.restore();
 	}
 	/** Weather overlay drawn in screen space: snow, nor'easter, fog, rain, black-ice sheen. */
+	function precipOn193() {
+		if (precipForce !== null) return precipForce;
+		const h = (((clock % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC) / DAY_LENGTH_SEC * 24;
+		return (h + curDay() * 5) % 8 < 3;
+	}
 	function paintWeather13() {
 		if (!ctx) return;
 		const now = performance.now() / 1000;
 		const dtw = Math.min(.25, Math.max(0, now - (weatherT || now))); weatherT = now;
 		const cur = w13.weather.id;
 		// v13.4: weather fades in and out over a few seconds instead of snapping (Low: snaps)
+		// v15.9.3: rain, snow and nor'easter fall as timed showers (about 3 game hours in 8), not all day
+		const precip = precipOn193();
 		for (const k of ["fog", "blackice", "noreaster", "snow", "rain"]) {
-			const want = k === cur ? 1 : 0;
+			const want = k === cur && (k === "fog" || k === "blackice" || precip) ? 1 : 0;
 			const m = weatherMix[k] ?? want;
-			weatherMix[k] = gfxHigh ? m + (want - m) * Math.min(1, dtw / 2.5) : want;
+			weatherMix[k] = hiFx() ? m + (want - m) * Math.min(1, dtw / 2.5) : want;
 		}
 		if (cur === "clear" && !Object.values(weatherMix).some((v) => v > .01)) return;
 		const t = now;
@@ -5925,11 +6012,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if ((weatherMix.blackice || 0) > .01) { ctx.fillStyle = `rgba(120,160,210,${.10 * weatherMix.blackice})`; ctx.fillRect(0, 0, viewW, viewH); }
 		if ((weatherMix.noreaster || 0) > .01) { ctx.fillStyle = `rgba(200,206,214,${.32 * weatherMix.noreaster})`; ctx.fillRect(0, 0, viewW, viewH); }
-		if (gfxHigh && (weatherMix.snow || 0) > .01) { ctx.fillStyle = `rgba(214,222,236,${.08 * weatherMix.snow})`; ctx.fillRect(0, 0, viewW, viewH); }
+		if (hiFx() && (weatherMix.snow || 0) > .01) { ctx.fillStyle = `rgba(214,222,236,${.08 * weatherMix.snow})`; ctx.fillRect(0, 0, viewW, viewH); }
 		for (const id of ["noreaster", "snow", "rain"]) {
 			const mix = weatherMix[id] || 0;
 			if (mix < .02) continue;
-			const n = Math.round((id === "noreaster" ? 260 : id === "snow" ? 120 : 140) * mix * (gfxHigh ? 1 : .6));
+			const n = Math.round((id === "noreaster" ? 130 : id === "snow" ? 60 : 70) * mix * (hiFx() ? 1 : .6));
 			const wind = id === "noreaster" ? 520 : id === "rain" ? 60 : 40;
 			const fall = id === "rain" ? 700 : id === "noreaster" ? 260 : 90;
 			ctx.strokeStyle = id === "rain" ? "rgba(170,190,215,0.55)" : "rgba(250,250,252,0.85)";
@@ -8890,7 +8977,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10Step(dt);
 		q11Step(dt);
 		snowAcc += dt;
-		if (snowAcc > .14 && particles.length < 48) {
+		if (snowAcc > .28 && particles.length < 24) {
 			snowAcc = 0;
 			const here = tileOf(player.x, player.y);
 			if (inFarm(here.tx, here.ty)) particles.push({
@@ -8904,6 +8991,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				size: 2
 			});
 		}
+		const tAI = performance.now();
+		const aiFar = Math.max(viewW, viewH) / Math.max(.3, zoom) * (perfMode ? 1.25 : 1.5);
+		let aiPaused = 0;
 		if (!turnBased) for (const enemy of world.enemies) {
 			if (enemy.lineup141) continue;
 			if (enemy.death > 0) enemy.death = Math.max(0, enemy.death - dt);
@@ -8916,6 +9006,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			enemy.pathT -= dt;
 			safeKeep(enemy);
 			const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+			// v15.9.3: animals and foes ~1.5 screens away (not chasing, not raiding) pause their AI and animation
+			if (dist > aiFar && !enemy.aggro && !enemy.raid && !enemy.quest) { aiPaused++; continue; }
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
 			if (enemy.hollow) { stepHollow(enemy, dt, dist); continue; }
 			if (enemy.temper === "timid") {
@@ -9105,6 +9197,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			enemy.frame = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52) ? 2 : enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 		}
 		separateEnemies();
+		pAdd("ai", tAI); aiPausedN = aiPaused;
 		workAcc += dt;
 		if (workAcc >= 10) {
 			workAcc = 0;
@@ -9276,13 +9369,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
-		const dpr = Math.min(2, window.devicePixelRatio || 1);
+		// v15.9.3: Performance mode draws at 0.75x the device pixel ratio (capped at 1.5) and the browser scales it up
+		const dpr = perfMode ? Math.max(.75, Math.min(1.5, (window.devicePixelRatio || 1) * .75)) : Math.min(2, window.devicePixelRatio || 1);
 		viewW = Math.max(1, rect.width);
 		viewH = Math.max(1, rect.height);
-		canvas.width = Math.max(1, Math.floor(viewW * dpr));
-		canvas.height = Math.max(1, Math.floor(viewH * dpr));
-		mini.width = 132;
-		mini.height = 132;
+		// v15.9.3: only touch the backing store when the size really changes (assigning width every frame
+		// reallocates and clears the canvas)
+		const cw = Math.max(1, Math.floor(viewW * dpr)), ch = Math.max(1, Math.floor(viewH * dpr));
+		if (canvas.width !== cw) canvas.width = cw;
+		if (canvas.height !== ch) canvas.height = ch;
+		if (mini.width !== 132) mini.width = 132;
+		if (mini.height !== 132) mini.height = 132;
 	}
 	/** v12: gw14 people sheets by role (Cal's art is the "jack" set). */
 	const V2_WHO = { holt: "holt", cal: "jack", mira: "mira", nora: "nora", sarah: "sarah", cyndal: "cyndal", loki: "loki", marcel: "marcel", justin: "justin" };
@@ -10759,7 +10856,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Darkness layer with holes cut around light sources, then a warm additive glow on top. */
 	function paintNight(dark, camXd, camYd) {
 		if (!world || !player || !ctx) return;
-		const scale = .5;
+		const scale = .25;
 		const w = Math.max(1, Math.ceil(viewW * scale)), h = Math.max(1, Math.ceil(viewH * scale));
 		if (!nightCv) nightCv = document.createElement("canvas");
 		if (nightCv.width !== w || nightCv.height !== h) { nightCv.width = w; nightCv.height = h; }
@@ -10798,51 +10895,32 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const q = at(e.x, e.y - 40);
 			lights.push({ x: q.sx, y: q.sy, r: (e.variant === "atv" ? 150 : 160) * zoom * flick(e.id), a: .9, warm: .55 });
 		}
+		// v15.9.3: one flat darkening layer (quarter resolution, smoothed up) with a cheap soft circle cut out per light;
+		// no additive lantern / campfire glow pass
+		if (lights.length > 8) { const cx = viewW / 2, cy = viewH / 2; lights.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)); lights.length = 8; }
 		lg.setTransform(1, 0, 0, 1, 0, 0);
 		lg.globalCompositeOperation = "source-over";
 		lg.clearRect(0, 0, w, h);
-		if (gfxHigh) {
-			// v13.4: the dark layer drifts from a dusky violet to deep night blue
-			const u = Math.min(1, dark / .7);
-			lg.fillStyle = `rgba(${Math.round(30 - 26 * u)}, ${Math.round(18 - 10 * u)}, ${Math.round(40 - 18 * u)}, ${dark})`;
-		} else lg.fillStyle = `rgba(4, 8, 22, ${dark})`;
+		lg.fillStyle = `rgba(6, 9, 24, ${dark})`;
 		lg.fillRect(0, 0, w, h);
 		lg.globalCompositeOperation = "destination-out";
 		for (const L of lights) {
-			const x = L.x * scale, y = L.y * scale, r = Math.max(4, L.r * scale);
-			const g = lg.createRadialGradient(x, y, 0, x, y, r);
-			if (gfxHigh) {
-				// smooth falloff (roughly inverse-square), no hard ring
-				for (const [st, k] of [[0, 1], [.2, .92], [.4, .72], [.6, .45], [.8, .18], [1, 0]]) g.addColorStop(st, `rgba(0,0,0,${L.a * k})`);
-			} else {
-				g.addColorStop(0, `rgba(0,0,0,${L.a})`);
-				g.addColorStop(.55, `rgba(0,0,0,${L.a * .6})`);
-				g.addColorStop(1, "rgba(0,0,0,0)");
-			}
+			const x = L.x * scale, y = L.y * scale, r = Math.max(3, L.r * scale);
+			const g = lg.createRadialGradient(x, y, r * .25, x, y, r);
+			g.addColorStop(0, `rgba(0,0,0,${L.a})`);
+			g.addColorStop(1, "rgba(0,0,0,0)");
 			lg.fillStyle = g;
 			lg.fillRect(x - r, y - r, r * 2, r * 2);
 		}
 		ctx.save();
 		ctx.imageSmoothingEnabled = true;
 		ctx.drawImage(nightCv, 0, 0, viewW, viewH);
-		ctx.globalCompositeOperation = "lighter";
-		for (const L of lights) {
-			const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, L.r * .8);
-			if (gfxHigh) {
-				const a = L.warm * dark * .95;
-				g.addColorStop(0, `rgba(255, 196, 120, ${a})`); g.addColorStop(.15, `rgba(255, 168, 80, ${a * .8})`);
-				g.addColorStop(.45, `rgba(240, 120, 50, ${a * .35})`); g.addColorStop(1, "rgba(200,80,30,0)");
-			} else {
-				g.addColorStop(0, `rgba(255, 160, 70, ${L.warm * dark * .95})`);
-				g.addColorStop(1, "rgba(0,0,0,0)");
-			}
-			ctx.fillStyle = g;
-			ctx.fillRect(L.x - L.r, L.y - L.r, L.r * 2, L.r * 2);
-		}
 		ctx.restore();
 	}
 	function render() {
-		resize();
+		const tR = performance.now(); resize(); pAdd("resize", tR);
+		// v15.9.3: the canvas is no longer re-sized every frame, so reset its state here instead (no reallocation)
+		if (typeof ctx.reset === "function") ctx.reset(); else { ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.filter = "none"; }
 		const dpr = canvas.width / viewW;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.imageSmoothingEnabled = true;
@@ -10911,18 +10989,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else shake = 0;
 		const sxOff = (Math.random() - .5) * shake;
 		const syOff = (Math.random() - .5) * shake;
-		const pxs = (window.devicePixelRatio || 1) * zoom;
+		const pxs = (canvas.width / Math.max(1, viewW)) * zoom;
 		const drawCamX = Math.round((camX + sxOff) * pxs) / pxs;
 		const drawCamY = Math.round((camY + syOff) * pxs) / pxs;
 		const bounds = viewTiles(drawCamX, drawCamY);
 		const z = zoom;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		const tG = performance.now();
 		drawGround(drawCamX, drawCamY);
+		pAdd("ground", tG);
 		const shotMode = typeof window !== "undefined" && !!window.__noFog; // v15.9: full-world render: no screen-space haze/grade/weather
-		if (world && !shotMode) { const dprG = canvas.width / Math.max(1, viewW); drawGroundDepth(); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
+		if (world && !shotMode) { const dprG = canvas.width / Math.max(1, viewW); const tH = performance.now(); if (typeof window !== "undefined" && window.__haze193) drawGroundDepth(); pAdd("haze", tH); ctx.setTransform(dprG, 0, 0, dprG, 0, 0); }
+		const tG2 = performance.now();
 		q10DrawGround(drawCamX, drawCamY, dpr);
 		// v15.8: combat hexes, move highlights and the turn ring sit on the ground, under every sprite
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0); townGround(drawCamX, drawCamY); paintHex15(drawCamX, drawCamY);
+		pAdd("groundExtra", tG2);
 		if (world.gates.length && !mode11) {
 			// v14 exit grid: a tinted band at each edge road; walking in opens the world map
 			ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - drawCamX * z), dpr * (viewH / 2 * (1 - z) - drawCamY * z));
@@ -10962,8 +11044,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				ctx.drawImage(img, -W / 2, -H * (1 - anchorOf(k)), W, H); ctx.restore();
 			}
 		}
+		const tSort = performance.now();
 		const draws = [];
-		const fadeBodies = player ? [player, ...(world?.npcs ?? []), ...(world?.enemies ?? []).filter((e) => !e.dead), ...(dogBody ? [dogBody] : [])] : [];
+		// v15.9.3: only the hero and the companion make things fade, and only the one object right in front of each
+		const fadeBodies = player ? [player, ...(party && !inside ? [party] : [])] : [];
+		// v15.9.3 off-screen culling: anything whose art can't reach the screen (plus a margin) is skipped:
+		// no draw, no fade check, no depth sort
+		const CULL = 96;
+		const onScr = (x, y, hh, ww = hh * .6) => { const r = worldToScreen(x, y, drawCamX, drawCamY); const q = zoomPoint(r.sx, r.sy); const H = hh * zoom * 1.15, W = ww * zoom; return q.sx > -CULL - W && q.sx < viewW + CULL + W && q.sy > -CULL && q.sy - H < viewH + CULL; };
+		const fadePick = new Map(); // body -> { id, d }
+		const fadeIds = new Set();
 		for (const prop of world.props) {
 			const t = prop.tx + prop.ty;
 			const i = prop.ty * 156 + prop.tx;
@@ -10973,6 +11063,34 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const c = propCenter(prop);
 			const h = prop.loose ? spec.drawH * .62 : spec.drawH;
 			if (prop.kind === "bike" && prop.id === mountId) continue;
+			if (!onScr(c.x, c.y, Math.max(h, 120), Math.max(h, 160))) continue;
+			{
+				const tF = performance.now();
+				const tree = prop.kind.startsWith("tree-");
+				const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
+				if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
+					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
+					const scale = tree ? .84 + n % 5 * .07 : 1;
+					const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
+					const ps = zoomPoint(pr.sx, pr.sy);
+					const ph = (vArt ? vArt.h : h * scale) * zoom;
+					const pimg = images.get(vArt ? vArt.name : spec.image);
+					const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
+					const pw = ph * aspect * (tree ? .85 : .92);
+					for (const b of fadeBodies) {
+						const d = c.x + c.y - (b.x + b.y);
+						if (d <= 0) continue;
+						if (b === player && standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y)) continue;
+						const hr = worldToScreen(b.x, b.y, drawCamX, drawCamY);
+						const hs = zoomPoint(hr.sx, hr.sy);
+						if (Math.abs(hs.sx - ps.sx) < pw / 2 + 18 * zoom && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph) {
+							const cur = fadePick.get(b);
+							if (!cur || d < cur.d) fadePick.set(b, { id: prop.id, d });
+						}
+					}
+				}
+				pAdd("fade", tF);
+			}
 			draws.push({
 				z: c.x + c.y + t * 0,
 				draw: () => {
@@ -11000,25 +11118,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						}
 					}
 					// see-through: a tall prop drawn in front of the hero fades so the hero never vanishes behind it
-					let seeThrough = false;
-					// vehicles: use the real art box (native size), not the old prop box
-					const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
-					// v15.8: any character (hero, folk, foes, Goose) behind a tall prop makes it fade to ~35%
-					if (player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
-						const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
-						const ps = zoomPoint(pr.sx, pr.sy);
-						const ph = (vArt ? vArt.h : h * scale) * zoom;
-						const pimg = images.get(vArt ? vArt.name : spec.image);
-						const aspect = pimg && pimg.height ? pimg.width / pimg.height : 1;
-						const pw = ph * aspect * (tree ? .85 : .92);
-						for (const b of fadeBodies) {
-							if (c.x + c.y <= b.x + b.y) continue;
-							if (b === player && standingDoor(prop.kind) && inFrontOfHouse(prop, player.x, player.y)) continue;
-							const hr = worldToScreen(b.x, b.y, drawCamX, drawCamY);
-							const hs = zoomPoint(hr.sx, hr.sy);
-							if (Math.abs(hs.sx - ps.sx) < pw / 2 + 18 * zoom && hs.sy < ps.sy + 6 * zoom && hs.sy - HERO_H * zoom * .5 > ps.sy - ph) { seeThrough = true; break; }
-						}
-					}
+					// v15.9.3: picked before the sort: the single nearest tall object in front of the hero / companion
+					let seeThrough = fadeIds.has(prop.id);
 					// ease the fade in and out instead of popping
 					const fadeTo = seeThrough ? 1 : 0;
 					prop.fade = (prop.fade || 0) + (fadeTo - (prop.fade || 0)) * Math.min(1, STEP * 10);
@@ -11073,7 +11174,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						void dh; void sc;
 						if (prop.kind === "firering" && prop.lit14 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 6, 30, false, 0, 0, drawCamX, drawCamY);
 						if ((prop.f14 || prop.p14) && buildOpen && (prop.hp ?? 0) < maxHp14(prop)) paintHp14(pt, H, (prop.hp ?? 0) / maxHp14(prop));
-					} else blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0);
+					} else { const tT = performance.now(); blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0); if (tree) pAdd("trees", tT); }
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3") && images.get("fx-fire")) blit("fx-fire", c.x, c.y - h * .35, h * .8, false, 0, 0, drawCamX, drawCamY);
@@ -11091,9 +11192,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 			});
 		}
+		for (const v of fadePick.values()) fadeIds.add(v.id);
 		for (const npc of world.npcs) {
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (!onScr(npc.x, npc.y, 140)) continue;
 			if ((raid || escortBodies) && (npc.role === "cyndal" || npc.role === "loki")) continue;
 			draws.push({
 				z: bodyZ(npc.x, npc.y),
@@ -11107,7 +11210,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			draws.push({
 				z: bodyZ(party.x, party.y),
 				draw: () => {
-					paintPerson(party, drawCamX, drawCamY);
+					shadow193 = true; try { paintPerson(party, drawCamX, drawCamY); } finally { shadow193 = false; }
 					bar(party.x, party.y, folkHeight(party), Math.max(0, party.hp) / party.maxHp, drawCamX, drawCamY);
 				}
 			});
@@ -11137,11 +11240,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const t = tileOf(enemy.x, enemy.y);
 			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
 			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (!onScr(enemy.x, enemy.y, 260, 260)) continue;
 			draws.push({
 				z: bodyZ(enemy.x, enemy.y),
 				draw: () => {
 					const h = beastH(enemy);
 					if (enemy.variant === "bear") { ctx.save(); ctx.filter = "brightness(0.38) saturate(0.5)"; }
+					shadow193 = !enemy.dead;
 					try {
 					// strips are drawn facing west; mirror them for anything facing east
 					const east = (enemy.dir ?? 0) >= 5 && (enemy.dir ?? 0) <= 7;
@@ -11183,7 +11288,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
 					}
 					if (enemy.aggro || enemy.hp < enemy.maxHp || enemy.id === lockedId) bar(enemy.x, enemy.y, h, enemy.hp / enemy.maxHp, drawCamX, drawCamY);
-					} finally { if (enemy.variant === "bear") ctx.restore(); }
+					} finally { shadow193 = false; if (enemy.variant === "bear") ctx.restore(); }
 				}
 			});
 		}
@@ -11192,6 +11297,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const t = tileOf(pile.x, pile.y);
 			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
 			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (!onScr(pile.x, pile.y, 160, 200)) continue;
 			draws.push({
 				z: pile.x + pile.y,
 				draw: () => {
@@ -11233,7 +11339,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		draws.push({
 			z: bodyZ(player.x, player.y),
-			draw: () => xfWrap(() => {
+			draw: () => { shadow193 = true; try { xfWrap(() => {
 				// v11.1 art hook: a dedicated hero-ride sheet (bike included) replaces the stand-in when present
 				if (mounted && images.get("v2/hero-ride") && phase !== "dead") { blit("v2/hero-ride", player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
@@ -11284,12 +11390,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
 				if (!flinch && !axeSwing && !idle && !HERO69.has(heroKey()) && !(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
 				if (swingAnim > 0 && !work && !axeSwing && !TALL_COMBAT.has(atkName)) paintSwingArc();
-			}, drawCamX, drawCamY)
+			}, drawCamX, drawCamY); } finally { shadow193 = false; } }
 		});
 		for (const scar of scars) {
 			const t = tileOf(scar.x, scar.y);
 			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
 			if (!explored[t.ty * 156 + t.tx]) continue;
+			if (!onScr(scar.x, scar.y, 100, 160)) continue;
 			draws.push({
 				z: scar.x + scar.y - 4,
 				draw: () => {
@@ -11310,8 +11417,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10Draws(draws, drawCamX, drawCamY);
 		townHouseDraws(draws, drawCamX, drawCamY, fadeBodies);
 		draws.sort((a, b) => a.z - b.z);
+		pAdd("sort", tSort);
 		occl141 = false;
+		const tDraw = performance.now();
 		for (const item of draws) item.draw();
+		pAdd("drawList", tDraw);
 		// v14.1 playtest: canopies fade, and when something still covers you a faint copy of you is drawn on top
 		if (occl141 && player && !inside && xfLast?.calls?.length && phase !== "dead") {
 			ctx.save(); ctx.globalAlpha = .42; noShadow141 = true;
@@ -11321,8 +11431,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const shade = nightShade(clock);
 		const dark = nightDark(clock);
+		const tTw = performance.now();
 		paintTowns(drawCamX, drawCamY);
+		pAdd("towns", tTw);
+		const tPost = performance.now();
+		const tN = performance.now();
 		if (dark > .02) paintNight(dark, drawCamX, drawCamY);
+		pAdd("night", tN);
 		// v14.1 Blinded: the world closes in, dark and smeared at the edges
 		if (injured("blind") && !inside) {
 			const r0 = Math.min(viewW, viewH) * .16, r1 = Math.max(viewW, viewH) * .55;
@@ -11330,9 +11445,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			g.addColorStop(0, "rgba(10,6,4,0)"); g.addColorStop(.55, "rgba(30,10,8,.55)"); g.addColorStop(1, "rgba(12,4,4,.92)");
 			ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH); ctx.restore();
 		}
-		if (gfxHigh && !inside && !shotMode) paintDaylight(dark);
+		pAdd("postA", tPost);
+		const tH2 = performance.now();
+		if (hiFx() && !inside && !shotMode) paintDaylight(dark);
+		pAdd("haze", tH2);
+		const tW = performance.now();
 		if (!inside && !shotMode) paintWeather13();
+		pAdd("weather", tW);
+		const tH3 = performance.now();
 		if (!shotMode) paintSeason();
+		pAdd("haze", tH3);
+		const tTail = performance.now();
 		paintRipples(drawCamX, drawCamY);
 		paintFish();
 		if (world && player && shade > .12) {
@@ -11441,7 +11564,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			ctx.fillStyle = "#f0e6d4";
 			ctx.fillText(f.text, p.sx, p.sy);
 		}
+		pAdd("tail", tTail);
+		const tMini = performance.now();
 		drawMini();
+		pAdd("mini", tMini);
 	}
 	/** v13.4 vehicles: rusted hot rods replace the cars, rusted '50 Chevy pickups replace the trucks.
 	 * Any v2/vehicles/car-rod-<1-4>-<se|sw> or truck-chevy-<1-4>-<se|sw> listed in optional.json is mixed in.
@@ -11469,6 +11595,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Soft contact shadow: a radial falloff ellipse, slightly to the lower right (sun from the upper left). */
 	const shadowCache = new Map();
 	function softShadow(x, y, rx, name) {
+		const tS = performance.now();
+		try { softShadow0(x, y, rx, name); } finally { pAdd("shadows", tS); }
+	}
+	function softShadow0(x, y, rx, name) {
 		const flat = /^(ground|road|icon|fx|bait|scrap|sack|hatch|door)/.test(name);
 		if (flat || rx < 2) return;
 		let key = Math.round(rx);
@@ -11534,8 +11664,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const layer = name.startsWith("overlay-");
 		// v14.1 (gif-compare): every person gets the same engine-drawn soft contact shadow, in both graphics modes
 		const person = !layer && (/^(v2\/)?hero|^pl\//.test(name) || !!figFamily(name));
-		if (person && !noShadow141) softShadow(foot.sx, foot.sy + 1 * zoom, (/cyndal|loki/.test(name) ? 14 : 17) * zoom, name);
-		if (!layer && !person && !gfxHigh && !noShadow141) {
+		if (person && shadow193 && !noShadow141) softShadow(foot.sx, foot.sy + 1 * zoom, (/cyndal|loki/.test(name) ? 14 : 17) * zoom, name);
+		if (!layer && !person && shadow193 && !hiFx() && !noShadow141) {
 			ctx.fillStyle = "rgba(12,10,8,0.4)";
 			ctx.beginPath();
 			ctx.ellipse(foot.sx, foot.sy, 18 * zoom, 18 * CAM_ISO_Y * .89 * zoom, 0, 0, Math.PI * 2);
@@ -11586,12 +11716,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			p.sx -= d * (dh / sh);
 		}
 		const spriteY = -dh * frac - lift * zoom;
-		if (!layer && !person && gfxHigh && !noShadow141) softShadow(foot.sx + 3 * zoom, foot.sy + 1 * zoom, Math.max(12 * zoom, Math.min(dw * .36, (sheet || strips ? 46 : 34) * zoom)), name);
+		if (!layer && !person && shadow193 && hiFx() && !noShadow141) softShadow(foot.sx + 3 * zoom, foot.sy + 1 * zoom, Math.max(12 * zoom, Math.min(dw * .36, (sheet || strips ? 46 : 34) * zoom)), name);
 		const smooth = ctx.imageSmoothingEnabled;
 		// v13.4: smooth when the sprite lands at a non-integer scale; whole-number upscales stay crisp
 		const ratio = dh / sh;
-		ctx.imageSmoothingEnabled = gfxHigh ? (ratio < .97 || Math.abs(ratio - Math.round(ratio)) > .06) : dh < sh * 0.92;
-		ctx.imageSmoothingQuality = gfxHigh ? "high" : "medium";
+		ctx.imageSmoothingEnabled = hiFx() ? (ratio < .97 || Math.abs(ratio - Math.round(ratio)) > .06) : dh < sh * 0.92;
+		ctx.imageSmoothingQuality = hiFx() ? "high" : "medium";
 		if (tilt || flatten !== 1 || flip) {
 			ctx.save();
 			ctx.translate(p.sx, p.sy);
@@ -11773,7 +11903,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		g.beginPath(); g.arc(pt.tx * sx, pt.ty * sy, 5, 0, Math.PI * 2); g.fill();
 		g.strokeStyle = "#101410"; g.lineWidth = 2; g.stroke();
 	}
+	let miniT = -1e9, miniBase = null, miniBaseT = -1e9, miniBaseW = null;
 	function drawMini() {
+		// v15.9.3: the minimap repaints a few times a second, not every frame
+		if (world && player && renderNow - miniT < (perfMode ? 400 : 200) && renderNow >= miniT) return;
+		miniT = renderNow;
+		if (typeof mctx.reset === "function") mctx.reset();
 		const w = mini.width;
 		const h = mini.height;
 		mctx.fillStyle = "#101410";
@@ -11788,17 +11923,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			"#4a5248",
 			"#d9e0dc"
 		];
-		for (let ty = 0; ty < 156; ty++) for (let tx = 0; tx < 156; tx++) {
-			const i = ty * 156 + tx;
-			const tile = world.tiles[i] ?? 0;
-			if (!explored[i] || tile === 5) continue;
-			const fade = landFadeAt(tx + .5, ty + .5, tile);
-			if (fade < .28) continue;
-			const seen = visible[i] === 1;
-			mctx.globalAlpha = seen ? .55 + fade * .45 : .8;
-			mctx.fillStyle = seen ? colors[tile] ?? "#8a7048" : "#3a342c";
-			mctx.fillRect(tx * sx, ty * sy, Math.ceil(sx) + .5, Math.ceil(sy) + .5);
+		// v15.9.3: the 24k-tile terrain pass is cached and rebuilt every ~1.5 s (or on a new map)
+		if (!miniBase || miniBase.width !== w || miniBase.height !== h) { miniBase = document.createElement("canvas"); miniBase.width = w; miniBase.height = h; miniBaseT = -1e9; }
+		if (miniBaseW !== world || renderNow - miniBaseT > 1500 || renderNow < miniBaseT) {
+			miniBaseW = world; miniBaseT = renderNow;
+			const bctx = miniBase.getContext("2d");
+			bctx.clearRect(0, 0, w, h);
+			for (let ty = 0; ty < 156; ty++) for (let tx = 0; tx < 156; tx++) {
+				const i = ty * 156 + tx;
+				const tile = world.tiles[i] ?? 0;
+				if (!explored[i] || tile === 5) continue;
+				const fade = landFadeAt(tx + .5, ty + .5, tile);
+				if (fade < .28) continue;
+				const seen = visible[i] === 1;
+				bctx.globalAlpha = seen ? .55 + fade * .45 : .8;
+				bctx.fillStyle = seen ? colors[tile] ?? "#8a7048" : "#3a342c";
+				bctx.fillRect(tx * sx, ty * sy, Math.ceil(sx) + .5, Math.ceil(sy) + .5);
+			}
 		}
+		mctx.drawImage(miniBase, 0, 0);
 		mctx.globalAlpha = 1;
 		const rawObj = objectiveTile(quest);
 		const obj = { tx: rawObj.tx + WORLD_OX, ty: rawObj.ty + WORLD_OY };
@@ -11878,12 +12021,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		last = now;
 		acc += dt;
 		let guard = 0;
+		const tStep = performance.now();
 		while (acc >= STEP && guard < 5) {
 			snapPrev();
 			step(STEP);
 			acc -= STEP;
 			guard++;
 		}
+		pAdd("step", tStep);
 		const t0 = performance.now();
 		renderNow = now;
 		// v14 render interpolation: draw every body between its last two sim positions (alpha = leftover / step)
@@ -11903,6 +12048,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const ms = performance.now() - t0;
 		frameMs.avg = frameMs.avg * .95 + ms * .05; frameMs.n++; frameMs.worst = Math.max(frameMs.worst * .995, ms);
 		frameMs.list.push(ms); if (frameMs.list.length > 240) frameMs.list.shift();
+		if (perf.on) { perf.frames++; perf.acc.render = (perf.acc.render || 0) + ms; perf.acc.frame = (perf.acc.frame || 0) + (performance.now() - now); }
 		requestAnimationFrame(frame);
 	}
 	function pick(x, y, sx, sy) {
@@ -13079,6 +13225,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		craft,
 		setAim,
 		setTurnBased,
+		setPerfMode(on) { perfMode = !!on; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
 		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
 		takeLoot
@@ -13510,6 +13657,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dialogueNow: () => dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => ({ id: c.id, label: c.label })) } : null,
 		frameStats: () => ({ avg: +frameMs.avg.toFixed(2), worst: +frameMs.worst.toFixed(2), p95: +[...frameMs.list].sort((a, b) => a - b)[Math.floor(frameMs.list.length * .95)]?.toFixed(2), n: frameMs.n, gfxHigh }),
 		weatherMix: () => ({ ...weatherMix }),
+		treeCount: () => world ? { trees: world.props.filter(isTree193).length, thinned: world.thin193 || 0 } : null,
+		weatherEvent: (on) => { precipForce = on === undefined ? null : !!on; return precipOn193(); },
+		aiPaused: () => aiPausedN,
+		perfMode: (on) => { if (on !== undefined) { perfMode = !!on; sync(true); } return perfMode; },
+		perfReset: () => { perf.on = true; perf.frames = 0; perf.acc = {}; return true; },
+		perfStats: () => { const o = { frames: perf.frames }; for (const k in perf.acc) o[k] = +(perf.acc[k] / Math.max(1, perf.frames)).toFixed(3); return o; },
 		vehicles: () => world ? world.props.filter((p) => p.kind === "car-sedan" || p.kind === "car-truck").map((p) => ({ kind: p.kind, tx: p.tx, ty: p.ty, ...propCenter(p), art: vehicleArt(p) })) : [],
 		setHour: (h) => {
 			const span = DAY_LENGTH_SEC;

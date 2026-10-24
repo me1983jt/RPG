@@ -506,6 +506,7 @@ export interface HudSnapshot {
   aim: AimPart;
   turnBased: boolean;
   gfxHigh?: boolean;
+  perfMode?: boolean;
   ap: number;
   maxAp: number;
   statsOpen: boolean;
