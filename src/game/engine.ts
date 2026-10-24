@@ -91,6 +91,7 @@ import {
   WARDEN_NPC_ID,
   type World,
 } from "@/game/world";
+import { MAINE_SIDES } from "@/game/world";
 
 export interface GameApi {
   destroy: () => void;
@@ -549,6 +550,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let goneNpcs = /* @__PURE__ */ new Set();
 	let mapId = 0;
 	let worldSeed = 5402695;
+	const MAINE_LAYOUT = 1; // v15.9.7 fixed central-Maine map
+	let layoutMoved = false;
 	let exitSides = [];
 	let travelLock = 0;
 	const regions = /* @__PURE__ */ new Map();
@@ -1124,8 +1127,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return seed;
 	}
 	function bootNew(name, role, bonus, trait, look, appearance) {
-		worldSeed = freshSeed();
-		exitSides = pickSides(worldSeed);
+		worldSeed = 5402695; // v15.9.7: one fixed, hand-made map (central Maine); no random worlds
+		exitSides = MAINE_SIDES.slice();
 		mapId = 0;
 		regions.clear();
 		travelLock = 0;
@@ -1233,6 +1236,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		worldSeed = data.seed ?? 5402695;
 		mapId = data.map ?? 0;
 		exitSides = data.exits && data.exits.length >= 2 ? data.exits : pickSides(worldSeed);
+		// v15.9.7: saves from the random-world days load into the fixed map. Prop / enemy ids from the old layout
+		// don't line up any more, so their removed / slain lists are dropped (built props, piles and fog stay).
+		if (data.layout !== MAINE_LAYOUT) {
+			worldSeed = 5402695; exitSides = MAINE_SIDES.slice();
+			data.removed = []; data.slain = [];
+			for (const r of data.regions ?? []) { r.removed = []; r.slain = []; }
+			layoutMoved = true;
+		}
 		regions.clear();
 		for (const region of data.regions ?? []) if (region.id !== mapId) regions.set(region.id, region);
 		const legacy = data.seed == null;
@@ -1458,6 +1469,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.tractorReady = tractorReady;
 		data.goneNpcs = [...goneNpcs];
 		data.seed = worldSeed;
+		data.layout = MAINE_LAYOUT;
 		data.map = mapId;
 		data.exits = exitSides;
 		data.questTotal = questTotal;
@@ -2121,6 +2133,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10Props();
 		v3FarmProps();
 		farmGone();
+		layoutFix();
 		if (q10.seed === 2 && q10.seedLeft > 0) q10SeedCamp();
 		if (q10.moose === 2) q10Bull();
 		if (q10.dog >= 2) q10PlaceDog();
@@ -4074,12 +4087,30 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const x = hv.x + Math.cos(a * Math.PI / 180) * r, y = hv.y + Math.sin(a * Math.PI / 180) * r;
 			if (pointBlocked(world, x, y, RADIUS)) continue;
 			if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < 260)) continue;
-			const d = Math.hypot(x - fc.x, y - fc.y);
+			// v15.9.7: arrive in front of the village (camera side), not behind the church and houses
+			const wx = x - hv.x, wy = y - hv.y, d = -(wx + wy) + Math.abs(wx - wy) * .6 + Math.hypot(x - fc.x, y - fc.y) * 0;
 			if (!best || d < best.d) best = { x, y, d };
 		}
 		return best ? { x: best.x, y: best.y } : null;
 	}
 	/** v15.9.5: old saves that sit in the removed farm area (or wait on a farm-only intro step) move to Harmony's entrance. */
+	/** v15.9.7: an old save whose spot is now under the lake or a river (or inside a tree) steps to the nearest dry, open ground. */
+	function layoutFix() {
+		if (!world || !player || inside || mode11) return;
+		const dry = (x, y) => !pointBlocked(world, x, y, RADIUS);
+		const near = (x, y) => {
+			const t = tileOf(x, y);
+			for (let r = 1; r < 30; r++) for (let a = 0; a < 360; a += 10) {
+				const tx = Math.round(t.tx + Math.cos(a * Math.PI / 180) * r), ty = Math.round(t.ty + Math.sin(a * Math.PI / 180) * r);
+				const px = (tx + .5) * TILE, py = (ty + .5) * TILE;
+				if (tx > 1 && ty > 1 && tx < MAP_W - 2 && ty < MAP_H - 2 && dry(px, py)) return { x: px, y: py };
+			}
+			return null;
+		};
+		if (!dry(player.x, player.y)) { const p = near(player.x, player.y); if (p) { player.x = p.x; player.y = p.y; if (layoutMoved) pushLog("The roads and the water lie where they always did. You find dry ground."); } }
+		if (player.respawnX != null && !dry(player.respawnX, player.respawnY)) { const p = near(player.respawnX, player.respawnY); if (p) { player.respawnX = p.x; player.respawnY = p.y; } }
+		layoutMoved = false;
+	}
 	function farmGone() {
 		if (!world || !player || mapId !== 0 || mode11) return;
 		if (v14.st >= 1 && v14.st < 5) v14.st = 5;
@@ -4927,6 +4958,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return false;
 		});
 	}
+	/** v15.9.7: the bigger towns (church, houses, fence) need their lot clear: no trees, rocks, wrecks or ruins on the
+	 * ground the town art stands on or in front of it. Quest props and labelled buildings stay. */
+	const LOT_KINDS = /^(tree-|maple$|rock$|ruin$|shack$|car-|scrap$|crates$|wall$|logs$)/;
+	function clearTownLot(t, spot) {
+		if (!world || !spot || !TOWN_HOUSES[t.id]) return;
+		const parts = TOWN_HOUSES[t.id];
+		const xs = parts.map(([, dx]) => dx), x0 = Math.min(...xs) - 260, x1 = Math.max(...xs) + 260;
+		world.props = world.props.filter((p) => {
+			if (!LOT_KINDS.test(p.kind) || p.quest || p.label || p.built || p.p14 || p.f14) return true;
+			const c = propCenter(p), wx = c.x - spot.x, wy = c.y - spot.y;
+			const sdx = wx - wy, sdy = (wx + wy) * CAM_ISO_Y;
+			if (sdx < x0 || sdx > x1 || sdy < -300 || sdy > (p.kind === "ruin" || p.kind === "shack" ? 640 : 420)) return true;
+			vacate(world, p);
+			return false;
+		});
+	}
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
 		world.townSpots = world.townSpots ?? {};
@@ -4944,6 +4991,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		world.townSpots[t.id] = spot;
 		clearTown193(spot);
+		clearTownLot(t, spot);
 		return spot;
 	}
 	/** v15 no-attack zones: ~10 tiles around each town marker (not the raider-camp / Grok / depot scenes) and the farmhouse. Raids and the siege ignore them. */
@@ -4997,43 +5045,69 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v15.8: town marker houses join the depth-sorted draw list, so people walk in front of and behind them;
 	 * the ground shadow goes down with the ground. Offsets are screen px at zoom 1 from the marker. */
-	const TOWN_HOUSES = { harmony: [[-72, -12, 132], [75, -6, 123], [0, 21, 156]], _: [[0, 15, 144]] };
+	/** v15.9.7: towns in the world are built from Quest's own painted Harmony scenery (church, houses, shed, notice board,
+	 * fence; cut from harmony_concept / farm_concept, colours untouched, see scripts/town-art-*.py). Scaled to the hero:
+	 * a house is ~2.75x the hero's height. Each entry: [art, dx, dy, height] in screen px at zoom 1 from the marker;
+	 * dy is where the art meets the ground. The front (toward the camera) is left open so the walk-in spot stays clear. */
+	const TOWN_ART = {};
+	function townArt(name) {
+		if (typeof Image === "undefined") return null;
+		let img = TOWN_ART[name];
+		if (!img) { img = new Image(); img.src = `/game/town/${name}.png?v=${ART_V}`; TOWN_ART[name] = img; }
+		return img.complete && img.naturalWidth ? img : null;
+	}
+	const HOUSE_H = Math.round(HERO_H * (SPRITE_FIT.hero ?? .806) * 2.75);
+	const TOWN_HOUSES = {
+		harmony: [["fence", -560, 96, 64], ["house", -330, -20, HOUSE_H], ["church", 0, -96, Math.round(HOUSE_H * 1.12)], ["farmhouse", 330, -12, Math.round(HOUSE_H * .96)], ["shed", 540, 64, Math.round(HOUSE_H * .5)], ["sign", -150, 70, Math.round(HOUSE_H * .36)], ["fence", 420, 160, 64]],
+		pittsfield: [["fence", -390, 90, 64], ["house", -190, -18, HOUSE_H], ["farmhouse", 190, -14, Math.round(HOUSE_H * .96)], ["shed", 360, 56, Math.round(HOUSE_H * .5)], ["sign", -70, 66, Math.round(HOUSE_H * .36)]],
+		skowhegan: [["house", -190, -18, HOUSE_H], ["church", 160, -60, Math.round(HOUSE_H * 1.12)], ["sign", -60, 66, Math.round(HOUSE_H * .36)], ["fence", -400, 92, 64]],
+		_: [["farmhouse", 0, 15, Math.round(HOUSE_H * .9)]],
+	};
+	const townTop = (id) => Math.max(...(TOWN_HOUSES[id] ?? TOWN_HOUSES._).map(([, , dy, h]) => h - dy)) + 30;
 	function townGround(camX, camY) {
 		if (!world || !player || inside) return;
 		for (const t of ISO_TOWNS) {
 			if (!townOpen(t)) continue;
 			const sp = townSpot(t); if (!sp) continue;
 			const r = worldToScreen(sp.x, sp.y, camX, camY), m = zoomPoint(r.sx, r.sy);
-			if (m.sx < -200 || m.sy < -200 || m.sx > viewW + 200 || m.sy > viewH + 200) continue;
+			if (m.sx < -600 || m.sy < -400 || m.sx > viewW + 600 || m.sy > viewH + 400) continue;
 			ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(m.sx, m.sy + 6 * zoom, 105 * zoom, 105 * CAM_ISO_Y * .63 * zoom, 0, 0, Math.PI * 2); ctx.fill();
 		}
 	}
 	function townHouseDraws(draws, camX, camY, bodies) {
 		if (!world || !player || inside) return;
-		const img = images.get("farmhouse");
-		const iw = img ? (img.naturalWidth || img.width) : 0, ih = img ? (img.naturalHeight || img.height) : 0;
 		for (const t of ISO_TOWNS) {
 			if (!townOpen(t)) continue;
 			const sp = townSpot(t); if (!sp) continue;
-			for (const [dx, dy, w] of TOWN_HOUSES[t.id] ?? TOWN_HOUSES._) {
+			for (const [art, dx, dy, hgt] of TOWN_HOUSES[t.id] ?? TOWN_HOUSES._) {
+				const img = townArt(art);
+				if (!img) continue;
+				const iw = img.naturalWidth, ih = img.naturalHeight, w = hgt * iw / ih;
 				const vx = dy / (2 * CAM_ISO_Y) + dx / 2, vy = dy / (2 * CAM_ISO_Y) - dx / 2;
 				const fx = sp.x + vx, fy = sp.y + vy;
-				const key = `${t.id}|${dx}`;
+				const key = `${t.id}|${art}|${dx}`;
 				draws.push({ z: bodyZ(fx, fy), draw: () => {
 					const r = worldToScreen(sp.x, sp.y, camX, camY), m = zoomPoint(r.sx, r.sy);
-					if (m.sx < -300 || m.sy < -300 || m.sx > viewW + 300 || m.sy > viewH + 300) return;
-					const x0 = m.sx + dx * zoom - w * zoom / 2, h = iw ? w * ih / iw : w * .8, y1 = m.sy + dy * zoom, y0 = y1 - h * zoom;
+					const x0 = m.sx + dx * zoom - w * zoom / 2, y1 = m.sy + dy * zoom, y0 = y1 - hgt * zoom;
+					if (x0 > viewW + 20 || x0 + w * zoom < -20 || y0 > viewH + 20 || y1 < -40) return;
 					// fade to ~35% while anyone stands behind it
 					let behind = false;
-					for (const b of bodies) {
+					if (art !== "fence" && art !== "sign") for (const b of bodies) {
 						if (bodyZ(b.x, b.y) >= bodyZ(fx, fy)) continue;
 						const br = worldToScreen(b.x, b.y, camX, camY), bs = zoomPoint(br.sx, br.sy);
 						if (bs.sx > x0 && bs.sx < x0 + w * zoom && bs.sy < y1 && bs.sy > y0) { behind = true; break; }
 					}
 					const f = townFade.get(key) ?? 0, nf = f + ((behind ? 1 : 0) - f) * Math.min(1, STEP * 10);
 					townFade.set(key, nf);
-					ctx.save(); ctx.globalAlpha = 1 - nf * .65;
-					if (iw) ctx.drawImage(img, x0, y0, w * zoom, h * zoom);
+					ctx.save();
+					// contact shadow where the building meets the ground
+					const sw = w * zoom * (art === "fence" ? .5 : .56), sh = Math.max(4, hgt * zoom * (art === "fence" ? .07 : .09));
+					const g = ctx.createRadialGradient(x0 + w * zoom / 2, y1 - sh * .25, 1, x0 + w * zoom / 2, y1 - sh * .25, sw);
+					g.addColorStop(0, "rgba(0,0,0,.42)"); g.addColorStop(.7, "rgba(0,0,0,.22)"); g.addColorStop(1, "rgba(0,0,0,0)");
+					ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x0 + w * zoom / 2, y1 - sh * .25, sw, sh, 0, 0, Math.PI * 2); ctx.fill();
+					ctx.globalAlpha = 1 - nf * .65;
+					ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+					ctx.drawImage(img, x0, y0, w * zoom, hgt * zoom);
 					ctx.restore();
 				} });
 			}
@@ -5041,6 +5115,31 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	const townFade = new Map();
 	const TOWN_ICON159 = { harmony: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville" };
+	/** v15.9.7: lone buildings out in the world (a shack or a ruin with no town around it) are lootable: walk in and
+	 * open the chest. Nearby ones that still hold something get a small "Loot" tag, like the approved HUD mockup. */
+	function loneBuilding(p) {
+		if (!world || p.built || p.label || p.quest || !(p.kind === "shack" || p.kind === "ruin")) return false;
+		for (const t of ISO_TOWNS) { if (t.map !== mapId) continue; const sp = townSpot(t); if (sp && Math.hypot(sp.x - (p.tx + 1.5) * TILE, sp.y - (p.ty + 1.5) * TILE) < 16 * TILE) return false; }
+		return true;
+	}
+	function lootTags(sx) {
+		if (!world || !player || inside || mode11) return;
+		for (const p of world.props) {
+			if (p.kind !== "shack" && p.kind !== "ruin") continue;
+			const cx = (p.tx + 1.5) * TILE, cy = (p.ty + 1.5) * TILE;
+			if (Math.hypot(cx - player.x, cy - player.y) > 420 || lootedChests.has(p.id) || !loneBuilding(p)) continue;
+			const m = sx(cx, cy), spec = PROP_SPEC[p.kind];
+			const label = "Loot", y = m.sy + 18 * zoom;
+			ctx.save();
+			ctx.font = `700 ${Math.round(12 * Math.max(1, zoom * .8))}px system-ui, sans-serif`; ctx.textAlign = "center";
+			const w = ctx.measureText(label).width + 18;
+			ctx.fillStyle = "rgba(40,28,18,.88)"; ctx.fillRect(m.sx - w / 2, y - 14, w, 20);
+			ctx.strokeStyle = "#b08a52"; ctx.lineWidth = 1.5; ctx.strokeRect(m.sx - w / 2 + .5, y - 13.5, w - 1, 19);
+			ctx.fillStyle = "#f4e6c4"; ctx.fillText(label, m.sx, y + 1);
+			ctx.restore();
+			void spec;
+		}
+	}
 	function paintTowns(camX, camY) {
 		if (!world || !player || inside) return;
 		const sx = (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); };
@@ -5055,7 +5154,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const label = near ? `${t.name} · walk in` : t.name;
 			ctx.globalAlpha = 1;
 			ctx.font = `700 ${Math.round(13 * Math.max(1, zoom * .8))}px system-ui, sans-serif`; ctx.textAlign = "center";
-			const w = ctx.measureText(label).width + 16, ly = m.sy - 186 * zoom;
+			const w = ctx.measureText(label).width + 16, ly = m.sy - townTop(t.id) * zoom;
 			ctx.fillStyle = "rgba(15,12,8,.82)"; ctx.fillRect(m.sx - w / 2, ly - 15, w, 21);
 			ctx.strokeStyle = "#c9a36a"; ctx.lineWidth = 1; ctx.strokeRect(m.sx - w / 2 + .5, ly - 14.5, w - 1, 20);
 			ctx.fillStyle = "#f4e6c4"; ctx.fillText(label, m.sx, ly);
@@ -5063,6 +5162,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (ic && (ic.naturalWidth || ic.width)) { const d = 46 * Math.max(1, zoom * .8); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 6; ctx.drawImage(ic, m.sx - d / 2, ly - 20 - d, d, d); }
 			ctx.restore();
 		}
+		lootTags(sx);
 		// town quests: an arrow at the screen edge toward the exit that leads there
 		townQuestsDone();
 		let row = 0;
@@ -9948,7 +10048,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (ix < 0 || iy < 0 || ix > 155 || iy > 155) return -1;
 		const t = world.tiles[iy * 156 + ix];
 		if (t === 2) return inFarm(ix, iy) ? 4 : asph[iy * 156 + ix] ? 6 : 2;
+		if (t === 5 && mapId === 0 && v197Wet(ix, iy)) return 7; // v15.9.7: lake / river water inside the map
 		return t >= 0 && t <= 4 ? t : -1;
+	}
+	/** v15.9.7: VOID tiles well inside the hex on map 0 are water (Great Moose Lake, the Kennebec, the Sebasticook). */
+	function v197Wet(ix, iy) {
+		const dx = Math.abs(ix - HEX_CX), dy = Math.abs(iy - HEX_CY), R = HEX_R - 3;
+		return dx <= Math.sqrt(3) / 2 * R && dy <= R - dx / Math.sqrt(3);
 	}
 	let v155AsphMap = null;
 	function v155Asph() {
@@ -9993,6 +10099,25 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const seed = cx * 7919 + cy * 104729;
 		const fillMat = (gg, mat, s) => {
 			// all variants, each rotated/flipped, mixed by big soft noise blobs
+			if (mat === 7) {
+				// painted water: deep slate-green with soft light and dark drifts and short ripple strokes
+				gg.globalAlpha = 1; gg.fillStyle = "#2f4a4e"; gg.fillRect(0, 0, BW, BW);
+				const wr = v155Rng(s * 17 + 7);
+				for (let b = 0; b < 10; b++) {
+					const x = wr() * BW, y = wr() * BW, rad = 60 + wr() * 140, gr = gg.createRadialGradient(x, y, 0, x, y, rad);
+					const lite = wr() < .5;
+					gr.addColorStop(0, lite ? "rgba(92,124,124,.45)" : "rgba(22,36,40,.5)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+					gg.fillStyle = gr; gg.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+				}
+				gg.lineWidth = 1.2;
+				for (let k = 0; k < 140; k++) {
+					const x = wr() * BW, y = wr() * BW, L = 6 + wr() * 14;
+					gg.globalAlpha = .18 + wr() * .2; gg.strokeStyle = wr() < .7 ? "#9fb8b4" : "#1c2c30";
+					gg.beginPath(); gg.moveTo(x, y); gg.quadraticCurveTo(x - L * .5, y - L * .5 - 2, x - L, y - L); gg.stroke();
+				}
+				gg.globalAlpha = 1;
+				return;
+			}
 			const img0 = mat === 6 ? asphaltImg() : v155Img(mat === 2 ? 0 : mat, 0);
 			gg.globalAlpha = 1; gg.fillStyle = (mat === 6 ? v155Pat(gg, "asph", img0, s & 7) : v155Pat(gg, `${mat}-0`, img0, s & 7)) ?? "#555"; gg.fillRect(0, 0, BW, BW);
 			if (mat === 6) return;
@@ -10013,7 +10138,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			if (mat === 2) { gg.globalAlpha = .28; gg.fillStyle = "#5a4a38"; gg.fillRect(0, 0, BW, BW); gg.globalAlpha = 1; }
 		};
-		const order = [1, 0, 3, 2, 6, 4];
+		const order = [7, 1, 0, 3, 2, 6, 4];
 		g.imageSmoothingEnabled = true;
 		for (const mat of order) {
 			if (!present.has(mat)) continue;

@@ -23,12 +23,12 @@ await fr.evaluate(() => { HARMONY.ACT.talkMira(); });
 await fr.getByRole("button", { name: /go to Skowhegan/ }).click();
 await page.waitForTimeout(300);
 let d = await T("town143");
-ok(d.tq.some((q) => q.id === "harmony-meds" && q.q === 8 && q.r === 7), "Medicine Run marker points at Skowhegan");
+ok(d.tq.some((q) => q.id === "harmony-meds" && q.q === 4 && q.r === 7), "Medicine Run marker points at Skowhegan");
 // Lost Dog via Mira
 await fr.evaluate(() => { HARMONY.state.q["harmony.dog"] = "ranOff"; HARMONY.ACT.talkMira(); });
 await page.waitForTimeout(300);
 d = await T("town143");
-ok(d.tq.some((q) => q.id === "harmony-dog" && q.q === 5 && q.r === 5), "Lost Dog marker points at the farm");
+ok(d.tq.some((q) => q.id === "harmony-dog" && q.q === 6 && q.r === 3), "Lost Dog marker points at the farm");
 await fr.evaluate(() => { HARMONY.leave("worldmap"); });
 await page.waitForTimeout(800);
 d = await T("town143");

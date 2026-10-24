@@ -1,5 +1,7 @@
 import { SKOW_BUILDINGS, SKOW_BRIDGE_DX, SKOW_GORGE_DY } from "@/game/v113";
 import { findPath } from "@/game/path";
+import { Q10_SITES } from "@/game/quests10";
+import { Q11_SITES } from "@/game/quests11";
 import {
   DIRT,
   FARM,
@@ -160,26 +162,7 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   const blocked = new Uint8Array(MAP_W * MAP_H);
   fillLand(tiles, blocked, 0);
 
-  const bend = genSalt !== 0;
-  const mid = at(40, 28);
-  const south = at(78, 78);
-  const roadPts: [number, number][][] = [
-    [
-      [PLACES.ashwell.tx, PLACES.ashwell.ty],
-      mid,
-      [PLACES.rustyard.tx, PLACES.rustyard.ty],
-    ],
-    [
-      [PLACES.ashwell.tx, PLACES.ashwell.ty],
-      [PLACES.cambridge.tx, 22 + WORLD_OY],
-    ],
-    [mid, [PLACES.millcross.tx, PLACES.millcross.ty], south, [PLACES.bonehollow.tx, PLACES.bonehollow.ty]],
-  ];
-  for (const path of roadPts) {
-    for (let i = 0; i < path.length - 1; i++) {
-      layPath(tiles, blocked, path[i]![0], path[i]![1], path[i + 1]![0], path[i + 1]![1], bend, i + 3);
-    }
-  }
+  layCentralMaine(tiles, blocked);
 
   for (const place of Object.values(PLACES)) {
     for (let ty = place.ty - 7; ty <= place.ty + 7; ty++) {
@@ -233,6 +216,74 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
     world.startY = start.y;
   }
   return world;
+}
+
+/** v15.9.7: map 0 is a fixed, hand-made piece of central Maine (no seed jitter). Screen-up is north:
+ * in tile space north = (-1,-1), east = (+1,-1). Harmony sits up top on Route 150, Pittsfield south-south-east on the
+ * Sebasticook, Great Moose Lake between them (the Attean boathouse on its west shore), the Kennebec down the west side
+ * and Skowhegan off the south-west gate. Only the main roads and the big water are drawn; positions are compressed. */
+export const MAINE_WATER = {
+  // Great Moose Lake: an ellipse along the north-south axis
+  lake: { cx: 95, cy: 64, along: 16, across: 7 },
+  kennebec: [[14, 69], [30, 83], [44, 99], [58, 115], [72, 129], [90, 147]] as [number, number][],
+  sebasticook: [[104, 75], [107, 84], [112, 90], [118, 96], [125, 103], [132, 110], [139, 117]] as [number, number][],
+};
+export const MAINE_ROADS: { name: string; pts: [number, number][] }[] = [
+  // Route 150: Cambridge (north gate) - Harmony - Athens - down to Route 2 west of Skowhegan
+  { name: "Route 150", pts: [[50, 25], [57, 37], [66, 50], [61, 78], [63, 100], [72, 124]] },
+  // Route 151/152: Harmony east around the north end of the lake, down to Hartland and Pittsfield
+  { name: "Route 152", pts: [[66, 50], [84, 49], [110, 56], [114, 74], [117, 88]] },
+  // Route 2: Pittsfield west to Skowhegan (south-west gate), over the Sebasticook and the Kennebec
+  { name: "Route 2", pts: [[117, 88], [100, 104], [84, 118], [72, 124], [50, 131]] },
+  // I-95: south gate - Pittsfield - east gate (toward Newport)
+  { name: "I-95", pts: [[110, 131], [114, 108], [117, 88], [128, 82], [141, 78]] },
+  // Route 23 / 43: Hartland north-east past the Chopping to the ridge (north-east gate)
+  { name: "Route 23", pts: [[110, 56], [118, 46], [111, 25]] },
+];
+export const MAINE_SIDES = [0, 1, 2, 3, 5];
+function riverAt(pts: [number, number][], w: number, plot: (x: number, y: number) => void): void {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i]!, [x1, y1] = pts[i + 1]!;
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2;
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      const wob = Math.sin((x + y) * 0.21) * 1.3;
+      const r = w + Math.sin((x - y) * 0.13) * 0.6;
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+        // the river runs north-south on screen: widen across the (1,-1) axis
+        const ax = (dx - dy) / Math.SQRT2 + wob, ay = (dx + dy) / Math.SQRT2;
+        if (Math.abs(ax) <= r && Math.abs(ay) <= 1.2) plot(Math.round(x + dx), Math.round(y + dy));
+      }
+    }
+  }
+}
+function layCentralMaine(tiles: Uint8Array, blocked: Uint8Array): void {
+  const wet = (x: number, y: number) => { if (!inMap(x, y) || !inHex(x, y)) return; tiles[idx(x, y)] = VOID; blocked[idx(x, y)] = 1; };
+  const L = MAINE_WATER.lake;
+  for (let y = L.cy - 22; y <= L.cy + 22; y++) for (let x = L.cx - 22; x <= L.cx + 22; x++) {
+    const dx = x - L.cx, dy = y - L.cy;
+    const al = (dx + dy) / Math.SQRT2, ac = (dx - dy) / Math.SQRT2;
+    const shore = 1 + Math.sin(Math.atan2(ac, al) * 3 + 1) * 0.08 + Math.sin(Math.atan2(ac, al) * 7) * 0.05;
+    if ((al / L.along) ** 2 + (ac / L.across) ** 2 <= shore) wet(x, y);
+  }
+  riverAt(MAINE_WATER.kennebec, 2.6, wet);
+  riverAt(MAINE_WATER.sebasticook, 1.5, wet);
+  // quest sites stay on dry ground (a fishing spot may sit at the water's edge)
+  const sites = [...Object.entries(Q10_SITES), ...Object.entries(Q11_SITES).filter(([k, v]) => !(v as { map?: number }).map && !k.startsWith("fish"))];
+  for (const [, v] of sites) {
+    const cx = v.tx + WORLD_OX, cy = v.ty + WORLD_OY;
+    for (let y = cy - 3; y <= cy + 3; y++) for (let x = cx - 3; x <= cx + 3; x++) {
+      if (!inMap(x, y) || !inHex(x, y) || tiles[idx(x, y)] !== VOID) continue;
+      tiles[idx(x, y)] = DIRT; blocked[idx(x, y)] = 0;
+    }
+  }
+  // roads go down last: where one crosses water it is a bridge
+  for (const road of MAINE_ROADS) {
+    for (let i = 0; i < road.pts.length - 1; i++) {
+      const [x0, y0] = road.pts[i]!, [x1, y1] = road.pts[i + 1]!;
+      line(x0, y0, x1, y1, (x, y) => stampRoad(tiles, blocked, x, y));
+    }
+  }
 }
 
 function fillLand(tiles: Uint8Array, blocked: Uint8Array, mapId: number): void {

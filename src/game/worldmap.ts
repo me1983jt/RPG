@@ -1,32 +1,35 @@
 /** v14 world map: a painted top-down map of the region with a pointy-top hex grid (odd-r offset). */
 export const WM_COLS = 12, WM_ROWS = 9, WM_HEX = 50;
-// R road, F field, W woods, V river, T town / area
+// R road, F field, W woods, V river, L lake, T town / area
+// v15.9.7: laid out like real central Maine (compressed): Harmony up top on Route 150, Great Moose Lake south-east of it,
+// Pittsfield south-south-east on the Sebasticook and I-95, Skowhegan south-west where Route 150 meets Route 2 on the
+// Kennebec, the Kennebec running up the west side with the North Woods past it, Moosehead (Greenville) due north.
 export const WM_TERRAIN = [
-  "WWWWWTWWWWWW",
-  "WWWWWTWWWWWW",
-  "WWWWWRWWWWFF",
-  "FWWWWRWWVFTF",
-  "FFTRRRWVVRRF",
-  "FFFFRTRTWWFF",
-  "WFFFFRWVFFWW",
-  "WWWTRRRVTFWW",
-  "WWWWWWWVWWWW",
+  "WWWVWTWWWWWW",
+  "WTWVWRWWWWWW",
+  "WWWVWRRWFFWW",
+  "WWWVRRTRRFTF",
+  "FTRVRRFLRFFF",
+  "FFWVWRWVRFWW",
+  "WTWWVRFFTRRF",
+  "WWWVTTRRVRRW",
+  "WWVWWWWWVWWW",
 ];
-export const WM_HOURS: Record<string, number> = { R: 0.6, T: 0.6, F: 1.2, W: 2, V: 2.5 };
+export const WM_HOURS: Record<string, number> = { R: 0.6, T: 0.6, F: 1.2, W: 2, V: 2.5, L: 3 };
 export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string; town?: string; lock?: "moosehead" }
 export const WM_LOCS: WmLoc[] = [
-  { id: "farm", name: "Harmony · Cambridge Road", q: 5, r: 5, map: 0, blurb: "Harmony village, Lowelltown road and Jack's." },
-  { id: "lowell", name: "Lowelltown Woods", q: 2, r: 4, map: 3, blurb: "Spruce and old logging roads." },
-  { id: "skow", name: "Skowhegan", q: 8, r: 7, map: 2, blurb: "Dead streetlights and one bridge." },
-  { id: "kennebec", name: "The Kennebec", q: 7, r: 5, map: 4, blurb: "Wide water, a single crossing." },
-  { id: "north", name: "North Woods · The Grok's woods", q: 5, r: 1, map: 1, blurb: "Chain of Ponds and deep timber." },
+  { id: "farm", name: "Harmony · Cambridge Road", q: 6, r: 3, map: 0, blurb: "Harmony village on Route 150, Great Moose Lake and Pittsfield to the south." },
+  { id: "lowell", name: "Lowelltown Woods", q: 1, r: 4, map: 3, blurb: "Spruce and old logging roads." },
+  { id: "skow", name: "Skowhegan", q: 4, r: 7, map: 2, blurb: "Dead streetlights and one bridge." },
+  { id: "kennebec", name: "The Kennebec", q: 3, r: 4, map: 4, blurb: "Wide water, a single crossing." },
+  { id: "north", name: "North Woods · The Grok's woods", q: 1, r: 1, map: 1, blurb: "Past the Kennebec: Chain of Ponds and deep timber." },
   { id: "raiders", name: "Raider Country", q: 10, r: 3, map: 5, blurb: "Camps along the ridge. Stay off the skyline." },
-  { id: "bunker", name: "The Bunker", q: 3, r: 7, map: 6, blurb: "A hatch under the birches." },
-  // v15.1: Quest RPG town games. Pittsfield lies south-east of Harmony on the rail line, Skowhegan (bridge + Water Street) south-east down the Kennebec.
-  { id: "pittsfield", name: "Pittsfield", q: 6, r: 7, map: 0, town: "pittsfield", blurb: "Railroad town. Rusty Maine Central rails, a water tower, the farmers' co-op." },
+  { id: "bunker", name: "The Bunker", q: 1, r: 6, map: 6, blurb: "A hatch under the birches." },
+  // v15.1: Quest RPG town games. Pittsfield lies south-south-east of Harmony on the Sebasticook, Skowhegan (bridge + Water Street) south-west on the Kennebec.
+  { id: "pittsfield", name: "Pittsfield", q: 8, r: 6, map: 0, town: "pittsfield", blurb: "Railroad town. Rusty Maine Central rails, a water tower, the farmers' co-op." },
   // v15.4: Greenville on Moosehead Lake, north of the North Woods. Hidden until the Harmony map + ferry flags are set.
   { id: "greenville", name: "Greenville · Moosehead Lake", q: 5, r: 0, map: 7, lock: "moosehead", blurb: "Cabins at the foot of the lake. The ferry dock is the only way north." },
-  { id: "skowhegan", name: "Skowhegan · Water Street", q: 9, r: 7, /* v15.9.2: beside the Skowhegan bridge hex (8,7), same map */ map: 2, town: "skowhegan", blurb: "Redington hospital, the woolen mill, Marcel's store." },
+  { id: "skowhegan", name: "Skowhegan · Water Street", q: 5, r: 7, /* v15.9.2: beside the Skowhegan bridge hex, same map */ map: 2, town: "skowhegan", blurb: "Redington hospital, the woolen mill, Marcel's store." },
 ];
 /** Room for future loot spots: hexes that will open as small maps later. */
 export const LOOT_SPOTS: { q: number; r: number; name: string; open: boolean }[] = [

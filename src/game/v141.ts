@@ -12,7 +12,7 @@ export const LOOT_RUNS: LootRun[] = [
     tiers: [[["junk", 2], ["water", 1], ["cloth", 1]], [["donut", 2], ["junk", 2], ["fuel", 1], ["bandage", 1]], [["medicine", 1], ["shells", 6], ["kit", 1], ["medkit", 1]]] },
   { id: "camp", name: "The hunting camp", q: 1, r: 2, days: 4, blurb: "A tar-paper camp and a meat shed.",
     tiers: [[["cloth", 2], ["matches", 1]], [["jerky", 2], ["hide", 2], ["snare", 1]], [["shells", 8], ["binoculars", 1], ["steeltrap", 1]]] },
-  { id: "truck", name: "The jackknifed box truck", q: 6, r: 3, days: 5, blurb: "Jackknifed on Route 27, back door chained.",
+  { id: "truck", name: "The jackknifed box truck", q: 6, r: 2, days: 5, blurb: "Jackknifed on Route 150, back door chained.",
     tiers: [[["junk", 3], ["cloth", 2]], [["junk", 3], ["wire", 1], ["water", 2]], [["backpack", 1], ["medicine", 1], ["shells", 6], ["medkit", 1]]] },
 ];
 export const lootRunAt = (q: number, r: number) => LOOT_RUNS.find((l) => l.q === q && l.r === r) ?? null;

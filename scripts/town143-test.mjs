@@ -24,7 +24,7 @@ await page.screenshot({ path: "beta30-shots/v144-in-town.png" });
 await f.locator("#heal").click(); await f.locator("#food").click(); await f.locator("#quest").click();
 await page.waitForTimeout(300);
 d = await T("town143");
-ok(d.tq?.some((q) => q.id === "harmony-mail" && q.q === 8 && q.r === 7), "startQuest adds a world-map marker at Skowhegan");
+ok(d.tq?.some((q) => q.id === "harmony-mail" && q.q === 4 && q.r === 7), "startQuest adds a world-map marker at Skowhegan");
 await f.locator("#leave").click(); await page.waitForTimeout(600);
 ok(!(await page.getByTestId("town-layer").count()), "Leave closes the town layer");
 d = await T("town143");
