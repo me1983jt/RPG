@@ -545,8 +545,9 @@ export const PLACES = {
 
 export const FARM = { tx: 36 + WORLD_OX, ty: 16 + WORLD_OY, r: 12 } as const;
 
-export function inFarm(tx: number, ty: number): boolean {
-  return (tx - FARM.tx) ** 2 + (ty - FARM.ty) ** 2 <= FARM.r * FARM.r;
+export function inFarm(_tx: number, _ty: number): boolean {
+  // v15.9.5: the farm lives only in Quest RPG's Harmony town; FARM is kept as the map anchor Harmony's entrance is found from
+  return false;
 }
 
 // v15.4: buildings are drawn 1.5x along with the 1.5x people (touch-up art). The big houses also get a

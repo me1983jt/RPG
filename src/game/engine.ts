@@ -42,7 +42,7 @@ import { facing8Hys } from "@/game/iso";
 import { setIsoY } from "@/game/iso";
 import { assertIso, facing8, facing8Screen, facingFromWorld, facingRow, screenDirToWorld, screenToWorld, worldToScreen, worldVelToScreen } from "@/game/iso";
 import { autoInfo, b64ToBytes, bytesToB64, getSlot, hasSave, restoreAutosave, setSlot, slotInfos, writeAutosave, playerToSave, readSave, writeSave, type SaveData, type SavedRegion } from "@/game/save";
-import { useHud, useModeResult, useRaidMode } from "@/game/store";
+import { useHud, useModeResult } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt as locAtRaw, locLocked, mooseheadOpen, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
 import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
@@ -96,8 +96,6 @@ export interface GameApi {
   destroy: () => void;
   begin: (name: string, role: RoleId, bonus: { strength: number; vigor: number; endurance: number; intellect: number; perception: number; luck: number }, trait: TraitId, look: LookId, appearance?: StartLook) => void;
   continueGame: () => void;
-  /** Title menu "Raid Mode": a standalone raid night at the farm that never touches the story save. */
-  raidMode: () => void;
   startMode: (kind: "winter" | "endless" | "watch") => void;
   setStick: (x: number, y: number) => void;
   v141: (cmd: string, arg?: any) => any;
@@ -461,16 +459,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let talkNpc = null;
 	let party = null;
 	let partyReturn = null;
-	let raidNight = 0;
 	/** The Bangor Warden: 0 not met, 1 paid / slipped past, 2 fighting, 3 down. */
 	let wardenState = 0;
 	let millSeen = false;
 	let wardenAsked = false;
-	let radioWarned = false;
-	let nightLatch = false;
-	let bossThisNight = false;
 	let tractorReady = false;
-	const guardPost = new Map();
 	const DEFENSE = {
 		stand: { range: 190, dmg: 3, every: .85 },
 		"stand-up": { range: 240, dmg: 5, every: .7 },
@@ -548,14 +541,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const RAID_VAR = new Set(["scout", "brute", "torch", "jumper", "armor", "shield", "atv", "fur", "mask", "saw"]);
 	/** A night raider. The Chopping's named bosses (quest enemies) use the same boss art but stay home. */
 	const isRaider = (e) => !!e && RAID_VAR.has(e.variant) && !e.quest;
-	const GUARD_ROLES = new Set(["sarah", "justin", "adele", "pete", "sera", "holt"]);
-	let raidClock = 10;
-	/** Raid Night (started from Justin at night once the farm is a base). Not saved: a reload mid-raid ends it safely. */
-	let raid = null;
-	let raidsHeld = 0;
-	let raidEndedByReload = false;
-	/** true while a title-menu Raid Mode run is going: saving is off, the end returns to the menu. */
-	let raidMode = false;
 	let piles = [];
 	let nextPile = 1;
 	let lootId = -1;
@@ -651,25 +636,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	function talkState() {
-		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0, raidReady: raidCanStart(), raidOn: !!raid, raidNext: raidNight + 1 };
+		return { snow, wood: player?.wood ?? 0, jackTrust, bunkerSeen, jackMet, warden: wardenState, scrap: player?.scrap ?? 0 };
 	}
 	function hudQuestText() {
 		const dh = dropHud();
-		if (dh && !raid) return dh;
-		if (raid?.defend) {
-			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
-			return `Defend the farm: ${raid.phase === "wave" ? `wave ${raid.wave} of ${raid.waves}` : `wave ${raid.wave + 1} of ${raid.waves} coming`}. Farmhouse ${pct}%.`;
-		}
+		if (dh) return dh;
 		if (mapId === 0 && v14.st < 3 && !mode11) { const c = v14.camp ?? { tx: 0, ty: 0 }; const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(Math.atan2(FARM.ty - c.ty, FARM.tx - c.tx) / (Math.PI / 4)) % 8) + 8) % 8]; return `Cold road: ${STAGE_TEXT[v14.st].replace("east", dir)}`; }
-		if (raid) {
-			const pct = Math.max(0, Math.round(raid.house / raid.houseMax * 100));
-			const stage = raid.phase === "wave" ? `Wave ${raid.wave} of ${raid.waves}` : raid.wave === 0 ? `Wave 1 of ${raid.waves} soon` : `Wave ${raid.wave + 1} of ${raid.waves} in ${Math.max(1, Math.ceil(raid.t))}s`;
-			return `Raid night ${raid.night}: ${stage}. Farmhouse ${pct}%.`;
-		}
 		if (snow < 3 && quest <= 0) {
-			if (snow <= 0) return "First Snow: talk to Sarah at the Cambridge Road farm.";
-			if (snow === 1) return `First Snow: bring Sarah ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. Woodpile by the barn.`;
-			return "First Snow: go see Sarah at the farm.";
+			if (snow <= 0) return "First Snow: talk to Sarah at the farm in Harmony village.";
+			if (snow === 1) return `First Snow: bring Sarah ${SNOW_WOOD} wood. ${Math.min(player?.wood ?? 0, SNOW_WOOD)} of ${SNOW_WOOD}. She's at the farm in Harmony village.`;
+			return "First Snow: go see Sarah at the farm in Harmony village.";
 		}
 		const m11h = q11HudText();
 		if (m11h) return m11h;
@@ -677,7 +653,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return side || questText(quest, questKills);
 	}
 	function musicTick() {
-		setMusic(phase === "menu" ? "menu" : raid ? "raid" : nightDark(clock) > .3 ? "night" : "day");
+		setMusic(phase === "menu" ? "menu" : nightDark(clock) > .3 ? "night" : "day");
 	}
 	function sync(force = false) {
 		if (!force) return;
@@ -1227,10 +1203,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		opening = null;
 		if (v14.st === 0) v14Start();
 		if (v14.st === 0) setLog("You come to in the cab of a wrecked pickup on the Harmony road. Cold. Your head hurts. The fire ring by the ditch is dead.");
-		else setLog("You wake on the cot under the eave. Cambridge Road. The stove in the farmhouse is warm.");
+		else setLog("You come to on the road outside Harmony village.");
 		const tagged = SKILLS.filter((s) => player.tags.includes(s.id)).map((s) => s.name).join(", ");
 		pushLog(`Tagged skills: ${tagged}. They rise twice as fast.`);
-		pushLog(v14.st === 0 ? "Search the truck. First snow is coming." : "Sarah is out by the farmhouse. First snow is coming.");
+		pushLog(v14.st === 0 ? "Search the truck. First snow is coming." : "First snow is coming. Sarah and the farm are in Harmony village.");
 		dialogue = null;
 		piles = [];
 		nextPile = 1;
@@ -1422,14 +1398,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		dialogue = null;
 		spawnCrows();
 		clock = data.clock ?? morningClock();
-		raidNight = data.raidNight ?? 0;
-		raidsHeld = data.raidsHeld ?? 0;
-		raid = null;
-		raidEndedByReload = !!data.raidOn;
-		if (raidEndedByReload) {
-			pushLog("The raid ended while you were away. The farm made it to morning; no reward for a night you didn't finish.");
-			raidEndedByReload = false;
-		}
+		// v15.9.5: raids are gone; old saves may still carry raidNight / raidsHeld / raidOn, which are ignored
 		wardenState = data.warden ?? 0;
 		tractorReady = !!data.tractorReady;
 		rotAcc = 0;
@@ -1463,14 +1432,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v15.1: town doors write the autosave too (after saveGame put the same state in the slot). */
 	function autosave15(where) {
-		if (!world || !player || raidMode || mode11) return;
+		if (!world || !player || mode11) return;
 		const d = readSave();
 		if (!d) return;
 		writeAutosave(d, where);
 		pushLog("Autosaved.");
 	}
 	function saveGame() {
-		if (!world || !player || raidMode || mode11) return;
+		if (!world || !player || mode11) return;
 		const data = playerToSave(player, quest, questKills, collectRemoved(world), world.enemies.filter((e) => e.dead).map((e) => e.id), world.props.filter((p) => p.built).map((p) => ({
 			kind: p.kind,
 			tx: p.tx,
@@ -1485,9 +1454,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.aim = aim;
 		data.turnBased = turnBased;
 		data.clock = clock;
-		data.raidNight = raidNight;
-		data.raidsHeld = raidsHeld;
-		data.raidOn = !!raid;
 		data.warden = wardenState;
 		data.tractorReady = tractorReady;
 		data.goneNpcs = [...goneNpcs];
@@ -1784,25 +1750,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if ((id.startsWith("v14-") || id.startsWith("v141-")) && v14Choice(id)) { sync(true); return; }
 		if (id.startsWith("q11-") && q11Choice(id)) return;
 		if (id.startsWith("q113-") && v3Choice(id)) return;
-		if (id === "raid-ask") {
-			const n = raidNight + 1;
-			dialogue = {
-				speaker: "Sarah",
-				text: `Night ${n}. If we light the yard they'll come at us in ${raidWaves(n)} waves off the road and the tree line. You and I take the posts. Cyndal watches from the loft, Loki stays in with the door barred. We hold till they quit or the sun's up. Ready?`,
-				choices: [{ label: "Light the yard. Hold the farm", id: "raid-go" }, { label: "Not tonight", id: "close" }]
-			};
-			sfx("click");
-			sync(true);
-			return;
-		}
-		if (id === "raid-go") {
-			dialogue = null;
-			phase = "play";
-			startRaid();
-			if (!raid) { const why = raidBlockReason(); if (why) pushLog(why); }
-			sync(true);
-			return;
-		}
 		if (id === "warden-pay" || id === "warden-sneak" || id === "warden-fight") {
 			wardenChoice(id);
 			return;
@@ -1864,7 +1811,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog(v14.st === 3 ? "First Snow on Cambridge Road: done. Sarah says you can have the cot, if the farm's still standing tomorrow." : "First Snow on Cambridge Road: done. The farm is your base now. You wake on the cot if you fall.");
 			pushLog("Hot cider and cider donuts heal. Use them from the pack.");
 			sfx("level");
-			if (v14.st === 3) { dialogue = null; phase = "play"; startDefend14(); return; }
 			startDeal();
 		} else if (id === "jack-bye") {
 			pushLog(JACK_SIGNOFF);
@@ -1904,7 +1850,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		dialogue = {
 			speaker: "Barn bench",
-			text: "Between raids the vise is free. Timber and iron buy a harder night.",
+			text: "The vise is free. Timber and iron buy better gear.",
 			choices: [
 				{ label: "Upgrade a defense · 4 timber, 3 iron", id: "bench-up" },
 				{ label: "Pipe bomb · 6 iron", id: "bench-bomb" },
@@ -2166,6 +2112,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || mapId !== 0) return;
 		q10Props();
 		v3FarmProps();
+		farmGone();
 		if (q10.seed === 2 && q10.seedLeft > 0) q10SeedCamp();
 		if (q10.moose === 2) q10Bull();
 		if (q10.dog >= 2) q10PlaceDog();
@@ -2312,12 +2259,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("The bull goes down in the bog. You dress him out and quarter him on a sled of spruce poles. Now haul him home.");
 		} else if (enemy.q10 === "bear") pushLog("The bear's down. The meat's still yours.");
 		sync(true);
-	}
-	/** A story raid night just ended: Goose bolted during the shooting. */
-	function q10AfterRaid() {
-		if (q10.dog !== 0 || raidMode) return;
-		q10.dog = 1;
-		pushLog("Loki's yelling from the porch. Goose went under the fence when the shooting started.");
 	}
 	function q10Reward(items) {
 		for (const [id, n] of items) giveItem(id, n);
@@ -2939,14 +2880,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		unlockAudio();
 		sfx("click");
 		useModeResult.setState({ result: null });
-		if (kind === "endless") {
-			api.raidMode();
-			mode11 = "endless";
-			m11 = { kind, best: Number(localStorage.getItem("maine-rpg-endless-best") || 0) };
-			setLog(MODE_TEXT.endless);
-			sync(true);
-			return;
-		}
+		if (kind === "endless") return; // v15.9.5: Endless Raid was removed with raids
 		mode11 = kind;
 		bootNew("Packer", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
 		mode11 = kind;
@@ -3073,7 +3007,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function q11HudText() {
 		if (mode11 === "winter" && m11) return `Winter Survival · Day ${Math.min(m11.days, curDay() - m11.day0 + 1)} of ${m11.days} · Warmth ${Math.round(m11.warmth)} · Food ${Math.round(m11.food)}`;
 		if (mode11 === "watch" && m11) return `Night Watch · Dawn in ${Math.max(0, Math.ceil(m11.dur - m11.t))}s · Hens ${m11.hens} · Caught ${m11.caught}`;
-		if (mode11 === "endless" && m11 && raid) return `Endless Raid · Wave ${raid.wave} · Down ${raid.kills} · Best ${m11.best || 0}`;
 		if (q11.caravan === 2 || q11.caravan === 4) return "Trade caravan: ambush! Drive them off the cart.";
 		if (q11.hunt) return `Hunting trip: ${q11.hunt.kind}. Wind out of the ${COMPASS8[q11.hunt.wind]}.`;
 		return "";
@@ -3087,7 +3020,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Farm talk options for the play types. */
 	function q11FarmChoices(role) {
-		if (snow < 3 || raid || mode11) return [];
+		if (snow < 3 || mode11) return [];
 		if (role === "sarah") return [{ label: "Work on the farm", id: "q11-farm" }, { label: "Go on a hunting trip", id: "q11-hunt" }, ...(q11.caravan === 0 ? [{ label: "Take the cart to Bangor", id: "q11-caravan" }] : [])];
 		return [];
 	}
@@ -3259,6 +3192,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Stand-in props for farm upgrades (art hook: public/game/v2/<art>.png via optional.json). */
 	const UP_PROP = { greenhouse: ["shelter", 16, 6], barrel: ["crates", 10, -6], solar: ["stall", 14, -8], lookout: ["stand", -14, -10], palisade: ["fence", -16, 4], cellar: ["hatch", 12, 10], bench: ["workshop", -10, 12] };
 	function v3FarmProps() {
+		return; // v15.9.5: the farm (and its upgrade props) lives only in the Harmony town game
 		if (!world || mapId !== 0) return;
 		const fc = farmCenter();
 		const ft = tileOf(fc.x, fc.y);
@@ -3680,7 +3614,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// ---- needs, sickness, buffs
 	function needsTick(hours) {
-		if (quiet13() || !player || mode11 || raidMode || snow < 3) return;
+		if (quiet13() || !player || mode11 || snow < 3) return;
 		const r = w13.hard ? NEED_RATE.hard : NEED_RATE.normal;
 		const mul = fx13().drainMul;
 		const n = w13.needs;
@@ -3826,7 +3760,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v13RoadTick(dt);
 		v13CampTick();
 		v13MainTick();
-		v13SiegeTick(dt);
 	}
 	function forage(force = false) {
 		if (quiet13() && !force) return false;
@@ -3887,7 +3820,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// ---- road events
 	function v13RoadTick(dt) {
-		if (quiet13() || inside || raid || dialogue || mapId === 1) return;
+		if (quiet13() || inside || dialogue || mapId === 1) return;
 		const t = tileOf(player.x, player.y);
 		const road = world.tiles[t.ty * MAP_W + t.tx] === 2 || world.tiles[t.ty * MAP_W + t.tx] === 5;
 		if (!road || !intent) return;
@@ -4112,7 +4045,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!world || mapId !== 0 || mode11) return;
 		world.props = world.props.filter((p) => { if (p.id < V14_ID) return true; vacate(world, p); return false; });
 		if (!v14.camp) v14.camp = campSpot14();
-		for (const o of fortPlan14()) {
+		if (false) for (const o of fortPlan14()) { // v15.9.5: the farm fort (walls, gates, workbench, lookout) went with the farm
 			const key = `${o.tx},${o.ty}`;
 			const saved = v14.fort[key];
 			const k = saved ? saved.k : o.k;
@@ -4126,7 +4059,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (v14.st < 1) placeAround14("stash", c.tx - 1, c.ty + 1, { camp14: "stash" });
 		// v14.1 playtest: a pile of spruce deadfall at camp so the first 3 wood is right there
 		if (v14.st < 2 && !v14.woodTaken) placeAround14("logs", c.tx - 2, c.ty + 2, { camp14: "wood", resource: "wood", amount: 3 });
-		if (v14.st >= 2) { const m = { tx: Math.round((c.tx + FARM.tx) / 2), ty: Math.round((c.ty + FARM.ty) / 2) }; placeAround14("sign-farm", m.tx, m.ty, { label: "FARM →", camp14: "sign" }); }
 		// spread out: no raider camp or wild bandit within 34 tiles of the farm
 		for (const e of world.enemies) {
 			if (e.dead || e.quest || e.kind !== "bandit" || e.q10 || e.q11) continue;
@@ -4153,24 +4085,38 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.wood = 0; player.stone = 0; player.scrap = 0;
 		player.gridPos = {};
 		refreshGear(player);
-		// v15: a new game starts you on the road just outside Harmony village; home is a short walk
-		const hv = typeof window !== "undefined" && window.__v14Camp ? null : townSpot(ISO_TOWNS[0]);
-		if (hv) {
-			const fc = farmCenter();
-			let best = null;
-			for (let a = 0; a < 360; a += 15) for (const r of [270, 310, 350]) { // v15.8: was 150-230; spawn clear of the walk-in ring
-				const x = hv.x + Math.cos(a * Math.PI / 180) * r, y = hv.y + Math.sin(a * Math.PI / 180) * r;
-				if (pointBlocked(world, x, y, RADIUS)) continue;
-				const tt = tileOf(x, y); if (inFarm(tt.tx, tt.ty) || Math.hypot(tt.tx - FARM.tx, tt.ty - FARM.ty) < FARM.r + 3) continue;
-				const d = Math.hypot(x - fc.x, y - fc.y);
-				if (!best || d < best.d) best = { x, y, d };
-			}
-			if (best) {
-				player.x = best.x; player.y = best.y; player.respawnX = best.x; player.respawnY = best.y; townDisarm();
-				v14.st = 2; giveItem("matches"); giveItem("water");
-				pushLog("You come to on the road outside Harmony village. Home's just up Cambridge Road.");
-			}
+		// v15: a new game starts you on the road just outside Harmony village. v15.9.5: the farm lives only in the Harmony town game now,
+		// so the old farm intro (walk home, Sarah, the defend raid) is skipped: you start with the base steps done (v14.st 5).
+		const hv = typeof window !== "undefined" && window.__v14Camp ? null : harmonyEntry();
+		if (hv) { player.x = hv.x; player.y = hv.y; player.respawnX = hv.x; player.respawnY = hv.y; townDisarm(); giveItem("matches"); giveItem("water"); }
+		if (hv) { v14.st = 5; pushLog("You come to on the road outside Harmony village."); }
+	}
+	/** v15.9.5: a clear spot on the road ring outside Harmony village, at least 260px from every town marker on this map. */
+	function harmonyEntry() {
+		if (!world || mapId !== 0) return null;
+		const hv = townSpot(ISO_TOWNS[0]);
+		if (!hv) return null;
+		const towns = ISO_TOWNS.filter((t) => t.map === 0).map((t) => townSpot(t)).filter(Boolean);
+		const fc = farmCenter();
+		let best = null;
+		for (let a = 0; a < 360; a += 15) for (const r of [270, 310, 350]) {
+			const x = hv.x + Math.cos(a * Math.PI / 180) * r, y = hv.y + Math.sin(a * Math.PI / 180) * r;
+			if (pointBlocked(world, x, y, RADIUS)) continue;
+			if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < 260)) continue;
+			const d = Math.hypot(x - fc.x, y - fc.y);
+			if (!best || d < best.d) best = { x, y, d };
 		}
+		return best ? { x: best.x, y: best.y } : null;
+	}
+	/** v15.9.5: old saves that sit in the removed farm area (or wait on a farm-only intro step) move to Harmony's entrance. */
+	function farmGone() {
+		if (!world || !player || mapId !== 0 || mode11) return;
+		if (v14.st >= 1 && v14.st < 5) v14.st = 5;
+		const near = (x, y) => Math.hypot(x / TILE - FARM.tx, y / TILE - FARM.ty) < FARM.r + 3;
+		const hv = harmonyEntry();
+		if (!hv) return;
+		if (!inside && near(player.x, player.y)) { player.x = hv.x; player.y = hv.y; pushLog("The farm is in Harmony village now. You're on the road outside."); }
+		if (player.respawnX != null && near(player.respawnX, player.respawnY)) { player.respawnX = hv.x; player.respawnY = hv.y; }
 	}
 	function v14Use(prop) {
 		if (prop.kind === "wreck") {
@@ -4188,9 +4134,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (v14.st < 1) return pushLog("No matches. Check the truck.");
 			if (player.wood < 3) return pushLog(`The ring wants 3 wood. You have ${player.wood}. The spruce along the road will do.`);
 			player.wood -= 3; prop.lit14 = true; v14.st = 2; prop.burn = 0;
-			const c = v14.camp; const m = { tx: Math.round((c.tx + FARM.tx) / 2), ty: Math.round((c.ty + FARM.ty) / 2) };
-			placeAround14("sign-farm", m.tx, m.ty, { label: "FARM →", camp14: "sign" });
-			pushLog("The fire takes. While you warm your hands you see it: a thread of chimney smoke over the trees, and a hand sign nailed to a post down the road.");
+			v14.st = 5; // v15.9.5: no farm walk-home step any more
+			pushLog("The fire takes. While you warm your hands you see it: a thread of chimney smoke over the trees, toward Harmony.");
 			grantXp(10); sfx("build"); saveGame(); sync(true); return;
 		}
 		if (prop.kind === "sign-farm") return pushLog("Hand-painted: FARM. KEEP TO THE ROAD. Somebody added: WE SHOOT.");
@@ -4208,7 +4153,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (PIECE_HP[prop.kind] || prop.kind === "wall-x" || prop.kind === "sandbags-x" || prop.kind === "lookout-x") return repairOne14(prop);
 	}
 	function toggleGate14(prop) {
-		if (raid && !prop.open) return pushLog("Not with them out there.");
 		prop.open = !prop.open;
 		if (prop.open) vacate(world, prop);
 		else {
@@ -4253,90 +4197,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (n) sfx("build");
 		saveGame(); sync(true);
 	}
-	function report14(night) {
-		const list = damaged14();
-		const cost = {};
-		for (const p of list) for (const [m, n] of Object.entries(repairCost14(p))) cost[m] = (cost[m] ?? 0) + n;
-		v14.report = { night, items: list.map((p) => ({ name: PIECES.find((x) => x.kind === fixKind14(p))?.name ?? (fixKind14(p) === "lookout" ? "Lookout" : fixKind14(p)), hp: Math.round(p.hp ?? 0), max: maxHp14(p) })), cost };
-		const lines = v14.report.items.slice(0, 6).map((i) => `${i.name} ${i.hp}/${i.max}`).join(" · ");
-		if (legacyTravel()) { pushLog(list.length ? `Repairs: ${list.length} pieces hurt. Fixing all of it: ${costText(cost)}. (Build → Fix all)` : "Every wall came through whole."); return; }
-		openD13("Repairs", list.length ? `Walls after ${night ? `raid night ${night}` : "the fight"}: ${list.length} piece${list.length > 1 ? "s" : ""} hurt. ${lines}${list.length > 6 ? " …" : ""}. Fixing all of it: ${costText(cost)}.` : "Every wall and gate came through whole.", list.length ? [{ label: `Repair all (${costText(cost)})`, id: "v14-repair-all" }, { label: "Later", id: "close" }] : [{ label: "Good", id: "close" }]);
-	}
-	/** Raiders who can't path in go for the nearest wall or gate. */
-	function siegeGoal14(enemy) {
-		let best = null, bd = 1e9;
-		for (const p of world.props) {
-			if (!(isWall14(p.kind) || p.kind === "sandbags" || String(p.kind).startsWith("fence") && p.kind !== "fence-x")) continue;
-			const c = propCenter(p);
-			const d = Math.hypot(c.x - enemy.x, c.y - enemy.y);
-			if (d < bd) { bd = d; best = p; }
-		}
-		if (!best) return null;
-		const t = { tx: best.tx, ty: best.ty };
-		let spot = null, sd = 1e9;
-		for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-			if (cellBlocked(world, t.tx + dx, t.ty + dy)) continue;
-			const x = (t.tx + dx + .5) * TILE, y = (t.ty + dy + .5) * TILE;
-			const d = Math.hypot(x - enemy.x, y - enemy.y);
-			if (d < sd) { sd = d; spot = { x, y }; }
-		}
-		return spot;
-	}
-	function spikesTick14(dt, raiders) {
-		for (const p of world.props) {
-			if (p.kind !== "spikes") continue;
-			const c = propCenter(p);
-			for (const e of raiders) {
-				if (Math.hypot(e.x - c.x, e.y - c.y) > 34) continue;
-				e.hp -= 7 * dt; e.hurt = .1; e.slow = .4;
-				p.hp = (p.hp ?? PIECE_HP.spikes) - 3 * dt;
-				if (e.hp <= 0) markDead(e, e.xp);
-			}
-			if ((p.hp ?? 1) <= 0) { pushLog("A spike trap is ground flat."); v14.placed = v14.placed.filter((q) => !(q.tx === p.tx && q.ty === p.ty)); world.props = world.props.filter((q) => q !== p); break; }
-		}
-	}
-	// ---- defend the farm (the first raid, right after Justin takes you in)
-	let defendSnap = null;
-	function startDefend14() {
-		if (!world || !player || raid) return;
-		v14.st = 4;
-		for (const e of world.enemies) if (!e.dead && isRaider(e)) { e.dead = true; e.death = 0; }
-		for (const p of world.props) if (isGate14(p.kind) && p.open) { p.open = false; occupy(world, p); }
-		const fh = raidHouse();
-		const c = v14.camp ?? { tx: FARM.tx - 20, ty: FARM.ty };
-		const ang = fh ? Math.atan2((c.ty + .5) * TILE - fh.y, (c.tx + .5) * TILE - fh.x) : 0;
-		raid = { night: 1, wave: Math.max(0, v14.defendWave), waves: 3, phase: "lull", t: 10, left: 0, spawnT: 0, ang, house: 140, houseMax: 140, warned: false, kills: 0, defend: true };
-		defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp }));
-		raidHudPct = 20;
-		pushLog("Sarah: \"Lanterns on the road. They've been back every night this week. Take the gate. I've got the porch.\"");
-		saveGame(); sync(true);
-	}
-	function defendLost14(why) {
-		v14.tries += 1;
-		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
-		// v14.1 balance: the wave can be lost. You retry from the checkpoint, but the walls keep the damage they took.
-		const hurt14 = world.props.filter((p) => (p.f14 || p.p14) && p.hp < maxHp14(p)).length;
-		guardPost.clear();
-		raid.wave = Math.max(0, raid.wave - 1); raid.phase = "lull"; raid.t = 9; raid.left = 0; raid.house = raid.houseMax; raid.warned = false;
-		v14.defendWave = raid.wave;
-		player.hp = player.maxHp; player.invuln = 2;
-		const spot = raidHouse(); if (spot) { const r = nearestRespawn(tileOf(spot.x, spot.y).tx, tileOf(spot.x, spot.y).ty + 2, 1, 1); player.x = r.x; player.y = r.y; }
-		openD13("Defend the farm", `${why} Sarah hauls you up by the coat. "Again. They'll come the same way, they always do." The wave starts over.${hurt14 ? ` The walls keep their damage: ${hurt14} piece${hurt14 === 1 ? "" : "s"} want repair (Build → Repair).` : ""}`, [{ label: "Back to the gate", id: "close" }]);
-	}
-	function defendWon14() {
-		v14.st = 5; v14.defendWave = 0; defendSnap = null;
-		guardPost.clear();
-		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
-		raid = null;
-		achieve("raid1");
-		raidsHeld += 1;
-		player.scrap += 8; grantXp(40);
-		pushLog("The last of them breaks for the road. The farm is secured. +8 iron, +40 XP.");
-		pushLog("Sarah: \"Go on, use your bench. Build what you like inside the ring.\" The workbench and Build are open.");
-		sfx("level");
-		report14(0);
-		saveGame();
-	}
+	// ---- (v15.9.5: the defend-the-farm raid was removed)
 	function v14Tick() {
 		if (!world || !player || mapId !== 0 || mode11 || inside) return;
 		if (v14.st === 2) {
@@ -4945,7 +4806,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const [q, r] of path) {
 			m.from = [m.q, m.r]; m.q = q; m.r = r;
 			const hrs = hexHours(q, r, bike);
-			clock += hrs / 24 * DAY_LENGTH_SEC; needsTick(hrs); wmReveal(q, r); wmAwayRaid();
+			clock += hrs / 24 * DAY_LENGTH_SEC; needsTick(hrs); wmReveal(q, r);
 			const last = q === dest.q && r === dest.r;
 			const near = !!rc && Math.abs(q - rc.q) + Math.abs(r - rc.r) <= 3;
 			const roll = typeof window !== "undefined" && window.__wmEnc != null ? window.__wmEnc : Math.random();
@@ -4957,21 +4818,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v15.4: world-map spots behind a quest lock (Greenville) don't exist until their flags are set. */
 	function locAt(q, r) { const l = locAtRaw(q, r); return l && locLocked(l, l1.tf) ? null : l; }
-	/** A raid night hits the farm while you're out: dents the walls in the save, and the world map warns you. */
-	function wmAwayRaid() {
-		const m = wmState();
-		if (!ok14() || mapId === 0 && phase !== "worldmap") return;
-		const day = curDay();
-		if (nightShade(clock) < .22 || m.lastNight === day) return;
-		m.lastNight = day;
-		if (Math.random() > .45 && !(typeof window !== "undefined" && window.__wmRaid)) return;
-		const keys = Object.keys(v14.fort).length ? Object.keys(v14.fort) : [];
-		let hit = 0;
-		for (const k of keys) if (Math.random() < .25 && /^(wall|gate)-/.test(v14.fort[k].k)) { v14.fort[k].hp = Math.max(1, v14.fort[k].hp - 25); hit++; }
-		for (const p of v14.placed) if (Math.random() < .25) { p.hp = Math.max(1, p.hp - 20); hit++; }
-		m.warn = `Raid on the farm tonight! Lanterns on Cambridge Road. ${hit} piece${hit === 1 ? "" : "s"} of wall hit. Sarah and the kids held the house. Nobody's thrilled about it.`;
-		pushLog(m.warn);
-	}
 	function wmArrive(target, from) {
 		travelTo(target, () => {
 			if (!from || !world.gates.length) return null;
@@ -5031,9 +4877,30 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function createWorld(seed, map, exits) {
 		const w = createWorld0(seed, map, exits);
 		thinTrees193(w, map);
+		thinWreck195(w);
 		return w;
 	}
 	const isTree193 = (p) => p.kind.startsWith("tree-");
+	/** v15.9.5: dense wreck / rubble clutter (dead cars, scrap heaps, crates, broken wall) is thinned where 3+ pieces sit
+	 * within 3 tiles: ~40% of those go. Deterministic per tile, ids untouched, lone pieces always stay. */
+	const WRECK195 = new Set(["car-sedan", "car-truck", "scrap", "crates", "wall"]);
+	function thinWreck195(w) {
+		const H = w.tiles.length / MAP_W;
+		const grid = new Uint8Array(w.tiles.length);
+		for (const p of w.props) if (WRECK195.has(p.kind)) grid[p.ty * MAP_W + p.tx] = 1;
+		const before = w.props.length;
+		w.props = w.props.filter((p) => {
+			if (!WRECK195.has(p.kind) || p.quest || p.label) return true;
+			let nb = 0;
+			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H && grid[yy * MAP_W + xx]) nb++; }
+			if (nb < 3) return true;
+			const h = ((Math.imul(p.tx, 83492791) ^ Math.imul(p.ty, 2654435761) ^ 0x27d4eb2d) >>> 0) % 1000 / 1000;
+			if (h >= .4) return true;
+			vacate(w, p);
+			return false;
+		});
+		w.thinWreck195 = before - w.props.length;
+	}
 	function thinTrees193(w, map) {
 		const H = w.tiles.length / MAP_W;
 		const grid = new Uint8Array(w.tiles.length);
@@ -5117,13 +4984,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const zones = [];
 		for (const t of ISO_TOWNS) if (t.map === mapId && !SAFE15_SKIP.has(t.id) && !t.sub && townOpen(t)) { const sp = townSpot(t); if (sp) zones.push({ id: t.id, x: sp.x, y: sp.y, r: SAFE15_R }); }
 		if (mapId === 7) zones.push({ id: "greenville", x: HEX_CX * TILE + TILE / 2, y: HEX_CY * TILE + TILE / 2, r: 200 * TILE }); // v15.4: the whole Greenville landing is safe
-		if (mapId === 0) { const fh = world.props.find((p) => p.kind === "farmhouse" && inFarm(p.tx, p.ty)); const c = fh ? { x: (fh.tx + 1.5) * TILE, y: (fh.ty + 1.5) * TILE } : farmCenter(); zones.push({ id: "farm", x: c.x, y: c.y, r: SAFE15_R }); }
 		safe15 = { key, zones, w: world, said: safe15.said };
 		return zones;
 	}
-	function safeAt(x, y) { if (raid || v14.st === 4 || (typeof window !== "undefined" && window.__safeOff)) return null; return safeZones().find((z) => Math.hypot(x - z.x, y - z.y) < z.r) ?? null; }
+	function safeAt(x, y) { if ( (typeof window !== "undefined" && window.__safeOff)) return null; return safeZones().find((z) => Math.hypot(x - z.x, y - z.y) < z.r) ?? null; }
 	function safeKeep(e) {
-		if (raid || e.raid || e.dead) return;
+		if (e.dead) return;
 		const z = safeAt(e.x, e.y);
 		if (z) { const a = Math.atan2(e.y - z.y, e.x - z.x) || Math.random() * 6.28; e.x = z.x + Math.cos(a) * (z.r + 4); e.y = z.y + Math.sin(a) * (z.r + 4); e.path = null; }
 		const h = safeAt(e.homeX, e.homeY);
@@ -5361,7 +5227,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		phase = "play"; townDisarm();
 		const dest = WM_LOCS.find((l) => l.id === exit && !locLocked(l, l1.tf));
 		if (sp) { player.x = sp.roadX; player.y = sp.roadY; if (pointBlocked(world, player.x, player.y, RADIUS)) { player.x = sp.x + 110; player.y = sp.y + 40; } }
-		if (dest && dest.map === mapId) { if (dest.map === 0) { const fc = farmCenter(); player.x = fc.x; player.y = fc.y + 150; } pushLog(`You leave town for ${dest.name}.`); }
+		if (dest && dest.map === mapId) { if (dest.map === 0) { const he = harmonyEntry(); if (he) { player.x = he.x; player.y = he.y; } } pushLog(`You leave town for ${dest.name}.`); }
 		else if (dest) { const m = wmState(); const here = locOfMap(mapId); m.from = [here.q, here.r]; m.q = dest.q; m.r = dest.r; wmReveal(dest.q, dest.r); wmEnter(dest); pushLog(`You leave town for ${dest.name}.`); }
 		else pushLog(`You walk out of ${tdef?.name ?? "town"} onto the road.`);
 		snapPrev();
@@ -5436,7 +5302,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v14.6: main quest stages for the town (DESIGN.md "Quest mapping"); all read-only on the town side. */
 	function townStoryFlags() {
-		const o = { "story.act": w13.main?.act ?? 1, "story.snow": snow, "story.raids": raidNight, "story.jackLoyal": w13.loyal?.jack ?? 20 };
+		const o = { "story.act": w13.main?.act ?? 1, "story.snow": snow, "story.jackLoyal": w13.loyal?.jack ?? 20 };
 		const mf = w13.main?.flags ?? {};
 		o["story.main.signal"] = !!mf.signal; o["story.main.jackTalk"] = !!mf.jackTalk; o["story.main.marcel"] = !!mf.marcel; o["story.main.ltKills"] = w13.main?.ltKills ?? 0;
 		for (const k of ["seed", "ferry", "dog", "radio", "moose"]) o[`story.q10.${k}`] = q10[k] ?? 0;
@@ -5446,7 +5312,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v14.6: town progress -> our quest state. Only ever moves a quest forward; unknown values are ignored. */
 	const TOWN_FLAG_MAP = {
-		"harmony.firstSnow": { given: ["snow", 1], wood: ["snow", 1], done: ["snow", 2] },
+		"harmony.firstSnow": { given: ["snow", 1], wood: ["snow", 1], done: ["snow", 3] }, // v15.9.5: was done -> 2 (Sarah on the world map closed it); the farm lives only in Harmony now
 		"harmony.dog": { ranOff: ["dog", 1], tracks: ["dog", 2], found: ["dog", 3], done: ["dog", 4] },
 		"harmony.radio": { offered: ["radio", 1], tube: ["radio", 1, 0], done: ["radio", 1, 0] },
 		"harmony.meds": { away: ["q11:meds", 1], returned: ["q11:meds", 1], done: ["q11:meds", 1] },
@@ -5725,7 +5591,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return Math.max(5, Math.min(92, 30 + dark * 30 + lv("stealth") * 4 + skillOf("sneak") * .3 + moon13().stealth * (perk13("stealth", 6) && moon13().stealth > 0 ? 2 : 1) + (w13.weather.id === "fog" ? 12 : 0) + (perk13("stealth", 3) ? 10 : 0) + core13().agility * 2));
 	}
 	function v13CampTick() {
-		if (dialogue || raid || inside) return;
+		if (dialogue || inside) return;
 		const c = nearCamp();
 		if (!c || nightDark(clock) < .3) { w13.campPrompt = ""; return; }
 		const st = w13.camps[c.id] ?? {};
@@ -5777,7 +5643,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Hook for later story content: every act check runs here, and side quests feed it. */
 	function v13MainTick() {
 		const a = w13.main.act;
-		if (a === 1 && snow >= 3 && v3.ach.raid1) mainAdvance();
+		if (a === 1 && snow >= 3) mainAdvance(); // v15.9.5: no longer waits on the first raid (raid1)
 		else if (a === 3 && (w13.loyal.jack ?? 0) >= 30 && w13.main.flags.jackTalk) mainAdvance();
 		else if (a === 4 && w13.main.flags.marcel) mainAdvance();
 		else if (a === 5 && w13.main.ltKills >= 3) mainAdvance();
@@ -5803,52 +5669,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v15: Harmony's ledger, or four towns behind you (harmony.support >= 4), clears the unite requirement. */
 	function uniteWaived() { const f = w13.main?.flags ?? {}; return !!f.ledger || (f.support ?? 0) >= 4; }
-	function v13SiegeStart() {
-		if (w13.main.act !== 8 || w13.main.siege) return;
-		w13.main.siege = 1;
-		if (!raidCanStart()) { const span = DAY_LENGTH_SEC; clock = Math.floor(clock / span) * span + (21.5 / 24) * span; }
-		startRaid();
-		if (!raid) { w13.main.siege = 0; return; }
-		raid.siege = true;
-		raid.waves = 5;
-		raid.collector = false;
-		// v15: the depot burned, so the Collector's men are short a cache: one wave fewer
-		if (w13.main.flags.depotHow === "burned") { raid.waves = 4; pushLog("They're short since the depot burned. Fewer of them on the road tonight."); }
-		if (w13.main.flags.grokFriend) pushLog("Something big moves in the treeline behind the barn. It isn't after you.");
-		const allies = siegeAllies();
-		if (w13.main.flags.beaulieu) pushLog("The Beaulieus came up from Pittsfield with two deer rifles. They take the barn loft.");
-		raid.house += 30 * allies; raid.houseMax += 30 * allies;
-		pushLog(`Siege of Harmony. ${allies ? `${allies} allies on the walls with you.` : "Nobody's coming. It's you and the farm."}`);
-		diary("The Collector came for the farm.");
-		sync(true);
-	}
-	function siegeAllies() {
-		const comps = COMPANIONS.filter((c) => !w13.left[c] && (w13.loyal[c] ?? 0) >= 10).length;
-		const towns = w13.main.choice === "unite" ? 1 + rebuiltN() + (perk13("leadership", 9) ? 2 : 0) : 0;
-		return comps + towns + (q10.dog >= 4 && v3.dog.down < 0 ? 1 : 0) + (w13.main?.flags?.beaulieu ? 2 : 0);
-	}
-	function v13SiegeTick(dt) {
-		if (!raid?.siege) return;
-		if (!raid.collector && raid.wave >= raid.waves) {
-			raid.collector = true;
-			const fh = raidHouse();
-			const c = fh ?? { x: player.x, y: player.y }; // v13.2 fix: raidHouse() is already a point (propCenter on it threw)
-			spawnRaider("collector", clearOutside(c.x + 700, c.y - 300), { hp: 260, atk: 14, xp: 200, name: "The Collector" });
-			pushLog("A big man in a stolen state trooper's coat walks up the road like he owns it. The Collector.");
-		}
-		raid.allyT = (raid.allyT ?? 0) + dt;
-		if (raid.allyT > 5) {
-			raid.allyT = 0;
-			const n = siegeAllies();
-			const foes = world.enemies.filter((e) => !e.dead && e.raid && e.variant !== "collector");
-			for (let i = 0; i < Math.min(n, foes.length); i++) { const e = foes[i]; e.hp -= 8; e.hurt = .2; if (e.hp <= 0) { markDead(e, e.xp); raid.kills += 1; } }
-		}
-	}
-	function v13RaidEnd(won, wasSiege) {
-		if (!wasSiege) return;
-		w13.main.won = !!won && !!w13.main.collectorDown;
-		w13.main.siege = 2;
-	}
 	// ---- dialogue
 	function openD13(speaker, text, choices) {
 		dialogue = { speaker, text, choices };
@@ -5856,7 +5676,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	function v13TalkChoices(role) {
-		if (raid || mode11 || !player) return [];
+		if (mode11 || !player) return [];
 		const out = [];
 		const a = w13.main.act;
 		const c = roleComp(role);
@@ -5879,9 +5699,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (role === "sarah") {
 			out.push({ label: "Caravan on the road?", id: "v13-caravan" });
-			if (a === 8 && !w13.main.siege) out.push({ label: "The Long Winter: we're ready for them", id: "v13-main-siege" });
 		}
-		if (MAIN_TALK[a]?.[role] && !raid) out.push({ label: "The Long Winter: what do you make of it?", id: "v13-main-talk" });
+		if (MAIN_TALK[a]?.[role]) out.push({ label: "The Long Winter: what do you make of it?", id: "v13-main-talk" });
 		if (MAIN_ACTS[a - 1] && MAIN_ACTS[a - 1].intro[0].toLowerCase().startsWith(role === "cal" ? "jack" : role) && !w13.main.flags[`intro${a}`]) out.push({ label: `The Long Winter: ${MAIN_ACTS[a - 1].title}`, id: `v13-main-intro` });
 		return out;
 	}
@@ -5891,7 +5710,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if ((m = id.match(/^v13-cook-(.+)$/))) { cook(m[1]); return cookMenu(); }
 		if (id === "v13-bench") return benchMenu();
 		if (id === "v13-sleep") {
-			if (raid) { pushLog("Not tonight. They're on the road."); return close13(); }
 			const span = DAY_LENGTH_SEC;
 			const h = hourNow();
 			clock = Math.floor(clock / span) * span + (h >= 7 ? span : 0) + (7 / 24) * span;
@@ -5967,7 +5785,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (m[1] === "deal") { player.scrap = Math.max(0, player.scrap - 20); w13.main.siege = 2; w13.main.won = true; pushLog("You send word down the river: the farm pays his toll. He sends back a single shell casing. Deal."); }
 			return close13();
 		}
-		if (id === "v13-main-siege") { close13(); v13SiegeStart(); return true; }
 		if (id === "v13-ending-next") { w13.main.slide += 1; sync(true); return true; }
 		return false;
 	}
@@ -6134,10 +5951,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const line = npcLine(npc.role, npc.name, quest, lootedChests.has(91001) && lootedChests.has(91002), talkState());
 			const v14x = v14Talk(npc.role, npc);
 			if (v14x) { dialogue = v14x; phase = "dialogue"; sync(true); return; }
-			const q10x = q10Talk(npc.role, q10, snow >= 3, !!raid);
+			const q10x = q10Talk(npc.role, q10, snow >= 3, false);
 			if (q10x?.replace) Object.assign(line, q10x.replace);
 			else if (q10x?.add) line.choices = [...line.choices.slice(0, -1), ...q10x.add, ...line.choices.slice(-1)];
-			const q11x = q10x?.replace ? null : q11Talk(npc.role, q11, Q11C(), !!raid);
+			const q11x = q10x?.replace ? null : q11Talk(npc.role, q11, Q11C(), false);
 			if (q11x?.replace) Object.assign(line, q11x.replace);
 			else {
 				const extra = [...(q11x?.add ?? []), ...q11FarmChoices(npc.role), ...v13TalkChoices(npc.role)];
@@ -6257,10 +6074,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function stepParty(dt) {
 		if (!party || !player || !world || inside) return;
-		if (guardPost.has(party.homeId)) {
-			party.cooldown = Math.max(0, party.cooldown - dt);
-			return;
-		}
 		party.cooldown = Math.max(0, party.cooldown - dt);
 		const dx = player.x - party.x;
 		const dy = player.y - party.y;
@@ -7427,8 +7240,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 		} else if (prop.kind === "lookout") {
 			if (!check159("electronics", 30)) { pushLog(`${name}: the lookout radio hums and dies. Bad solder.`); sync(true); return true; }
-			const nextRaid = raidBlockReason() ? "No raid in the air yet." : "Talk on the band of a raid party moving tonight.";
-			pushLog(`${name}: you get the lookout radio talking. ${w13.weather?.id === "clear" ? "Clear skies on the county band." : "Weather coming in on the county band."} ${nextRaid}`);
+			pushLog(`${name}: you get the lookout radio talking. ${w13.weather?.id === "clear" ? "Clear skies on the county band." : "Weather coming in on the county band."}`);
 		} else if (prop.kind === "hatch") {
 			if (!check159("electronics", 40)) { pushLog(`${name}: the keypad on the bunker's power cabinet stays dark.`); sync(true); return true; }
 			giveItem("shells", 4); player.scrap += 3;
@@ -7865,7 +7677,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		enemy.dead = true;
 		enemy.aggro = false;
 		enemy.death = 1.15;
-		if (enemy.raid && raid) raid.kills += 1;
 		corpseOf(enemy);
 		grantXp(xp);
 		v3Kill(enemy);
@@ -8361,15 +8172,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const dy = player.y - fromY;
 		const m = Math.hypot(dx, dy) || 1;
 		nudge(player, dx / m * 16, dy / m * 16);
-		if (player.hp <= 0 && raid?.defend) { defendLost14("You go down at the gate."); sync(true); return; }
-		if (player.hp <= 0 && raid) {
-			player.hp = Math.max(1, Math.ceil(player.maxHp * .5));
-			player.invuln = 2;
-			sfx("die");
-			endRaid(false, "You go down by the porch. Sarah drags you inside and they bar the door. The raiders take what they can carry and go.");
-			sync(true);
-			return;
-		}
 		if (player.hp <= 0) {
 			player.hp = 0;
 			phase = "dead";
@@ -8987,10 +8789,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			return;
 		}
 		if (!turnBased) for (const npc of world.npcs) {
-			if (!guardPost.has(npc.id)) stepFolk(npc, dt);
+			stepFolk(npc, dt);
 		}
 		if (!turnBased) stepParty(dt);
-		if (!turnBased) stepRaid(dt);
+		if (!turnBased) stepProps(dt);
 		{ const _t = performance.now(); stepEncounters(); pAdd("u:stepEncounters", _t); }
 		{ const _t = performance.now(); q10Step(dt); pAdd("u:q10Step", _t); }
 		{ const _t = performance.now(); q11Step(dt); pAdd("u:q11Step", _t); }
@@ -9031,7 +8833,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			safeKeep(enemy);
 			const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
 			// v15.9.3: animals and foes ~1.5 screens away (not chasing, not raiding) pause their AI and animation
-			if (dist > aiFar && !enemy.aggro && !enemy.raid && !enemy.quest) { aiPaused++; continue; }
+			if (dist > aiFar && !enemy.aggro && !enemy.quest) { aiPaused++; continue; }
 			const homeDist = Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY);
 			if (enemy.hollow) { stepHollow(enemy, dt, dist); continue; }
 			if (enemy.temper === "timid") {
@@ -9118,65 +8920,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						goalY = lure.y;
 					}
 				}
-				if (enemy.raid && raid) {
-					const fh = raidHouse();
-					if (fh && dist > 640) { // v15.7: raiders that see you inside ~10 tiles come for you (was 300 px: they walked past you to the house)
-						const d = Math.hypot(fh.x - enemy.x, fh.y - enemy.y);
-						goalX = fh.x;
-						goalY = fh.y;
-						if (d < 96) {
-							raid.house -= enemy.atk * .55 * dt;
-							enemy.dir = facing8(fh.x - enemy.x, fh.y - enemy.y);
-							enemy.anim += dt * 6;
-							enemy.frame = Math.floor(enemy.anim) % 4;
-							if (Math.random() < dt * 1.5) burst(fh.x + (Math.random() - .5) * 60, fh.y - 20, "#c9a26a", 3);
-							raidHudTick();
-							continue;
-						}
-					}
-				}
-				if (enemy.variant === "torch" && dist > 110) {
-					let best = null;
-					let bestD = 340;
-					for (const p of world.props) {
-						if (p.kind !== "farmhouse" && p.kind !== "barn" && p.kind !== "shack" && !DEFENSE[p.kind] && !BROKEN[p.kind]) continue;
-						if (String(p.kind).endsWith("-x")) continue;
-						const c = propCenter(p);
-						const d = Math.hypot(c.x - enemy.x, c.y - enemy.y);
-						if (d < bestD) {
-							bestD = d;
-							best = p;
-						}
-					}
-					if (best) {
-						const c = propCenter(best);
-						goalX = c.x;
-						goalY = c.y;
-						if (bestD < 56) {
-							best.burn = (best.burn || 0) + dt;
-							if (best.burn > 4 && !best.burnNoted) {
-								best.burnNoted = true;
-								pushLog("A torch catches the timber.");
-							}
-							if (best.burn > 7 && BROKEN[best.kind]) hurtProp(best, 18);
-						}
-					}
-				}
-				if (isRaider(enemy) && enemy.variant !== "jumper" && enemy.cooldown <= 0) {
-					for (const p of world.props) {
-						if (!BROKEN[p.kind] || String(p.kind).endsWith("-x")) continue;
-						const c = propCenter(p);
-						if (Math.hypot(c.x - enemy.x, c.y - enemy.y) > (isWall14(p.kind) || p.kind === "sandbags" ? 96 : 54)) continue;
-						const ram = enemy.variant === "armor" || enemy.variant === "brute" || enemy.variant === "atv" ? 9 : 4;
-						hurtProp(p, ram);
-						enemy.cooldown = .75;
-						enemy.dir = facing8(c.x - enemy.x, c.y - enemy.y);
-						break;
-					}
-				}
+				// v15.9.5: raider torch-burning and wall-ramming went with raids
 				if (enemy.pathT <= 0 || !enemy.path) {
 					enemy.path = pathTo(world, enemy.x, enemy.y, goalX, goalY);
-					if (!enemy.path && enemy.raid) { const sg = siegeGoal14(enemy); if (sg) enemy.path = pathTo(world, enemy.x, enemy.y, sg.x, sg.y); }
 					enemy.pathT = .45;
 				}
 				if (enemy.path) {
@@ -9251,6 +8997,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (part.spinV) part.spin += part.spinV * dt;
 		}
 		for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+		if (particles.length > partCap195()) particles.splice(0, particles.length - partCap195()); // v15.9.5: oldest go first
 		for (const f of floaters) {
 			f.life -= dt;
 			f.y -= 18 * dt;
@@ -9325,7 +9072,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return best;
 	}
+	/** v15.9.5: hard particle cap; lower at night and in Performance mode (night is the slow case on phones). */
+	function partCap195() { return perfMode || nightShade(clock) > .22 ? 60 : 140; }
 	function burst(x, y, color, n, big) {
+		n = Math.min(n, Math.max(0, partCap195() - particles.length));
 		for (let i = 0; i < n; i++) {
 			const a = Math.random() * Math.PI * 2;
 			const s = 30 + Math.random() * 90;
@@ -9424,7 +9174,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const id = body.id ?? body.homeId;
 		// kids never stand a gun post: no guard pose for Cyndal or Loki, ever
 		const kid = body.role === "cyndal" || body.role === "loki";
-		const guarding = !kid && id != null && guardPost.has(id);
+		const guarding = false; // v15.9.5: no raid guard posts
 		if (paintV2Folk(body, guarding, camX, camY)) return;
 		const firing = guarding && (body.cooldown || 0) > .2;
 		const guardName = firing ? `guard-${body.role}` : `guard-watch-${body.role}`;
@@ -9581,101 +9331,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const along = t * 460;
 		return { x: along, y: -along * .2 };
 	}
-	/** A raider spawn point on open ground with a walkable path to the hero (v18 spawned raiders inside
-	 * trees, buildings and off-map tiles, where they stood still all night). */
-	function raidSpawn(minR, maxR) {
-		if (!world || !player) return null;
-		for (let tries = 0; tries < 16; tries++) {
-			const ang = Math.random() * Math.PI * 2;
-			const rad = minR + Math.random() * (maxR - minR);
-			const x = player.x + Math.cos(ang) * rad;
-			const y = player.y + Math.sin(ang) * rad;
-			const t = tileOf(x, y);
-			if (cellBlocked(world, t.tx, t.ty)) continue;
-			if (!pathTo(world, x, y, player.x, player.y)) continue;
-			return { x: (t.tx + .5) * 64, y: (t.ty + .5) * 64 };
-		}
-		return null;
-	}
-	function raidHouse() {
-		if (!world || mapId !== 0) return null;
-		const fh = world.props.find((p) => p.kind === "farmhouse");
-		if (!fh) return null;
-		const c = propCenter(fh);
-		return { x: c.x, y: c.y + 40 };
-	}
-	function raidWaves(n) {
-		return Math.min(6, 3 + Math.floor((n - 1) / 3) + moon13().waves);
-	}
-	/** v15.7: why a raid can't start right now (null = it can). */
-	function raidBlockReason() {
-		if (!player || !world) return "The game isn't running yet.";
-		if (raid) return "A raid is already under way.";
-		if (inside) return "Step outside first. Raids come to the farm yard.";
-		if (mapId !== 0) return "Raids only hit the farm. Head home to Cambridge Road first.";
-		if (!ok14()) return "No raid yet: the story hasn't reached the raids (finish First Snow with Sarah).";
-		if (snow < 3) return `No raid yet: the snow isn't deep enough (${snow}/3). The raiders wait for real winter.`;
-		if (nightShade(clock) <= .22) return "No raid yet: they only come after dark. Wait for night.";
-		return null;
-	}
-	function raidCanStart() {
-		if (!player || !world || raid || inside || snow < 3 || mapId !== 0 || !ok14()) return false;
-		return nightShade(clock) > .22;
-	}
-	let raidHudPct = 100;
-	function raidHudTick() {
-		if (!raid) return;
-		const pct = Math.round(raid.house / raid.houseMax * 20);
-		if (pct !== raidHudPct) {
-			raidHudPct = pct;
-			sync(true);
-		}
-	}
 	const COMPASS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
-	function startRaid() {
-		if (!raidCanStart() || !world || !player) return;
-		raidNight += 1;
-		const n = raidNight;
-		// clear any stragglers so the waves start clean
-		for (const e of world.enemies) if (!e.dead && isRaider(e) && !e.quest) { e.dead = true; e.death = 0; }
-		raid = { night: n, wave: 0, waves: raidWaves(n), phase: "lull", t: 7, left: 0, spawnT: 0, ang: Math.random() * Math.PI * 2, house: 120 + 15 * n, houseMax: 120 + 15 * n, warned: false, kills: 0 };
-		if (q11.farm.wall) { raid.house += 15 * q11.farm.wall; raid.houseMax += 15 * q11.farm.wall; }
-		if (v3.up.palisade) { raid.house += 40 * v3.up.palisade; raid.houseMax += 40 * v3.up.palisade; }
-		if (v3.up.lookout) { raid.t += 6 * v3.up.lookout; pushLog("From the lookout tower you see their lanterns early, way down the road."); }
-		if (w13.main?.flags?.gooseGuard) { raid.t += 8; raid.gooseWarn = true; pushLog("Goose is up and growling at the road long before the lanterns show. You get the posts manned early."); }
-		raidHudPct = 20;
-		pushLog(`Raid night ${n}. You and Sarah take the posts. Hold the farm.`);
-		if (world.npcs.some((m) => m.role === "loki")) pushLog("Loki bars the farmhouse door behind him.");
-		sfx("click");
-		saveGame();
-		sync(true);
-	}
-	function raidPool(n, wave) {
-		const level = n + wave - 1;
-		const pool = ["scout", "scout"];
-		if (level >= 2) pool.push("jumper");
-		if (level >= 3) pool.push("torch");
-		if (level >= 4) pool.push("shield");
-		if (level >= 5) pool.push("brute");
-		if (level >= 7) pool.push("armor");
-		if (level >= 8) pool.push("atv");
-		return pool;
-	}
-	function raidSpawnAt(cx, cy, ang, minR, maxR) {
-		if (!world) return null;
-		for (let tries = 0; tries < 24; tries++) {
-			const a = ang + (Math.random() - .5) * 1.4;
-			const rad = minR + Math.random() * (maxR - minR);
-			const x = cx + Math.cos(a) * rad;
-			const y = cy + Math.sin(a) * rad;
-			const t = tileOf(x, y);
-			if (t.tx < 1 || t.ty < 1 || t.tx > 154 || t.ty > 154) continue;
-			if (cellBlocked(world, t.tx, t.ty)) continue;
-			if (!pathTo(world, x, y, cx, cy)) continue;
-			return { x: (t.tx + .5) * 64, y: (t.ty + .5) * 64 };
-		}
-		return null;
-	}
 	function spawnRaider(variant, spot, boss = null) {
 		const stats = variant === "armor" || variant === "brute" ? [46, 8, 16] : variant === "shield" ? [36, 6, 12] : variant === "atv" ? [28, 7, 14] : variant === "torch" ? [22, 5, 10] : variant === "jumper" ? [16, 4, 9] : [14, 4, 8];
 		const label = { scout: "Scout", jumper: "Climber", armor: "Plate", shield: "Shield", brute: "Brute", torch: "Torch", atv: "Rider" };
@@ -9685,346 +9341,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			hp, maxHp: hp, atk: boss ? boss.atk : stats[1], xp: boss ? boss.xp : stats[2],
 			elite: !!boss || variant === "armor" || variant === "brute", quest: false, kind: "bandit", pack: 90, temper: "hostile",
 			crippleArm: 0, crippleLeg: 0, dir: 0, frame: 0, anim: 0, cooldown: 0, path: null, pathT: 0, aggro: true, dead: false, hurt: 0,
-			variant, name: boss ? boss.name : label[variant] || "Raider", slow: 0, death: 0, raid: true
+			variant, name: boss ? boss.name : label[variant] || "Raider", slow: 0, death: 0, raid: false
 		});
 	}
-	function stepRaidNight(dt, raiders) {
-		if (!raid || !player || !world) return;
-		const fh = raidHouse();
-		if (!fh) { endRaid(false, "The raid breaks off."); return; }
-		// v13.2 fix: the siege of Harmony runs till it's decided; dawn used to end it early and count as a loss
-		if (nightShade(clock) < .12 && !raid.siege && !raid.defend) {
-			endRaid(!inside, inside ? "Dawn. You sat it out behind the door. The raiders drift off with what they could carry." : "Dawn comes up grey over the orchard. They pull back to the road.");
-			return;
-		}
-		if (raid.house <= 0 && raid.defend) { defendLost14("They break the farmhouse door."); return; }
-		if (raid.house <= 0) {
-			endRaid(false, "The farmhouse door splinters. Sarah fires the last shells and they scatter with the woodpile and a sack of apples.");
-			return;
-		}
-		if (inside) return;
-		const live = raiders.filter((e) => e.raid).length;
-		if (raid.phase === "lull") {
-			raid.t -= dt;
-			if (raid.t < 4 && !raid.warned) {
-				raid.warned = true;
-				const dir = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"][((Math.round(raid.ang / (Math.PI / 4)) % 8) + 8) % 8];
-				if (world.npcs.some((m) => m.role === "cyndal")) pushLog(`Cyndal, from the loft: "Dad! Lanterns to the ${dir}! Here they come!"`);
-				else pushLog(`Lanterns to the ${dir}.`);
-				sfx("click");
-			}
-			if (raid.t <= 0) {
-				raid.wave += 1;
-				raid.phase = "wave";
-				raid.left = Math.min(7, 1 + raid.wave + Math.floor(raid.night / 2)); // v15.1: one fewer per wave, cap 7 (turn-based fights)
-				if (w13.main?.flags?.fence && raid.left > 1) { raid.left -= 1; if (raid.wave === 1) pushLog("The mended fence turns some of them back into the dark."); }
-				if (raid.defend) { v14.defendWave = raid.wave - 1; defendSnap = world.props.filter((p) => p.f14 || p.p14).map((p) => ({ p, k: p.kind, hp: p.hp })); }
-				raid.spawnT = 0;
-				pushLog(`Wave ${raid.wave} of ${raid.waves}.`);
-				sync(true);
-			}
-			return;
-		}
-		if (raid.left > 0) {
-			raid.spawnT -= dt;
-			if (raid.spawnT <= 0) {
-				raid.spawnT = 1.1;
-				const last = raid.wave === raid.waves && raid.left === 1;
-				const boss = last && (raid.night % 5 === 0) ? (raid.night >= 15 ? { variant: "saw", name: "Gil Michaud", hp: 90, atk: 12, xp: 40 } : raid.night >= 10 ? { variant: "mask", name: "René Gallant", hp: 74, atk: 10, xp: 32 } : { variant: "fur", name: "Harland Poulin", hp: 64, atk: 9, xp: 28 }) : null;
-				const pool = raidPool(raid.night, raid.wave);
-				const variant = boss ? boss.variant : pool[Math.floor(Math.random() * pool.length)];
-				const spot = raidSpawnAt(fh.x, fh.y, raid.ang, 10 * 64, 13 * 64) || raidSpawnAt(fh.x, fh.y, raid.ang + Math.PI, 10 * 64, 13 * 64);
-				if (spot) {
-					spawnRaider(variant, spot, boss);
-					raid.left -= 1;
-					if (boss) pushLog(`${boss.name} walks in behind them.`);
-				}
-			}
-			return;
-		}
-		if (live === 0) {
-			if (raid.wave >= raid.waves) {
-				// v13.2 fix: on siege night the Collector must walk in before the night can be won
-				if (raid.siege && !raid.collector) { v13SiegeTick(0); return; }
-				if (raid.siege && !w13.main.collectorDown && world.enemies.some((e) => !e.dead && e.variant === "collector")) return;
-				if (raid.defend) { defendWon14(); return; }
-				endRaid(true, "The last of them breaks for the road.");
-				return;
-			}
-			raid.phase = "lull";
-			raid.t = 9; // v15.8: was 14 s; read as a stall
-			raid.warned = false;
-			raid.ang = Math.random() * Math.PI * 2;
-			if (world.npcs.some((m) => m.role === "loki")) {
-				giveItem("shells", 3);
-				pushLog("Loki slips a box of shells and a fresh lantern out the door to the porch. +3 shells.");
-			}
-			pushLog(`Wave ${raid.wave} is down. ${raid.waves - raid.wave} to go.`);
-			sync(true);
-		}
-	}
-	function endRaid(won, why) {
-		if (!raid || !player || !world) return;
-		{ const wm = wmState(); wm.lastNight = curDay(); wm.warn = ""; } // v15.8: the raid is over; the world map opens clean (no away-raid the same night)
-		if (mode11 === "endless") {
-			if (won) {
-				raid.waves += 1; raid.phase = "lull"; raid.t = 8; raid.warned = false; raid.ang = Math.random() * Math.PI * 2;
-				giveItem("shells", 4);
-				pushLog(`Wave ${raid.wave} is down. More lanterns on the road. +4 shells.`);
-				sync(true);
-				return;
-			}
-			m11.waves = Math.max(0, raid.wave - 1); m11.kills = raid.kills; m11.score = raid.kills * 10 + m11.waves * 50;
-			for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
-			guardPost.clear(); raid = null; raidMode = false;
-			q11EndMode(false, why);
-			return;
-		}
-		const n = raid.night;
-		const summary = { won, night: n, kills: raid.kills, waves: raid.waves, wavesDone: won ? raid.waves : Math.max(0, raid.wave - 1), text: why };
-		for (const e of world.enemies) if (!e.dead && e.raid) { e.dead = true; e.death = 0; }
-		if (raidMode) {
-			guardPost.clear();
-			raid = null;
-			raidMode = false;
-			useRaidMode.setState({ result: summary });
-			sfx(won ? "level" : "die");
-			phase = "menu";
-			dialogue = null;
-			buildOpen = false;
-			sync(true);
-			return;
-		}
-		const wasSiege = !!raid.siege;
-		guardPost.clear();
-		raid = null;
-		pushLog(why);
-		v13RaidEnd(won, wasSiege);
-		if (won) {
-			raidsHeld += 1;
-			achieve("raid1");
-			if (raidsHeld >= 5) achieve("raid5");
-			const scrap = 6 + 4 * n;
-			player.scrap += scrap;
-			grantXp(20 + 10 * n);
-			pushLog(`You held the farm. Night ${n} is done: +${scrap} iron, +${20 + 10 * n} XP.`);
-			sfx("level");
-		} else pushLog(`The farm still stands. You keep what you took off them. Try again tomorrow night.`);
-		q10AfterRaid();
-		if (!wasSiege) report14(n);
-		// morning comes
-		const span = DAY_LENGTH_SEC;
-		const into = ((clock % span) + span) % span;
-		clock = Math.floor(clock / span) * span + (into > span * 7 / 24 ? span : 0) + span * 7 / 24;
-		saveGame();
-		sync(true);
-	}
-	function stepRaid(dt) {
-		if (!world || !player || inside) {
-			guardPost.clear();
-			return;
-		}
+	/** v15.9.5: raids are gone; this only fades the hit flash on props. */
+	function stepProps(dt) {
+		if (!world) return;
 		for (const prop of world.props) {
 			if (prop.flash > 0) prop.flash = Math.max(0, prop.flash - dt);
-		}
-		const here = tileOf(player.x, player.y);
-		const nearPost = world.props.some((p) => (DEFENSE[p.kind] || LURE.has(p.kind) || p.kind === "tractor" || p.kind === "farmhouse") && Math.hypot(propCenter(p).x - player.x, propCenter(p).y - player.y) < 720);
-		const dark = nightShade(clock) > .22;
-		const onFarm = inFarm(here.tx, here.ty) || nearPost;
-		// the hand-crank radio: Jack calls at dusk before a raid night
-		const shade = nightShade(clock);
-		if (shade > .1 && !dark && !radioWarned && carrying("radio") && jackTrust > 0) {
-			radioWarned = true;
-			const n = raidNight + 1;
-			const boss = n === 5 ? " Poulin's with them." : n === 10 ? " Gallant's walking with them." : n === 15 ? " I can hear a saw." : "";
-			pushLog(`Jack on the radio: "Dusk. ${3 + Math.min(4, n)} or so coming up Cambridge Road tonight.${boss} Get to the farm."`);
-			sfx("click");
-		}
-		if (shade < .05) radioWarned = false;
-		if (dark && onFarm && !nightLatch && !raid) {
-			nightLatch = true;
-			if (snow >= 3 && mapId === 0) pushLog("Night on Cambridge Road. Talk to Sarah when you're ready to hold the farm.");
-		}
-		if (!dark) {
-			nightLatch = false;
-			bossThisNight = false;
-		}
-		const night = (dark && onFarm && !!raid) || (!!raid && !inside);
-		const raiders = world.enemies.filter((e) => !e.dead && isRaider(e));
-		// (v29 fix) this ran before `raiders` existed: a TDZ crash that froze the game on raid night
-		if (raid) { spikesTick14(dt, raiders); stepRaidNight(dt, raiders); }
-		if (!world || !player) return;
-		if (night && tractorReady) {
-			const tractor = world.props.find((p) => p.kind === "tractor");
-			if (tractor) {
-				tractor.charge = Math.min(1, (tractor.charge || 0) + dt * .22);
-				const shift = tractorShift(tractor.charge);
-				const c = propCenter(tractor);
-				for (const e of raiders) {
-					if (Math.hypot(e.x - (c.x + shift.x), e.y - (c.y + shift.y)) < 64) {
-						e.hp -= 16 * dt;
-						e.hurt = .1;
-						e.slow = .3;
-						if (e.hp <= 0) markDead(e, e.xp);
-					}
-				}
-				if (tractor.charge >= 1) {
-					tractor.charge = 0;
-					tractorReady = false;
-					pushLog("The tractor coughs and stops. It wants another can.");
-				} else if (particles.length < 120) {
-					// a soft cloud of snow and dirt rolling off the rear wheels (grows and thins as it drifts)
-					const snowy = Math.random() < .65;
-					particles.push({
-						x: c.x + shift.x - 30 + Math.random() * 10,
-						y: c.y + shift.y + 10 + Math.random() * 10,
-						vx: -40 - Math.random() * 30,
-						vy: 6 + Math.random() * 10,
-						life: .8 + Math.random() * .5,
-						max: 1.3,
-						color: snowy ? "238,242,246" : "196,176,142",
-						size: 10 + Math.random() * 8,
-						puff: true
-					});
-				}
-			}
-		}
-		if (!night) {
-			guardPost.clear();
-			return;
-		}
-		raidClock -= dt;
-		const cap = raid ? 0 : 3 + Math.min(4, raidNight);
-		if (!raid && raidClock <= 0 && raiders.length < cap && !(mapId === 0 && v14.st < 99)) {
-			raidClock = 14 + Math.random() * 8;
-			const pool = ["scout"];
-			if (raidNight >= 2) pool.push("jumper", "scout");
-			if (raidNight >= 3) pool.push("torch");
-			if (raidNight >= 4) pool.push("shield", "brute");
-			if (raidNight >= 6) pool.push("armor");
-			if (raidNight >= 7) pool.push("atv");
-			const variant = pool[Math.floor(Math.random() * pool.length)];
-			const spot = raidSpawn(7 * 64, 11 * 64);
-			if (spot) {
-			const { x, y } = spot;
-			const stats = variant === "armor" || variant === "brute" ? [46, 8, 16] : variant === "shield" ? [36, 6, 12] : variant === "atv" ? [28, 7, 14] : variant === "torch" ? [22, 5, 10] : variant === "jumper" ? [16, 4, 9] : [14, 4, 8];
-			const label = { scout: "Scout", jumper: "Climber", armor: "Plate", shield: "Shield", brute: "Brute", torch: "Torch", atv: "Rider" };
-			world.enemies.push({
-				id: world.nextEnemyId++,
-				x, y, homeX: x, homeY: y,
-				hp: stats[0], maxHp: stats[0], atk: stats[1], xp: stats[2],
-				elite: variant === "armor" || variant === "brute",
-				quest: false,
-				kind: "bandit",
-				pack: 90,
-				temper: "hostile",
-				crippleArm: 0,
-				crippleLeg: 0,
-				dir: 0,
-				frame: 0,
-				anim: 0,
-				cooldown: 0,
-				path: null,
-				pathT: 0,
-				aggro: true,
-				dead: false,
-				hurt: 0,
-				variant,
-				name: label[variant] || "Raider",
-				slow: 0,
-				death: 0
-			});
-			if (raiders.length === 0) { pushLog("Lanterns at the orchard edge. They are coming in."); if (world.npcs.some((n) => n.role === "cyndal")) pushLog("Cyndal, from the loft: \"Lanterns coming, Dad! Here they come!\""); if (world.npcs.some((n) => n.role === "loki")) pushLog("Loki stays in the farmhouse with the door barred, running shells and lanterns to the porch."); }
-			}
-		}
-		for (const prop of world.props) {
-			const spec = DEFENSE[prop.kind];
-			if (!spec) continue;
-			prop.cool = Math.max(0, (prop.cool || 0) - dt);
-			const c = propCenter(prop);
-			let best = null;
-			let bestD = spec.range;
-			for (const e of world.enemies) {
-				if (e.dead || !isRaider(e)) continue;
-				const d = Math.hypot(e.x - c.x, e.y - c.y);
-				if (d < bestD) {
-					best = e;
-					bestD = d;
-				}
-			}
-			if (!best || prop.cool > 0) continue;
-			prop.cool = spec.every;
-			prop.flash = .1;
-			if (spec.dmg <= 0 && !spec.slow) continue;
-			if (spec.slow) best.slow = .45;
-			best.hp -= spec.dmg;
-			best.aggro = true;
-			best.hurt = .08;
-			burst(c.x, c.y - 36, spec.slow ? "#e07030" : "#f3e7b0", spec.slow ? 7 : 4);
-			burst(best.x, best.y - 10, "#f4e2a0", 3);
-			if (!spec.slow) sfx("hit");
-			if (best.hp <= 0) markDead(best, best.xp);
-		}
-		const posts = world.props.filter((p) => DEFENSE[p.kind]);
-		const crew = [];
-		if (party) crew.push(party);
-		for (const n of world.npcs) {
-			if (GUARD_ROLES.has(n.role) && Math.hypot(n.x - player.x, n.y - player.y) < 4200) crew.push(n);
-		}
-		guardPost.clear();
-		const spots = posts.map((p) => ({ id: p.id, c: propCenter(p), real: true }));
-		const fh = raid ? raidHouse() : null;
-		if (fh) {
-			const ring = [[-150, 120], [150, 120], [-190, -40], [190, -40], [0, 190]];
-			for (let k = 0; spots.length < crew.length && k < ring.length; k++) spots.push({ id: -100 - k, c: { x: fh.x + ring[k][0], y: fh.y + ring[k][1] }, real: false });
-		}
-		for (let i = 0; i < spots.length && i < crew.length; i++) {
-			const who = crew[i];
-			const spot = spots[i];
-			const id = who.id ?? who.homeId;
-			guardPost.set(id, spot.id);
-			const c = spot.c;
-			const dx = c.x - who.x;
-			const dy = c.y - who.y;
-			const dist = Math.hypot(dx, dy);
-			if (dist > 28) {
-				const screen = worldVelToScreen(dx, dy);
-				moveBody(who, screen.dsx, screen.dsy, 78, dt);
-				const vel = screenDirToWorld(screen.dsx, screen.dsy);
-				who.dir = facing8(vel.vx, vel.vy);
-				who.anim = (who.anim || 0) + dt * 8;
-				who.frame = Math.floor(who.anim) % 4;
-			} else if (raid) {
-				// raid guards pick the nearest raider in rifle range and fire on a steady beat
-				let foe = null;
-				let foeD = 400;
-				for (const e of raiders) {
-					const d = Math.hypot(e.x - who.x, e.y - who.y);
-					if (d < foeD) { foe = e; foeD = d; }
-				}
-				who.shootT = Math.max(0, (who.shootT || 0) - dt);
-				who.flashT = Math.max(0, (who.flashT || 0) - dt);
-				if (foe) {
-					who.dir = facing8(foe.x - who.x, foe.y - who.y);
-					if (who.shootT <= 0) {
-						who.shootT = 1.25;
-						who.flashT = .18;
-						foe.hp -= who.role === "justin" ? 5 : 4;
-						foe.hurt = .08;
-						burst(foe.x, foe.y - 10, "#f4e2a0", 3);
-						sfx("shoot");
-						v3Noise(player.x, player.y, 14 * TILE);
-						if (foe.hp <= 0) markDead(foe, Math.max(1, Math.round(foe.xp * .5)));
-					}
-				}
-				who.cooldown = who.flashT > 0 ? .4 : 0;
-				who.anim = (who.anim || 0) + dt;
-			} else {
-				const foe = raiders[0];
-				if (foe) who.dir = facing8(foe.x - who.x, foe.y - who.y);
-				who.cooldown = ((who.anim || 0) % .8) < .12 ? .4 : 0;
-				who.anim = (who.anim || 0) + dt;
-			}
 		}
 	}
 	function stepFolk(npc, dt) {
@@ -10290,7 +9614,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		paintProp("icon-bomb", o.x + 196, o.y + 78, 32);
 		paintProp("icon-fuel", o.x + 236, o.y + 78, 32);
 		paintProp("icon-fence", o.x + 276, o.y + 78, 32);
-		ctx.fillText("Between raids", o.x + 188, o.y + 96);
+		ctx.fillText("At the bench", o.x + 188, o.y + 96);
 		paintExitDoor();
 		paintHeroInRoom();
 	}
@@ -10880,15 +10204,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const tx1 = Math.min(155, b.tx1);
 		const ty1 = Math.min(155, b.ty1);
 		drawGroundChunks(tx0, ty0, tx1, ty1); // v15.5 (old per-tile path: paintGroundRect/queueGroundRect/paintGroundSpill, unused)
-		// v15 map scan: the frozen stream along the west edge of the farm lot (walkable ice)
-		if (world.stream?.length) for (const [sx, sy] of world.stream) {
-			if (sx < tx0 - 1 || sx > tx1 + 1 || sy < ty0 - 1 || sy > ty1 + 1 || explored[sy * 156 + sx] !== 1) continue;
-			ctx.globalAlpha = visible[sy * 156 + sx] === 1 ? .9 : .4;
-			// v15.4: round ice pools instead of squares (they overlap into a continuous stream)
-			const wob = edgeWave(sx * 3.1, sy * 2.7);
-			ctx.fillStyle = "#8fa9b8"; ctx.beginPath(); ctx.ellipse(sx * 64 + 32, sy * 64 + 32, 46 + wob * 6, 42 - wob * 5, wob, 0, Math.PI * 2); ctx.fill();
-			ctx.fillStyle = "#c9dbe4"; ctx.beginPath(); ctx.ellipse(sx * 64 + 30 + wob * 6, sy * 64 + 24, 18, 6, .3 + wob, 0, Math.PI * 2); ctx.fill();
-		}
 		ctx.globalAlpha = 1;
 	}
 	/** Night darkness, 0 by day. Ramps in through the evening (17-21h), keeps deepening to its
@@ -11258,7 +10573,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const t = tileOf(npc.x, npc.y);
 			if (!visible[t.ty * 156 + t.tx]) continue;
 			if (!onScr(npc.x, npc.y, 140)) continue;
-			if ((raid || escortBodies) && (npc.role === "cyndal" || npc.role === "loki")) continue;
+			if (escortBodies && (npc.role === "cyndal" || npc.role === "loki")) continue;
 			draws.push({
 				z: bodyZ(npc.x, npc.y),
 				draw: () => {
@@ -12460,7 +11775,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (body.path) body.path = [];
 	}
 	function tbCanStart() {
-		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !(player && safeAt(player.x, player.y)) && !inside && !raid && v14.st !== 4 && phase === "play" && player && world && !mounted;
+		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !(player && safeAt(player.x, player.y)) && !inside && phase === "play" && player && world && !mounted;
 	}
 	function tbStart(foes) {
 		const roll = () => 1 + Math.floor(Math.random() * 6);
@@ -12469,7 +11784,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const order = [{ id: "p", init: perc() + agil15() * 2 + roll() }];
 		for (const e of foes) { snap15(e); order.push({ id: e.id, init: (e.kind === "wolf" || e.kind === "coyote" ? 6 : 4) + roll() }); }
 		order.sort((a, b) => b.init - a.init);
-		if (raid?.gooseWarn) { const me = order.findIndex((o) => o.id === "p"); if (me > 0) order.unshift(...order.splice(me, 1)); }
+		if (false) { const me = order.findIndex((o) => o.id === "p"); if (me > 0) order.unshift(...order.splice(me, 1)); }
 		tb = { order, turn: 0, round: 1, moveQ: [], anim: null, eAp: 0, eT: 0, popup: null, mag: {}, log: [] };
 		pushLog(`Combat! Turn order: ${order.map((o) => o.id === "p" ? "you" : tbFoe(o.id)?.name ?? bodyTitle(tbFoe(o.id)?.kind ?? "foe")).join(", ")}.`);
 		tbBeginTurn();
@@ -12636,7 +11951,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (foes.length) tbStart(foes);
 			return;
 		}
-		if (phase !== "play" || inside || raid) { if (inside || raid) tbEnd(); return; }
+		if (phase !== "play" || inside) { if (inside) tbEnd(); return; }
 		stickX = 0; stickY = 0; intent = null; holdWalk = false;
 		if (tb.anim) { tbStepAnim(dt); return; }
 		if (tbMine()) {
@@ -12775,31 +12090,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		startMode(kind) {
 			q11StartMode(kind);
 		},
-		raidMode() {
-			unlockAudio();
-			sfx("click");
-			raidMode = true;
-			useRaidMode.setState({ result: null });
-			bootNew("Packer", "hunter", { strength: 1, vigor: 1, endurance: 1, intellect: 0, perception: 0, luck: 0 }, "eye", "wool");
-			snow = Math.max(snow, 3);
-			jackMet = true;
-			raidNight = 0;
-			// starter gear for a fight: carbine in hand, a box of shells, a warm coat already on
-			if (GEAR.carbine) { giveItem("carbine", 1); player.weaponId = "carbine"; }
-			giveItem("shells", 12);
-			refreshGear(player);
-			player.hp = player.maxHp;
-			const fh = world.props.find((q) => q.kind === "farmhouse");
-			if (fh) { const d = doorPoint(fh); player.x = d.x; player.y = d.y + 48; }
-			const span = DAY_LENGTH_SEC;
-			clock = Math.floor(clock / span) * span + (21.5 / 24) * span;
-			setLog("Raid Mode. One night at Cambridge Road. You and Sarah take the posts; Cyndal watches from the loft, Loki runs shells.");
-			startRaid();
-			if (!raid) { raidMode = false; phase = "menu"; }
-			camX = player.x - player.y - viewW / 2;
-			camY = (player.x + player.y) * CAM_ISO_Y - viewH / 2;
-			sync(true);
-		},
+
 		continueGame() {
 			unlockAudio();
 			const data = readSave();
@@ -13344,7 +12635,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takeLoot
 	};
 	window.__controlsTest = {
-		v14: () => ({ ...v14, craftOpen, buildFlip, buildTool, raid: raid ? { defend: !!raid.defend, wave: raid.wave, waves: raid.waves, phase: raid.phase, house: raid.house } : null, snow, mapId }),
+		v14: () => ({ ...v14, craftOpen, buildFlip, buildTool, snow, mapId }),
 		v14Set: (patch) => { Object.assign(v14, patch); sync(true); },
 		v14Props: () => world ? world.props.filter((p) => ART14.has(p.kind) || p.f14 || p.p14).map((p) => ({ id: p.id, kind: p.kind, tx: p.tx, ty: p.ty, hp: p.hp, f14: p.f14 ?? null, p14: !!p.p14, open: !!p.open, flip: !!p.flip14, lit: !!p.lit14 })) : [],
 		v14Use: (id) => { const p = world?.props.find((q) => q.id === id); if (p) v14Use(p); },
@@ -13362,23 +12653,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lrTalk: (role) => { const n = world.npcs.find((q) => q.role === role); if (!n) return null; openTalk(n); return dialogue ? { text: dialogue.text, choices: dialogue.choices } : null; },
 		dialogChoices: () => (dialogue?.choices ?? []).map((c) => c.id),
 		l141Barrels: () => world.props.filter((q) => q.kind === "rainbarrel").map((q) => ({ tx: q.tx, ty: q.ty, n: barrel141(q).n })),
-		/** v14.1 URL test harness (?test=wave3 | nightraid | worldmap&enc=caravan | guns): sets up a scenario with no console. */
+		/** v14.1 URL test harness (?test=worldmap&enc=caravan | guns): sets up a scenario with no console. */
 	testScenario: (name, opts = {}) => {
 		if (!world || !player) return "no game";
 		const give = (id, n = 1) => { const st = player.bag.find((q) => q.id === id); if (st) st.qty += n; else player.bag.push({ id, qty: n }); };
-		const m = /^wave(\d+)$/.exec(name);
+		const m = null; // v15.9.5: ?test=waveN / nightraid were raid scenarios
 		if (name === "guns") {
 			for (const id of ["carbine-std", "revolver", "shotgun", "scoped", "winchester", "levergun"]) if (GEAR[id]) give(id);
 			give("shells", 60); player.weaponId = "carbine-std"; refreshGear(player); pushLog("Test: every gun and 60 shells.");
-		} else if (name === "nightraid" || m) {
-			player.wood += 40; player.stone += 30; player.scrap += 20; give("shells", 30);
-			if (v14.st < 5) v14.st = 5;
-			snow = Math.max(snow, 3); inside = null;
-			clock = Math.floor(clock / DAY_LENGTH_SEC) * DAY_LENGTH_SEC + (22 / 24) * DAY_LENGTH_SEC;
-			if (!inFarm(tileOf(player.x, player.y).tx, tileOf(player.x, player.y).ty)) { const sp = nearestRespawn(FARM.tx, FARM.ty, 1, 1); player.x = sp.x; player.y = sp.y; }
-			startRaid();
-			if (m && raid) { const want = Math.max(1, Number(m[1])); for (let w = 1; w < want && raid; w++) { for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.wave = w; raid.phase = "lull"; raid.t = .5; raid.left = 0; } pushLog(`Test: raid at wave ${want}.`); }
-			else pushLog("Test: raid night starts now.");
 		} else if (name === "turnbased") {
 			// v15: two raiders and a wolf come at you in the woods; turn-based combat starts by itself
 			window.__tbOff = false; tbAuto = true;
@@ -13429,8 +12711,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		l141Stick: (x, y) => { stickX = x; stickY = y; },
 		l141Mats: () => { player.wood += 60; player.stone += 60; player.scrap += 60; for (const id of ["cloth", "junk", "hide"]) { const st = player.bag.find((q) => q.id === id); if (st) st.qty += 20; else player.bag.push({ id, qty: 20 }); } sync(true); },
 		v14Build: (index, tx, ty) => { recipe = index; buildOpen = true; hoverX = (tx + .5) * 64; hoverY = (ty + .5) * 64; tryBuild(); },
-		v14Report: () => { report14(raidNight); },
-		v14Defend: () => startDefend14(),
 		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
 		wmOpen: () => openWorldMap(),
 		// v15.9: travel through the destination menu (the hex overview is gone). Returns the same summary v154Go used to.
@@ -13465,6 +12745,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Tp: (x, y) => { player.x = x; player.y = y; snapPrev(); sync(true); },
 		v15Talk: (role) => { const n = world.npcs.find((x) => x.role === role); if (!n) return null; openTalk(n); return dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => c.label) } : null; },
 		v15Npcs: () => world.npcs.map((n) => n.role),
+		propKinds: () => { const o = {}; for (const p of world?.props ?? []) o[p.kind] = (o[p.kind] ?? 0) + 1; return { map: mapId, n: world?.props.length ?? 0, kinds: o, thinWreck: world?.thinWreck195 ?? 0 }; },
 		v15Start: () => ({ x: player.x, y: player.y, st: v14.st, harmony: townSpot(ISO_TOWNS[0]), farm: farmCenter() }),
 		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },
 		pos: () => player ? { x: player.x, y: player.y } : null,
@@ -13476,7 +12757,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		freeFarmTile: () => { if (!world) return null; const f = tileOf(farmCenter().x, farmCenter().y); for (let r = 3; r < 9; r++) for (let y = f.ty - r; y <= f.ty + r; y++) for (let x = f.tx - r; x <= f.tx + r; x++) if (inFarm(x, y) && footprintFree(world, x, y, 1, 1) && world.tiles[y * MAP_W + x] !== 2) return { tx: x, ty: y }; return null; },
 		toggleBuild: (on) => { buildOpen = !!on; sync(true); },
 		save: () => saveGame(),
-		v14WinWave: () => { if (!raid) return; for (const e of world.enemies) if (!e.dead && e.raid) markDead(e, 0); raid.left = 0; if (raid.phase === "lull") raid.t = Math.min(raid.t, .5); },
 
 		getYaw: () => lastYaw,
 		getSpeed: () => lastSpeed,
@@ -13593,9 +12873,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v13Travel: (id) => { fastTravel(id); return { mapId, x: player.x, y: player.y, gas: countOf("gas") }; },
 		v13Act: (n) => { w13.main.act = n; sync(true); },
 		v13Tick: () => v13MainTick(),
-		v13SpawnCollector: () => { if (raid) { raid.wave = raid.waves; raid.collector = false; v13SiegeTick(0); } return !!raid; },
-		v13Siege: () => { v13SiegeStart(); return raid ? { siege: !!raid.siege, waves: raid.waves, house: raid.house } : null; },
-		v13SiegeEnd: (won) => { if (won) w13.main.collectorDown = true; endRaid(!!won, "Test: the siege ends."); v13MainTick(); return { ...w13.main }; },
 		v13Caravan: () => v13Caravan(),
 		v13Moon: (day) => ({ phase: moonPhase(day), ...moonEffect(moonPhase(day)), dark: nightDark(day * DAY_LENGTH_SEC + DAY_LENGTH_SEC * 23 / 24) }),
 		v13Body: () => ({ walk: plImg("walk"), hit: plImg("hit"), down: plImg("down"), gun: plImg("gun"), gunAtk: plImg("gun-atk"), axe: plImg("axe"), death: plImg("death"), cols: plImg("hit") ? sheetCols(images.get(plImg("hit"))) : 0, armor: armorLayerNames("walk") }),
@@ -13716,12 +12993,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			tractorReady = true;
 			return propCenter(t);
 		},
-		raidState: () => raid ? { night: raid.night, wave: raid.wave, waves: raid.waves, phase: raid.phase, house: raid.house, kills: raid.kills, mode: raidMode } : { none: true, mode: raidMode, held: raidsHeld },
-		raidHouseHit: (n) => { if (raid) raid.house -= n; },
-		raidMode: () => api.raidMode(),
 		setSnow: (n) => { snow = n; sync(true); },
-		startRaidNow: () => { const why = raidBlockReason(); if (why) { pushLog(why); floater(player?.x ?? 0, (player?.y ?? 0) - 8, "No raid yet"); sync(true); return false; } startRaid(); return !!raid; },
-		raidWhyNot: () => raidBlockReason(),
 		saveNow: () => saveGame(),
 		q11State: () => JSON.parse(JSON.stringify({ ...q11, mode11, m11, season: seasonNow(), day: curDay(), escort: !!escortBodies, fishing: !!fishGame })),
 		q11Set: (patch) => { Object.assign(q11, patch); q11World(); sync(true); },
@@ -13732,7 +13004,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		artCols: (n) => images.get(n) ? sheetCols(images.get(n)) : 0,
 		folkSheetOf: (role) => { const n = world?.npcs.find((m) => m.role === role); return n ? folkSheet(n) : null; },
 		beastSheets: () => (world?.enemies ?? []).filter((e) => !e.dead).map((e) => ({ id: e.id, kind: e.kind, variant: e.variant, sheet: beastSheet(e), x: e.x, y: e.y })),
-		guardPose: (role) => { const n = world?.npcs.find((m) => m.role === role); if (!n) return null; guardPost.set(n.id, -1); return n.id; },
 		lazyDone: () => LAZY_STATE.pending === 0,
 		v3State: () => ({ ...JSON.parse(JSON.stringify(v3)), dogBody: dogBody ? { x: Math.round(dogBody.x), y: Math.round(dogBody.y) } : null, traps: q11.traps, toast: v3Toast }),
 		v3Set: (patch) => { Object.assign(v3, patch); sync(true); },
@@ -13766,7 +13037,6 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q10Spot: (key) => q10Spot(key),
 		q10Targets: () => q10Targets().map((t) => ({ key: t.key, mode: t.mode, x: Math.round(t.x), y: Math.round(t.y) })),
 		q10Dog: () => dogBody ? { x: Math.round(dogBody.x), y: Math.round(dogBody.y) } : null,
-		q10EndRaid: (won) => endRaid(!!won, "Test: the raid ends."),
 		dialogueNow: () => dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => ({ id: c.id, label: c.label })) } : null,
 		frameStats: () => ({ avg: +frameMs.avg.toFixed(2), worst: +frameMs.worst.toFixed(2), p95: +[...frameMs.list].sort((a, b) => a - b)[Math.floor(frameMs.list.length * .95)]?.toFixed(2), n: frameMs.n, gfxHigh }),
 		weatherMix: () => ({ ...weatherMix }),

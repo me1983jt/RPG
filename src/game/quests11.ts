@@ -1,6 +1,6 @@
 /**
  * Beta v11 content: eleven more side quests plus the state for the v11 play types (seasons, farm builder,
- * hunting trips, fishing, trade caravan, traps, and the Winter Survival / Endless Raid / Night Watch modes).
+ * hunting trips, fishing, trade caravan, traps, and the Winter Survival / Night Watch modes).
  * Pure data + text, same pattern as quests10.ts: the engine owns spawning, markers and travel.
  * No new art: every body uses an existing sheet (The Grok uses the gw11 boss-grok sheet).
  */
@@ -415,6 +415,5 @@ export const CARAVAN_ROUTES = [
 ];
 export const MODE_TEXT = {
   winter: "Winter Survival. Deep January at Cambridge Road. The days are short, the woodpile's low and so's the pantry. Keep warm, keep fed, and hold on until spring.",
-  endless: "Endless Raid. They don't stop coming. Hold the farm as long as you can.",
   watch: "Night Watch. Lantern lit, the family asleep. Somebody's creeping around the barns tonight. Watch for the ripples in the dark and catch them before they get to the hens.",
 };

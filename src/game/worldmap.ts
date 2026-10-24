@@ -15,7 +15,7 @@ export const WM_TERRAIN = [
 export const WM_HOURS: Record<string, number> = { R: 0.6, T: 0.6, F: 1.2, W: 2, V: 2.5 };
 export interface WmLoc { id: string; name: string; q: number; r: number; map: number; blurb: string; town?: string; lock?: "moosehead" }
 export const WM_LOCS: WmLoc[] = [
-  { id: "farm", name: "Harmony · Cambridge Road", q: 5, r: 5, map: 0, blurb: "The farm, Lowelltown road and Jack's." },
+  { id: "farm", name: "Harmony · Cambridge Road", q: 5, r: 5, map: 0, blurb: "Harmony village, Lowelltown road and Jack's." },
   { id: "lowell", name: "Lowelltown Woods", q: 2, r: 4, map: 3, blurb: "Spruce and old logging roads." },
   { id: "skow", name: "Skowhegan", q: 8, r: 7, map: 2, blurb: "Dead streetlights and one bridge." },
   { id: "kennebec", name: "The Kennebec", q: 7, r: 5, map: 4, blurb: "Wide water, a single crossing." },

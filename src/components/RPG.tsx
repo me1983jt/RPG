@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
-import { useHud, useModeResult, useRaidMode } from "@/game/store";
+import { useHud, useModeResult } from "@/game/store";
 import { RECIPES } from "@/game/types";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { COAT_PICKS, HAT_PICKS, HAIRS, dyeBodySheet, type HairId, type StartLook } from "@/game/look";
@@ -119,7 +119,6 @@ export function RPG() {
   const pinchMid = useRef({ x: 0, y: 0 });
   const pinching = useRef(false);
   const hud = useHud();
-  const raidResult = useRaidMode((s) => s.result);
   const modeResult = useModeResult((s) => s.result);
   const [name, setName] = useState("Packer");
   const [role, setRole] = useState<RoleId>("fighter");
@@ -294,7 +293,7 @@ export function RPG() {
     });
   }
 
-  // v14.1 URL test harness: ?test=wave3 | nightraid | worldmap&enc=caravan | guns starts a game and sets the scene
+  // v14.1 URL test harness: ?test=worldmap&enc=caravan | guns starts a game and sets the scene
   useEffect(() => {
     if (typeof location === "undefined") return;
     const q = new URLSearchParams(location.search);
@@ -1346,21 +1345,9 @@ export function RPG() {
                     </div>
                   ) : null}
                   {step === "trade" ? (
-                    <button
-                      type="button"
-                      className="plank border border-accent bg-surface-2 px-4 py-3 font-semibold"
-                      onClick={() => apiRef.current?.raidMode()}
-                    >
-                      Raid Mode
-                    </button>
-                  ) : null}
-                  {step === "trade" ? (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("winter")}>
                         Winter Survival
-                      </button>
-                      <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("endless")}>
-                        Endless Raid
                       </button>
                       <button type="button" className="plank border border-accent bg-surface-2 px-2 py-3 text-sm font-semibold" onClick={() => apiRef.current?.startMode("watch")}>
                         Night Watch
@@ -1408,20 +1395,7 @@ export function RPG() {
         </div>
       ) : null}
 
-      {hud.phase === "menu" && raidResult ? (
-        <Overlay title={raidResult.won ? `Night ${raidResult.night}: the farm held` : `Night ${raidResult.night}: the farm fell`}>
-          <p className="text-sm leading-relaxed text-muted">{raidResult.text}</p>
-          <p className="text-sm">Raiders down: {raidResult.kills} · Waves held: {raidResult.wavesDone} of {raidResult.waves}</p>
-          <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => apiRef.current?.raidMode()}>
-            Raid again
-          </button>
-          <button type="button" className="plank border border-border px-4 py-3" onClick={() => useRaidMode.setState({ result: null })}>
-            Back to menu
-          </button>
-        </Overlay>
-      ) : null}
-
-      {hud.phase === "menu" && modeResult && !raidResult ? (
+      {hud.phase === "menu" && modeResult ? (
         <Overlay title={modeResult.title}>
           {modeResult.lines.map((line, i) => (
             <p key={i} className={i === 0 ? "text-sm leading-relaxed text-muted" : "text-sm"}>

@@ -28,10 +28,6 @@ export interface TalkState {
   /** The Bangor Warden's checkpoint: 0 not met, 1 paid or slipped past, 2+ fought. */
   warden?: number;
   scrap?: number;
-  /** Night at the farm with the base built: a raid can be started from Justin. */
-  raidReady?: boolean;
-  raidOn?: boolean;
-  raidNext?: number;
 }
 
 export const SNOW_WOOD = 3;
@@ -212,19 +208,6 @@ export function npcLine(role: Npc["role"], name: string, quest: number, ciderGiv
         speaker: name,
         text: "That's the stove fed. Here: hot cider in a tin cup, and cider donuts from the kitchen. Sit a minute. And come find me when you're hurt, don't be a hero about it.",
         choices: [{ label: "Thank you, Sarah", id: "snow-done" }],
-      };
-    }
-    if (t.raidOn) {
-      return { speaker: name, text: "Get back on a post! They ain't done yet.", choices: [{ label: "Going", id: "close" }] };
-    }
-    if (t.raidReady) {
-      return {
-        speaker: name,
-        text: "Dark's down. If they come tonight I'd rather we pick the hour. Light the yard and we'll hold the farm together.",
-        choices: [
-          { label: `Start raid night ${t.raidNext ?? 1}`, id: "raid-ask" },
-          { label: "Not tonight", id: "close" },
-        ],
       };
     }
   }

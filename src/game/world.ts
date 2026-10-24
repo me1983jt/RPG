@@ -36,8 +36,6 @@ export interface Gate {
 }
 
 export interface World {
-  /** v15: frozen stream tiles (map 0 farm lot), painted as ice; walkable. */
-  stream?: [number, number][];
   tiles: Uint8Array;
   blocked: Uint8Array;
   props: Prop[];
@@ -217,12 +215,10 @@ export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
   placeVillage(world);
   scatter(world);
   placePeople(world);
-  placeHomestead(world);
   placeLeblanc(world);
   placeCal(world);
   placeBunker(world);
   world.gates = layExits(world, mouths, null);
-  finishFarm(world);
   finishCal(world);
   placeEncounters(world);
   world.questBandits = world.enemies.filter((e) => e.quest).length;
@@ -523,159 +519,8 @@ export function tryPlace(world: World, kind: PropKind, tx: number, ty: number): 
   return addProp(world, kind, tx, ty);
 }
 
-function placeHomestead(world: World): void {
-  for (let ty = FARM.ty - FARM.r - 1; ty <= FARM.ty + FARM.r + 1; ty++) {
-    for (let tx = FARM.tx - FARM.r - 1; tx <= FARM.tx + FARM.r + 1; tx++) {
-      if (!inMap(tx, ty) || !inHex(tx, ty)) continue;
-      if (!inFarm(tx, ty)) continue;
-      if (world.tiles[idx(tx, ty)] !== ROAD) world.tiles[idx(tx, ty)] = SNOW;
-      world.blocked[idx(tx, ty)] = 0;
-    }
-  }
-  world.props = world.props.filter((p) => {
-    const spec = PROP_SPEC[p.kind];
-    if (!inFarm(p.tx + spec.w / 2, p.ty + spec.h / 2)) return true;
-    vacate(world, p);
-    return false;
-  });
-  world.enemies = world.enemies.filter((e) => !inFarm(Math.floor(e.x / TILE), Math.floor(e.y / TILE)));
 
-  // v15 map scan: laid out after the satellite lot maps (harmony-map/): the county road runs SW to NE past the
-  // south-east corner of the lot; the house sits back from it with the outbuildings strung along the road side,
-  // an open field north of the house, woods closing in on the far sides and a stream down the west edge.
-  for (let x = 18; x <= 56; x++) {
-    const y = Math.round(27 - (x - 18) * 0.55);
-    const [tx, ty] = at(x, y);
-    stampRoad(world.tiles, world.blocked, tx, ty);
-  }
-  const [dx0, dy0] = at(36, 16);
-  world.props = world.props.filter((p) => {
-    const spec = PROP_SPEC[p.kind];
-    const cx = p.tx + spec.w / 2, cy = p.ty + spec.h / 2;
-    if ((cx - dx0) ** 2 + (cy - dy0) ** 2 > 15 * 15 || world.tiles[idx(Math.floor(cx), Math.floor(cy))] !== ROAD) return true;
-    vacate(world, p);
-    return false;
-  });
-  plantYard(world, "farmhouse", 29, 12);
-  plantYard(world, "barn", 39, 11);
-  plantYard(world, "shack", 43, 9);
-  plantYard(world, "cot", 33, 13);
-  plantYard(world, "press", 36, 14);
-  plantYard(world, "crates", 38, 15, { amount: 4 });
-  plantYard(world, "crates", 35, 16, { amount: 4 });
-  plantYard(world, "post-loft", 41, 13);
-  plantYard(world, "post-porch", 33, 14);
-  plantYard(world, "post-roof", 45, 12);
-  plantYard(world, "tractor", 34, 16);
-  plantYard(world, "scarecrow", 33, 7);
-  plantYard(world, "bait", 31, 18);
-  for (const tx of [27, 29, 31, 33, 35, 37]) plantYard(world, "fence", tx, 5);
-  // the field north of the house: two orchard rows
-  for (const [tx, ty] of [at(28, 9), at(30, 8), at(34, 9), at(36, 8), at(38, 8), at(40, 7), at(29, 17)] as const) addProp(world, "orchard", tx, ty);
-  // sugar maples at the yard edge
-  for (const [tx, ty] of [at(26, 12), at(26, 16), at(27, 20), at(44, 6), at(42, 5), at(31, 21)] as const) addProp(world, "maple", tx, ty);
-  // woods edge: spruce across the road to the south-east, and west of the stream
-  for (let n = 0; n < 40; n++) {
-    const x = 26 + ((n * 7) % 30), y = 20 + ((n * 5) % 12);
-    if (y <= 27 - (x - 18) * 0.55 + 3) continue;
-    const [tx, ty] = at(x, y);
-    if (inMap(tx, ty) && inHex(tx, ty) && world.tiles[idx(tx, ty)] !== ROAD) addProp(world, n % 3 ? "tree-spruce" : "tree-fir", tx, ty);
-  }
-  for (let y = 4; y <= 26; y += 2) {
-    const [tx, ty] = at(19 + ((y * 3) % 3), y);
-    if (inMap(tx, ty) && inHex(tx, ty) && world.tiles[idx(tx, ty)] !== ROAD) addProp(world, y % 4 ? "tree-spruce" : "tree-birch", tx, ty);
-  }
-  // the stream: winds down the west side of the lot and under the road
-  world.stream = [];
-  for (let y = 0; y <= 30; y++) {
-    const x = Math.round(23 + Math.sin(y * 0.45) * 1.6);
-    const [tx, ty] = at(x, y);
-    if (inMap(tx, ty) && inHex(tx, ty)) { world.stream.push([tx, ty]); if (world.tiles[idx(tx, ty)] !== ROAD) { world.tiles[idx(tx, ty)] = SNOW; world.blocked[idx(tx, ty)] = 0; } }
-  }
-}
 
-function plantYard(world: World, kind: PropKind, lx: number, ly: number, extra?: Partial<Prop>): void {
-  const spec = PROP_SPEC[kind];
-  const spots: [number, number][] = [[lx, ly], [lx + 1, ly], [lx - 1, ly], [lx, ly + 1], [lx, ly - 1], [lx + 1, ly + 1], [lx + 2, ly], [lx, ly + 2]];
-  for (const [x, y] of spots) {
-    const [tx, ty] = at(x, y);
-    if (!inFarm(tx + spec.w / 2, ty + spec.h / 2)) continue;
-    if (addProp(world, kind, tx, ty, extra)) return;
-  }
-  const [tx, ty] = at(lx, ly);
-  for (let y = 0; y < spec.h; y++) {
-    for (let x = 0; x < spec.w; x++) {
-      if (!inMap(tx + x, ty + y)) return;
-      const i = idx(tx + x, ty + y);
-      if (world.tiles[i] === VOID) return;
-      if (world.tiles[i] === ROAD || world.tiles[i] === RUBBLE) world.tiles[i] = SNOW;
-      world.blocked[i] = 0;
-    }
-  }
-  addProp(world, kind, tx, ty, extra);
-}
-
-/**
- * Runs after layExits. An exit road can land on the farmhouse (layExits drops props near a gate),
- * so put any lost farm building back next to its spot, then add the woodpile for the
- * "First Snow on Cambridge Road" quest and the family who live here.
- */
-function finishFarm(world: World): void {
-  const nearGate = (tx: number, ty: number, w: number, h: number) =>
-    world.gates.some((g) => {
-      const cx = tx + w / 2;
-      const cy = ty + h / 2;
-      return (cx - g.arriveTx) ** 2 + (cy - g.arriveTy) ** 2 < 16 || (cx - g.tx) ** 2 + (cy - g.ty) ** 2 < 20;
-    });
-  // Non-blocking props (cot, campfire) don't mark tiles blocked, so check footprints too.
-  const overlapsProp = (tx: number, ty: number, w: number, h: number) =>
-    world.props.some((p) => {
-      const ps = PROP_SPEC[p.kind];
-      return tx < p.tx + ps.w + 1 && tx + w + 1 > p.tx && ty < p.ty + ps.h + 1 && ty + h + 1 > p.ty;
-    });
-  const restore = (kind: PropKind, home: [number, number], extra?: Partial<Prop>) => {
-    if (world.props.some((p) => p.kind === kind && inFarm(p.tx, p.ty))) return;
-    const spec = PROP_SPEC[kind];
-    for (let r = 0; r <= 6; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          const tx = home[0] + dx;
-          const ty = home[1] + dy;
-          if (!inFarm(tx, ty) || nearGate(tx, ty, spec.w, spec.h) || overlapsProp(tx, ty, spec.w, spec.h)) continue;
-          if (addProp(world, kind, tx, ty, extra)) return;
-        }
-      }
-    }
-    if (kind !== "farmhouse" && kind !== "barn") return;
-    // v15.4: the 3x3 home buildings must always exist (raids target the farmhouse); clear the lot.
-    const [hx, hy] = home;
-    const keep = new Set(["farmhouse", "barn"]);
-    world.props = world.props.filter((p) => {
-      const ps = PROP_SPEC[p.kind];
-      const hit = hx < p.tx + ps.w + 1 && hx + spec.w + 1 > p.tx && hy < p.ty + ps.h + 1 && hy + spec.h + 1 > p.ty;
-      if (!hit || keep.has(p.kind)) return true;
-      vacate(world, p);
-      return false;
-    });
-    for (let y = 0; y < spec.h; y++) for (let x = 0; x < spec.w; x++) {
-      const i = idx(hx + x, hy + y);
-      if (world.tiles[i] === VOID || world.tiles[i] === RUBBLE || world.tiles[i] === ROAD) world.tiles[i] = DIRT;
-      world.blocked[i] = 0;
-    }
-    addProp(world, kind, hx, hy, extra);
-  };
-  restore("farmhouse", at(29, 12));
-  restore("barn", at(39, 11));
-  restore("cot", at(33, 13));
-  restore("press", at(36, 14));
-  // woodpile by the barn for "First Snow on Cambridge Road"
-  restore("logs", at(41, 15), { resource: "wood", amount: 4 });
-  // v15: you are Justin; no Justin NPC.
-  addNpc(world, "sarah", "Sarah", ...at(35, 13), 30);
-  addNpc(world, "cyndal", "Cyndal", ...at(33, 10), 30);
-  addNpc(world, "loki", "Loki", ...at(37, 12), 30);
-}
 
 function placeOrchard(world: World): void {
   const spot = pullIn(HEX_CX - 52, HEX_CY - 6);

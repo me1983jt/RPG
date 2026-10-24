@@ -242,7 +242,6 @@ export const MIGRATION_TEXT = [
 
 // ---------------- fast travel
 export const TOWNS13: { id: string; name: string; map: number; tx: number; ty: number }[] = [
-  { id: "farm", name: "Cambridge Road farm", map: 0, tx: 0, ty: 0 },
   { id: "lowell", name: "Lowelltown", map: 0, tx: 30, ty: 60 },
   { id: "jack", name: "Jack Ready's stand", map: 0, tx: 80, ty: 40 },
   { id: "skow", name: "Skowhegan", map: 2, tx: 0, ty: 0 },
@@ -255,7 +254,7 @@ export function travelGas(a: { map: number; tx: number; ty: number }, b: { map: 
 // ---------------- main quest: The Long Winter
 export type MainEnding = "union" | "deal" | "alone" | "fallen";
 export const MAIN_ACTS: { n: number; title: string; goal: string; intro: [string, string]; done: string }[] = [
-  { n: 1, title: "Cambridge Road", goal: "Fix up the farm with Sarah and the kids, and survive the first raid night.", intro: ["Sarah", "\"Split wood, mend stakes, kiss your wife. In that order, apparently. We need the place tight before the snow, and they'll come at night. They always do.\""], done: "The farm held. Sarah puts the kettle on like it was any other morning." },
+  { n: 1, title: "Cambridge Road", goal: "Fix up the farm with Sarah and the kids.", intro: ["Sarah", "\"Split wood, mend stakes, kiss your wife. In that order, apparently. We need the place tight before the snow, and they'll come at night. They always do.\""], done: "The farm held. Sarah puts the kettle on like it was any other morning." },
   { n: 2, title: "The Signal", goal: "Get Cyndal's radio working and listen to what's out there.", intro: ["Cyndal", "\"There's something on 147.3. Same voice every hour. Augusta. Fuel, medicine, order. Come and listen.\""], done: "The voice loops: \"Augusta has fuel. Augusta has medicine. Augusta has order. Come south.\" You don't like it. Nobody sounds that rested anymore." },
   { n: 3, title: "Jack Ready's Bunker", goal: "Earn Jack Ready's trust (loyalty 30) for his old survey maps.", intro: ["Jack Ready", "\"Maps cost trust, and trust costs time. Trade with me. Do me a favor or two. Then we'll talk.\""], done: "Jack unrolls the survey maps. \"That broadcast? It's a trap. Nobody's come back up the Kennebec who answered it.\"" },
   { n: 4, title: "The Kennebec", goal: "Cross the Kennebec to Skowhegan and talk to Marcel.", intro: ["Sarah", "\"If you want answers, Marcel's in Skowhegan. Bridge is the only way across, and somebody's always watching it. Go careful.\""], done: "Marcel lowers his voice. \"Caravans that answer that signal don't come back. Not one. The Collector takes them.\"" },

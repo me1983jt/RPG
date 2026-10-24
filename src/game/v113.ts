@@ -18,8 +18,6 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "ride", name: "Down the Tote Road", text: "Ride the motor bicycle." },
   { id: "winter", name: "Wintered Over", text: "Live through your first winter." },
   { id: "grok", name: "The Grok Is Down", text: "Beat The Grok." },
-  { id: "raid1", name: "Held the Farm", text: "Survive your first raid night." },
-  { id: "raid5", name: "Five Long Nights", text: "Survive five raid nights." },
   { id: "area", name: "Every Chore Done", text: "Finish every quest in one area." },
   { id: "skow", name: "Into Skowhegan", text: "Reach abandoned Skowhegan." },
   { id: "bridge", name: "Held the Bridge", text: "Clear the raiders at the Skowhegan bridge." },

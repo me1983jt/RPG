@@ -1,5 +1,5 @@
 // v15.9 travel (replaces wm14-test): the walkable world is the map. Exit grids and the bike open a destination menu (no hex overview screen),
-// trips cost time, encounters drop you into an encounter map, areas and towns still load, raids while away still warn.
+// trips cost time, encounters drop you into an encounter map, areas and towns still load.
 import { boot } from "./v4-lib.mjs";
 const url = process.argv[2] || "http://127.0.0.1:8112/";
 const { browser, page, errs, T, begin } = await boot(url, { vw: 412, vh: 860, v14: true });
@@ -36,12 +36,11 @@ for (const [loc, id] of [["lowell", 3], ["raiders", 5], ["bunker", 6], ["kennebe
   await T("travelGo", loc); await page.waitForTimeout(900); w = await T("wm");
   ok(w.mapId === id, `entered ${w.name}`);
 }
-// raid warning while away
-await page.evaluate(() => { window.__wmRaid = true; window.__controlsTest.setHour(23); });
+// v15.9.5: raids are gone; a night trip just costs time
+await page.evaluate(() => window.__controlsTest.setHour(23));
 const before = await T("wm");
 await T("travelGo", "north"); await page.waitForTimeout(900);
-const log = await page.evaluate(() => document.body.innerText);
-ok(/Raid on the farm tonight/.test(log) || (await T("wm")).clock > before.clock, "a raid night while away is still reported");
+ok((await T("wm")).clock > before.clock, "a night trip still costs time");
 // greenville locked
 w = await T("travelGo", "greenville"); ok(!w.offered && w.map !== 7, "Greenville is locked until the ferry");
 await page.evaluate(() => window.__controlsTest.save());
