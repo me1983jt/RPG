@@ -31,7 +31,6 @@ const f = page.frames().find((x) => x !== page.mainFrame());
 await f.evaluate(() => HARMONY.leave("town")); await page.waitForTimeout(2500);
 const st1 = (await T("v15Open", "pittsfield")).msg.state;
 for (const k of keys) { const a = JSON.stringify(st0[k]), b = JSON.stringify(k === "skills" ? Object.fromEntries(Object.keys(st0.skills).map((x) => [x, { ...st1.skills[x], xp: st0.skills[x]?.xp }])) : st1[k]); // trade xp can tick while the game runs // skills: the town may add its own ids (kept, not applied)
-  if (a !== b && k === "skills") for (const x of Object.keys(st0.skills)) if (JSON.stringify(st0.skills[x]) !== JSON.stringify(st1.skills[x])) console.log("diff", x, JSON.stringify(st0.skills[x]), JSON.stringify(st1.skills[x]));
  ok(a === b, `round trip keeps ${k}${a === b ? "" : ` ${a.slice(0, 120)} -> ${b.slice(0, 120)}`}`); }
 // town-side change lands
 const changed = { ...pick(st1), name: "Justina", stats: { ...st1.stats, agility: 0, intellect: st1.stats.intellect + 1 }, perks: ["wool"], invested: { climbing: 3, electronics: 2 }, skillPoints: 1, karma: 7, class: "tinker", skills: { ...st1.skills, climbing_town: { lv: 2, xp: 1 } },
@@ -62,6 +61,35 @@ await page.evaluate(() => window.__controlsTest.v15Leave?.());
   const s5 = (await T("v15Open", "skowhegan")).msg.state;
   ok(s5.invested.mechanics === s4.invested.mechanics && s5.xp === s4.xp && s5.level === s4.level, "conversion and score XP happen once");
   await page.evaluate(() => window.__controlsTest.v15Leave?.()); }
+// v15.9.2 (A1): a character/1 town sends xp itself; score only moves the baseline, so no double XP
+{ const s3 = (await T("v15Open", "skowhegan")).msg.state; const lv0 = s3.level;
+  await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, xp: s.xp + 10, score: 50, extra: { schema: "character/1" } } }), s3);
+  const s4 = (await T("v15Open", "skowhegan")).msg.state;
+  ok(s4.level > lv0 || s4.xp === s3.xp + 10, `character/1 town: xp +10 only, score not added on top (xp ${s3.xp} -> ${s4.xp})`);
+  await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, score: 60, extra: { schema: "character/1" } } }), s4);
+  const s5 = (await T("v15Open", "skowhegan")).msg.state;
+  ok(s5.xp === s4.xp && s5.level === s4.level, "character/1 town: a higher score alone grants nothing");
+  await page.evaluate(() => window.__controlsTest.v15Leave?.()); }
+// v15.9.2 (B): main-game skills (v3.skills) go out in enterTown and come back
+{ const s3 = (await T("v15Open", "pittsfield")).msg.state;
+  ok(["mechanics", "climbing", "electronics"].some((k) => s3.skills[k]) || Object.keys(s3.skills).length > 0, `enterTown sends skills (${Object.keys(s3.skills).join(",")})`);
+  await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, skills: { ...s.skills, mechanics: { lv: 3, xp: 0 } } } }), s3);
+  const s4 = (await T("v15Open", "pittsfield")).msg.state;
+  ok(s4.skills.mechanics?.lv === 3, `a town-side skill level lands and is sent back (${JSON.stringify(s4.skills.mechanics)})`);
+  await page.evaluate(() => window.__controlsTest.v15Leave?.()); }
+// v15.9.2: quest flags from the town (e.g. <town>.arrived) are saved on leave and sent back on the next visit
+{ const s3 = (await T("v15Open", "harmony")).msg.state;
+  ok(s3.questFlags && typeof s3.questFlags === "object", "enterTown sends questFlags");
+  await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, questFlags: { ...s.questFlags, "harmony.arrived": true, "harmony.metMayor": 2, "harmony.note": "x" } } }), s3);
+  await page.waitForTimeout(300);
+  const s4 = (await T("v15Open", "harmony")).msg.state;
+  ok(s4.questFlags["harmony.arrived"] === true && s4.questFlags["harmony.metMayor"] === 2 && s4.questFlags["harmony.note"] === "x", `quest flags come back on the next enterTown (${JSON.stringify(s4.questFlags["harmony.arrived"])})`);
+  await page.evaluate((s) => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "town", state: { ...s, questFlags: {} } }), s4);
+  const s5 = (await T("v15Open", "harmony")).msg.state;
+  ok(s5.questFlags["harmony.arrived"] === true, "a later visit that sends no flags doesn't erase them");
+  await page.evaluate(() => window.__controlsTest.v15Leave?.()); }
+// real town: whatever flags Pittsfield set on the first visit are still there on the second
+ok(Object.keys(st1.questFlags ?? {}).filter((k) => k.startsWith("pittsfield.")).every((k) => JSON.stringify(st1.questFlags[k]) === JSON.stringify(st2.questFlags?.[k])), `real Pittsfield flags kept (${Object.keys(st1.questFlags ?? {}).filter((k) => k.startsWith("pittsfield.")).join(",") || "none set by this town build"})`);
 // main-game uses of Climbing / Electronics
 for (const kind of ["ruin", "car-sedan", "lookout"]) { const r = await T("use159", kind); ok(r === null || r.r === true, `${kind}: ${kind === "ruin" ? "Climbing" : "Electronics"} use runs (${r ? JSON.stringify(r.after) : "none on this map"})`); }
 ok(!errs.length, `no errors ${errs.slice(0, 2).join(" | ")}`);

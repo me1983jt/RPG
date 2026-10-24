@@ -3633,7 +3633,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!ids.length) return;
 		const id = ids[Math.floor(Math.random() * ids.length)];
 		w13.dura[id] = Math.max(0, duraOf(id) - (2 + Math.min(4, Math.floor(dmg / 4))));
-		if (w13.dura[id] === 0 && !w13.flagsBroke?.[id]) pushLog(`Your ${GEAR[id].name.toLowerCase()} is worn through. Patch it or repair it at the workbench.`);
+		// v15.9.2 (A4): say it once per piece until it's mended, and "are" for pairs (boots, gloves, trousers)
+		w13.flagsBroke = w13.flagsBroke ?? {};
+		for (const k of Object.keys(w13.flagsBroke)) if (duraOf(k) > 0) delete w13.flagsBroke[k];
+		if (w13.dura[id] === 0 && !w13.flagsBroke[id]) { w13.flagsBroke[id] = true; const nm = GEAR[id].name.toLowerCase(); pushLog(`Your ${nm} ${/[^s]s$/.test(nm) ? "are" : "is"} worn through. Patch ${/[^s]s$/.test(nm) ? "them" : "it"} or repair ${/[^s]s$/.test(nm) ? "them" : "it"} at the workbench.`); }
 		refreshGear(player);
 	}
 	function repairCost(id) {
@@ -4871,7 +4874,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const bike = bikeBuilt();
 		const out = [];
 		for (const l of WM_LOCS) {
-			if (locLocked(l, l1.tf) || (here && l.id === here.id)) continue;
+			if (locLocked(l, l1.tf) || (here && l.id === here.id) || l.map === mapId) continue; // v15.9.2 (A2): you're already on that map; walk there
 			if (l.town && !w13.seen[l.id] && !bike) continue;
 			const hrs = hexPath([m.q, m.r], [l.q, l.r], bike).reduce((a, [q, r]) => a + hexHours(q, r, bike), 0);
 			out.push({ kind: "loc", id: l.id, name: l.name, hrs });
@@ -5284,7 +5287,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (num(st.points) && st.points >= 0) p.points = Math.floor(st.points);
 		const app = town ? townApp(town.id) : "harmony";
 		// Justin (Oct 23): 1 town score point = 1 XP
-		if (num(st.score)) { l1.tScore = l1.tScore ?? {}; const gain = Math.floor(st.score - (l1.tScore[app] ?? 0)) * (STATS_RULES.townScoreXp ?? 1); l1.tScore[app] = st.score; if (gain > 0) { pushLog(`Town work: +${gain} XP.`); grantXp(gain); } }
+		if (num(st.score)) { l1.tScore = l1.tScore ?? {}; const gain = Math.floor(st.score - (l1.tScore[app] ?? 0)) * (STATS_RULES.townScoreXp ?? 1); l1.tScore[app] = st.score; const townOwnsXp = st.extra?.schema === "character/1" && num(st.xp); // v15.9.2 (A1): a character/1 town already folded score into xp
+			if (townOwnsXp) grantXp(0); // just level up on the xp it sent
+			else if (gain > 0) { pushLog(`Town work: +${gain} XP.`); grantXp(gain); } }
 		// Justin (Oct 23): an old town save's learn-by-use skill levels are halved into invested points, once per town
 		const ex = st.extra; if (ex && typeof ex === "object" && ex.skills && typeof ex.skills === "object" && ex.schema !== "character/1" && !l1.tConv?.[app]) {
 			l1.tConv = { ...(l1.tConv ?? {}), [app]: true }; p.invested = p.invested ?? {};
@@ -7312,8 +7317,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				pushLog(`${name}: up and over the ${prop.kind === "fence" ? "fence" : "wall"}. Saves the long way round.`);
 			} else {
 				const n = 2 + Math.floor(Math.random() * 3); player.scrap += n;
-				if (Math.random() < .4) giveItem("wire", 1);
-				pushLog(`${name}: you work up the ${prop.kind === "ruin" ? "rubble to a second-floor shelf nobody could reach" : "ledge to a dry crack"}. ${n} iron${Math.random() < .4 ? " and a twist of wire" : ""}.`);
+				const wire = Math.random() < .4; if (wire) giveItem("wire", 1); // v15.9.2 (A3): one roll for the loot and the message
+				pushLog(`${name}: you work up the ${prop.kind === "ruin" ? "rubble to a second-floor shelf nobody could reach" : "ledge to a dry crack"}. ${n} iron${wire ? " and a twist of wire" : ""}.`);
 			}
 		} else if (prop.kind === "lookout") {
 			if (!check159("electronics", 30)) { pushLog(`${name}: the lookout radio hums and dies. Bad solder.`); sync(true); return true; }

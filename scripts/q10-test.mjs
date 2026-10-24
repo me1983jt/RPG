@@ -1,5 +1,5 @@
 import { boot } from "./v4-lib.mjs";
-const [url = process.env.Q10URL || "http://127.0.0.1:8112/", vw = "1280", vh = "800"] = process.argv.slice(2);
+const [url = process.env.Q10URL || process.env.TEST_URL || `http://127.0.0.1:${process.env.PORT || 8112}/`, vw = "1280", vh = "800"] = process.argv.slice(2);
 const out = process.env.Q10OUT || "/workspace/maine-rpg/beta16-shots/";
 const { browser, page, errs, T, begin } = await boot(url, { vw: +vw, vh: +vh });
 const R = {}; const fail = [];

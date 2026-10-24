@@ -1,13 +1,15 @@
 // beta v7 checks: farm, Jack, pack screen with overlays, new item effects, back button, night.
 // usage: node beta7-test.mjs URL OUTDIR [vw vh]
 import { boot } from "./v4-lib.mjs";
-const [url, out, vw = "844", vh = "390"] = process.argv.slice(2);
+// v15.9.2: url/outdir default so it runs bare (url from TEST_URL/PORT, shots to /tmp/beta7-shots)
+const [url = process.env.TEST_URL || `http://127.0.0.1:${process.env.PORT || 8112}/`, out = "/tmp/beta7-shots", vw = "844", vh = "390"] = process.argv.slice(2);
+await import("node:fs").then((fs) => fs.mkdirSync(out, { recursive: true }));
 const { browser, page, errs, T, begin } = await boot(url, { vw: +vw, vh: +vh });
 const shot = async (n, clip) => { await page.waitForTimeout(400); await page.screenshot({ path: `${out}/${n}.png`, ...(clip ? { clip } : {}) }); };
 const res = {};
 await begin(); await T("setHp", 9999);
 // farm
-const justin = await T("npcOf", "justin");
+const justin = (await T("npcOf", "justin")) ?? (await T("getPos")); // v15.9.2: no Justin NPC any more (you are Justin)
 await T("setZoom", 1.0); await T("setPos", justin.x + 60, justin.y + 80); await page.waitForTimeout(800); await shot("b7-01-farm");
 // Jack
 const jack = await T("npcOf", "cal");
