@@ -10,6 +10,8 @@ const towns = [
   { id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/quest-harmony" },
   { id: "pittsfield", src: process.env.TOWN_PITTSFIELD_SRC || "/workspace/quest-pittsfield" },
   { id: "skowhegan", src: process.env.TOWN_SKOWHEGAN_SRC || "/workspace/quest-skowhegan" },
+  // v15.9.9: Greenville town game copied in as-is (not hooked to the world map yet)
+  { id: "greenville", src: process.env.TOWN_GREENVILLE_SRC || "/workspace/quest-greenville" },
 ].map((t) => ({ ...t, stub: stubOf(t.id) }));
 for (const t of towns) {
   const out = join(root, "public/towns", t.id);
