@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2074;
+const ART_V = 2075;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -694,7 +694,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			shells: p ? shellCount(p) : 0,
 			quest,
 			questKills,
-			questText: hudQuestText(),
+			questText: giverText(hudQuestText()),
 			v113: v3Hud(),
 			logIds: lines.map((l) => l.id),
 			v141: hud141(),
@@ -704,12 +704,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			safe15: !!(p && phase === "play" && safeAt(p.x, p.y)),
 			tb15: tbHud(),
 			town: town ? { id: town.id, src: town.src, n: town.n } : null,
-			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; return [...all.filter((e) => !e.done), ...all.filter((e) => e.done)]; })(),
-			log,
+			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; const js = asSarah() ? all.map((e) => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, giverText(v)]))) : all; return [...js.filter((e) => !e.done), ...js.filter((e) => e.done)]; })(),
+			log: asSarah() ? log.map(giverText) : log,
 			buildOpen,
 			recipe,
 			canPlace: canPlaceAt(hoverTile()),
-			dialogue,
+			dialogue: dialogue && asSarah() ? { ...dialogue, speaker: giverText(dialogue.speaker), text: giverText(dialogue.text), choices: dialogue.choices?.map((c) => ({ ...c, label: giverText(c.label) })) } : dialogue,
+			hero: w13?.hero ?? "justin",
 			loot: lootView(),
 			blade: p?.blade ?? false,
 			roleTitle: p ? `${roleKit(p.role).title}${traitOf(p.trait) ? ` · ${traitOf(p.trait).title}` : ""}` : "Camp hand",
@@ -1146,6 +1147,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.look = look;
 		player.hair = appearance?.hair || "black";
 		pendingBackstory = appearance?.backstory || "";
+		pendingHero = appearance?.hero === "sarah" ? "sarah" : "justin";
 		pendingHard = !!appearance?.hard;
 		if (appearance) {
 			wearPiece(appearance.coat, "coatId");
@@ -1181,6 +1183,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		q11 = freshQ11();
 		v3 = freshV3();
 		w13 = freshW13();
+		w13.hero = pendingHero;
 		v14 = freshV14();
 		if (typeof window !== "undefined" && window.__v14Skip) v14.st = 5;
 		l1 = freshV141(); storeKey = "";
@@ -2479,6 +2482,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				ctx.restore();
 			} });
 		}
+		if (petBody) {
+			const tile = tileOf(petBody.x, petBody.y);
+			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(petBody.x, petBody.y), draw: () => {
+				const nm = petBody.moving || !images.get("v2/raccoon-idle") ? "v2/raccoon-walk" : "v2/raccoon-idle";
+				const frame = petBody.moving ? Math.floor(petBody.anim) % 4 : Math.floor(performance.now() / (ANIM_MS.idle * 4)) % 4;
+				if (!images.get(nm)) return;
+				const r = worldToScreen(petBody.x, petBody.y, dcx, dcy), p = zoomPoint(r.sx, r.sy);
+				if (!noShadow141) softShadow(p.sx, p.sy + zoom, 10 * zoom, nm);
+				blit(nm, petBody.x, petBody.y, realH("v2/raccoon-walk", SIZE_IN.raccoon), true, frame, petBody.dir, dcx, dcy);
+			} });
+		}
 		if (dogBody) {
 			const tile = tileOf(dogBody.x, dogBody.y);
 			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
@@ -3402,6 +3416,83 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		pushLog(mode === "stay" ? "\"Stay, Goose.\" He lies down with a sigh." : mode === "track" ? "\"Find 'em, Goose.\" His nose goes to the ground." : "\"Come on, Goose.\" He falls in at your heel.");
 		sfx("click"); sync(true);
 	}
+	// -------- v15.10: Sarah's baby pet raccoon. Goose's follow code with its own sheet: it trails Sarah (the farm NPC,
+	// or you when you play as her) on the world map, on her other side from Goose.
+	let petBody = null;
+	function petOwner() {
+		if (!player || !world || mapId !== 0 || inside || mode11) return null;
+		if (asSarah()) return player;
+		return world.npcs.find((n) => n.role === "sarah") || null;
+	}
+	function followStep(body, tx, ty, dt, fast) {
+		const d = Math.hypot(tx - body.x, ty - body.y);
+		body.moving = d > 20;
+		if (d > 900) { body.x = tx; body.y = ty; body.moving = false; }
+		else if (body.moving) {
+			const sp = Math.min(d, (fast ? 560 : d > 160 ? 340 : 200) * dt);
+			body.dir = facing8(tx - body.x, ty - body.y);
+			body.x += (tx - body.x) / d * sp; body.y += (ty - body.y) / d * sp;
+		}
+		body.anim += dt * (body.moving ? 10 : 0);
+	}
+	function petTick(dt) {
+		const o = petOwner();
+		if (!o) petBody = null;
+		else {
+			const tx = o.x - 40, ty = o.y + 34;
+			if (!petBody) petBody = { x: tx, y: ty, dir: 0, frame: 0, anim: 0, moving: false, pet: "raccoon" };
+			followStep(petBody, tx, ty, dt, o === player && mounted);
+		}
+		// playing Sarah, Goose stays with Justin (the farm's quest-giver) until the Lost Dog quest starts
+		if (asSarah() && q10.dog < 2 && world && mapId === 0 && !inside) {
+			const j = world.npcs.find((n) => n.role === "sarah");
+			if (!j) { if (dogBody?.withJustin) dogBody = null; return; }
+			if (!dogBody || !dogBody.withJustin) dogBody = { x: j.x + 46, y: j.y + 30, dir: 0, frame: 0, anim: 0, moving: false, withJustin: true };
+			followStep(dogBody, j.x + 46, j.y + 30, dt, false);
+		} else if (dogBody?.withJustin) dogBody = null;
+	}
+	// -------- v15.10: wild raccoons (skittish, by woods and towns) and painted turtles (slow, in and by the water,
+	// now and then on a road's edge, never out on the road). Same timid AI as the rabbits.
+	const WILD_N = { raccoon: 5, turtle: 5 };
+	let wildT = 0, wildTrees = null, wildTreesOf = null;
+	const wTile = (tx, ty) => tx >= 0 && ty >= 0 && tx < 156 && ty < 156 ? world.tiles[ty * 156 + tx] : -1;
+	const wRoad = (tx, ty) => wTile(tx, ty) === 2;
+	const wWater = (tx, ty) => wTile(tx, ty) === 5 && v197Wet(tx, ty);
+	function wNear(tx, ty, r, f) { for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) if (f(x, y)) return true; return false; }
+	function wTreeAt(tx, ty) {
+		if (wildTreesOf !== world) { wildTreesOf = world; wildTrees = new Uint8Array(156 * 156); for (const p of world.props) if (p.kind.startsWith("tree-") && p.tx >= 0 && p.ty >= 0 && p.tx < 156 && p.ty < 156) wildTrees[p.ty * 156 + p.tx] = 1; }
+		return tx >= 0 && ty >= 0 && tx < 156 && ty < 156 && wildTrees[ty * 156 + tx] === 1;
+	}
+	const wTown = (tx, ty) => world.npcs.some((n) => Math.abs(n.x / TILE - tx) < 10 && Math.abs(n.y / TILE - ty) < 10) || world.props.some((p) => /house|church|shed|barn/.test(p.kind) && Math.abs(p.tx - tx) < 8 && Math.abs(p.ty - ty) < 8);
+	/** Where a wild animal of this kind may stand. Turtles: dry ground next to water, or (rarely) a road's edge near water. */
+	function wildHabitat(kind, tx, ty, shoulderOk) {
+		if (tx < 4 || ty < 4 || tx >= 152 || ty >= 152 || cellBlocked(world, tx, ty) || wRoad(tx, ty)) return false;
+		if (kind === "turtle") {
+			if (wNear(tx, ty, 2, wWater)) return shoulderOk || !wNear(tx, ty, 1, wRoad);
+			return shoulderOk && wNear(tx, ty, 1, wRoad) && wNear(tx, ty, 4, wWater);
+		}
+		return wNear(tx, ty, 3, wTreeAt) || wTown(tx, ty);
+	}
+	function wildTick(dt) {
+		if (!world || !player || mapId !== 0 || inside || mode11) return;
+		wildT -= dt;
+		if (wildT > 0) return;
+		wildT = 4;
+		for (const kind of ["raccoon", "turtle"]) {
+			const have = world.enemies.filter((e) => !e.dead && e.kind === kind).length;
+			if (have >= WILD_N[kind]) continue;
+			const t = tileOf(player.x, player.y);
+			for (let k = 0; k < 60; k++) {
+				const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * 26;
+				const tx = Math.round(t.tx + Math.cos(a) * r), ty = Math.round(t.ty + Math.sin(a) * r);
+				if (!wildHabitat(kind, tx, ty, kind === "turtle" && Math.random() < .15)) continue;
+				const hp = kind === "raccoon" ? 7 : 5;
+				const e = q11Spawn([kind, null, null, hp, 0, kind === "raccoon" ? 3 : 2], { x: (tx + .5) * TILE, y: (ty + .5) * TILE }, "wild", false);
+				if (e) { e.temper = "timid"; e.wild = true; }
+				break;
+			}
+		}
+	}
 	// -------- main tick + hud
 	function v3Tick(dt) {
 		if (!player || !world || phase !== "play" || mode11) return;
@@ -3409,6 +3500,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v3TrackTick(dt);
 		v3TrapTick();
 		v3DogTick(dt);
+		petTick(dt);
+		wildTick(dt);
 		if (player.scrap >= 100) achieve("rich");
 		if (player.level >= 5) achieve("level5");
 		if ((q11.fish.caught ?? 0) >= 10) achieve("fish10");
@@ -3459,7 +3552,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const loyal = {};
 		for (const c of COMPANIONS) loyal[c] = 20;
 		return {
-			core: { agility: 1, grit: 1 }, backstory: "", hard: false,
+			core: { agility: 1, grit: 1 }, backstory: "", hard: false, hero: "justin",
 			weather: { id: "clear", day: -1 }, needs: { hunger: 100, thirst: 100, sleep: 100 }, ail: {}, buffs: {},
 			dura: {}, patched: {}, dye: {}, loyal, left: {},
 			bounties: [], bountyDay: -99, bountyDone: 0, caravan: {}, rebuilt: { store: 0, school: 0, clinic: 0 },
@@ -3476,6 +3569,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	let w13 = freshW13();
 	let pendingBackstory = "";
+	let pendingHero = "justin";
+	/** v15.10: who you play. "sarah": the player wears Sarah's sheets, and the farm's quest-giver (the "sarah" role NPC) is drawn and named as Justin. */
+	function asSarah() { return w13?.hero === "sarah"; }
+	/** v15.10: name swap for everything the HUD shows when you play as Sarah (Justin gives her quests). */
+	function giverText(t) {
+		if (!asSarah() || typeof t !== "string" || !t.includes("Sarah")) return t;
+		return t.replace(/She's at the farm/g, "He's at the farm").replace(/\bSarah\b/g, "Justin");
+	}
+	function giverName() { return asSarah() ? "Justin" : "Sarah"; }
 	let pendingHard = false;
 	function applyBackstory(id) {
 		const b = BACKSTORIES.find((x) => x.id === id);
@@ -6658,7 +6760,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** v13: the player's body. v2/player-<action>.png when it exists, else Justin's gw15 sheet (dyed
 	 * to the creator's hair and cloth in heroSource), else null so callers fall back to the old hero art. */
 	function plImg(action) {
-		const src = images.get(`v2/player-${action}`) || images.get(`v2/justin-${action}`);
+		const src = asSarah() ? images.get(`v2/sarah-${action}`) : images.get(`v2/player-${action}`) || images.get(`v2/justin-${action}`);
 		if (!src) return null;
 		const n = `pl/${action}`;
 		if (images.get(n) !== src) images.set(n, src);
@@ -6675,7 +6777,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const DOLL_SLOTS = [["feet", "feetId"], ["legs", "legsId"], ["chest", "coatId"], ["hands", "handsId"], ["back", "backId"], ["head", "headId"]];
 	const DOLL_TYPES = ["man", "woman", "kid"];
 	function dollTypeOf(who) {
-		if (who === player) return "man";
+		if (who === player) return asSarah() ? "woman" : "man";
 		if (who.dollType && DOLL_TYPES.includes(who.dollType)) return who.dollType;
 		if (who.role === "cyndal" || who.role === "loki") return "kid";
 		return /sarah|mira|nora|adele|sera|ruth|mae|etta/.test(who.role ?? "") ? "woman" : "man";
@@ -6910,7 +7012,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function heroSource(name, img) {
 		if (!player || !img?.width) return img;
-		if (name.startsWith("pl/")) return images.get(`v2/player-${name.slice(3)}`) === img ? img : dyePlayerBody(img, name);
+		if (name.startsWith("pl/")) return asSarah() || images.get(`v2/player-${name.slice(3)}`) === img ? img : dyePlayerBody(img, name);
 		if (!/^(v2\/)?hero/.test(name)) return img;
 		const colors = wornColors();
 		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
@@ -7742,7 +7844,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			"deer",
 			"moose",
 			"rabbit",
-			"squirrel"
+			"squirrel",
+			"raccoon",
+			"turtle"
 		]);
 		for (const pile of saved) {
 			const body = kinds.has(pile.body) ? pile.body : "";
@@ -8212,7 +8316,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const first = !enemy.aggro;
 			enemy.aggro = true;
 			alertPack(enemy);
-			if (first) pushLog(enemy.kind === "squirrel" ? "The squirrel bolts." : "The rabbit bolts.");
+			if (first) pushLog(enemy.kind === "squirrel" ? "The squirrel bolts." : enemy.kind === "raccoon" ? "The raccoon chitters and scrambles off." : enemy.kind === "turtle" ? "The turtle pulls into its shell and shuffles for the water." : "The rabbit bolts.");
 		} else {
 			const wasCalm = !enemy.aggro && enemy.temper === "wary";
 			enemy.aggro = true;
@@ -8221,7 +8325,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		let dmg = Math.max(1, Math.round(strikeDamage() * aimRow.mult));
 		if (sneak141) { dmg = Math.round(dmg * SNEAK_MULT); floater(enemy.x, enemy.y - 44, "Sneak attack"); pushLog(`Sneak attack: ${dmg}.`); train("sneak", 4); }
-		const tiny = enemy.kind === "squirrel" || enemy.kind === "rabbit";
+		const tiny = enemy.kind === "squirrel" || enemy.kind === "rabbit" || enemy.kind === "turtle";
 		if (tiny) {
 			if (enemy.hp < enemy.maxHp || Math.random() < .72) dmg = enemy.hp;
 			else dmg = Math.max(1, enemy.maxHp - 1);
@@ -9003,7 +9107,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (enemy.hollow) { stepHollow(enemy, dt, dist); continue; }
 			if (enemy.temper === "timid") {
 				if (dist > 340) enemy.aggro = false;
-				const spook = enemy.aggro || dist < noticeRange(78) * (1 - .06 * lv("hunting")) || v3Spook(enemy, dist);
+				// v15.10: turtles crawl (and never step onto a road); raccoons spook early and run
+				const wk = enemy.kind === "turtle" ? .28 : enemy.kind === "raccoon" ? 1.1 : 1, ox0 = enemy.x, oy0 = enemy.y;
+				const spook = enemy.aggro || dist < noticeRange(enemy.kind === "raccoon" ? 150 : enemy.kind === "turtle" ? 60 : 78) * (1 - .06 * lv("hunting")) || v3Spook(enemy, dist);
 				let enemyMoving = false;
 				if (spook) {
 					if (dist < 78 && !enemy.aggro) {
@@ -9018,7 +9124,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						enemy.pathT = .35;
 					}
 					if (enemy.path) {
-						enemy.path = follow(enemy, enemy.path, enemy.kind === "squirrel" ? 230 : 200, dt, true);
+						enemy.path = follow(enemy, enemy.path, (enemy.kind === "squirrel" ? 230 : 200) * wk, dt, true);
 						enemyMoving = true;
 					}
 				} else if (homeDist > 80) {
@@ -9027,7 +9133,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						enemy.pathT = .6;
 					}
 					if (enemy.path) {
-						enemy.path = follow(enemy, enemy.path, 90, dt, true);
+						enemy.path = follow(enemy, enemy.path, 90 * wk, dt, true);
 						enemyMoving = true;
 					}
 				} else if (enemy.pathT <= 0) {
@@ -9036,11 +9142,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					enemy.path = pathTo(world, enemy.x, enemy.y, enemy.homeX + Math.cos(ang) * roam, enemy.homeY + Math.sin(ang) * roam);
 					enemy.pathT = 1.4 + Math.random() * 2;
 					if (enemy.path?.length) {
-						enemy.path = follow(enemy, enemy.path, 80, dt, true);
+						enemy.path = follow(enemy, enemy.path, 80 * wk, dt, true);
 						enemyMoving = true;
 					}
 				}
-				if (enemyMoving) enemy.anim += dt * 12;
+				if (enemy.kind === "turtle") { const tt = tileOf(enemy.x, enemy.y); if (wRoad(tt.tx, tt.ty)) { enemy.x = ox0; enemy.y = oy0; enemy.path = null; enemy.pathT = .2; enemyMoving = false; } }
+				if (enemyMoving) enemy.anim += dt * (enemy.kind === "turtle" ? 5 : 12);
 				enemy.frame = enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 				continue;
 			}
@@ -9326,7 +9433,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** v12: gw14 people sheets by role (Cal's art is the "jack" set). */
 	const V2_WHO = { holt: "holt", cal: "jack", mira: "mira", nora: "nora", sarah: "sarah", cyndal: "cyndal", loki: "loki", marcel: "marcel", justin: "justin" };
 	function v2Who(npc) {
-		const k = V2_WHO[npc.role];
+		const k = asSarah() && npc.role === "sarah" ? "justin" : V2_WHO[npc.role];
 		return k && images.get(`v2/${k}-walk`) ? k : "";
 	}
 	const V4_FOLK = new Set(["gus", "pete"]);
@@ -9460,6 +9567,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.kind === "moose") return "moose";
 		if (enemy.kind === "rabbit") return "rabbit";
 		if (enemy.kind === "squirrel") return "squirrel";
+		if (enemy.kind === "raccoon") return "v2/raccoon-wild-walk";
+		if (enemy.kind === "turtle") return "v2/turtle-walk";
 		return enemy.id % 3 === 1 ? "raider-gray" : enemy.id % 3 === 2 ? "raider-blue" : "raider";
 	}
 	/** v29 real-world sizing: every body is drawn so its *visible* figure (alpha bbox, SPRITE_FIT)
@@ -9475,7 +9584,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return realH(beastSheet(enemy), inches);
 	}
 	function folkHeight(npc) {
-		return realH(folkSheet(npc), FOLK_IN[npc.role] ?? 69);
+		return realH(folkSheet(npc), FOLK_IN[asSarah() && npc.role === "sarah" ? "justin" : npc.role] ?? 69);
 	}
 	/** v13.5 real size: the parked tractor art is 83 px (rear wheel 50 px = 4.5 ft); the charge sheets match it. */
 	const TRACTOR_DRIVE_H = Math.round(110 * SIZE_IN.tractor / 59), TRACTOR_RUN_H = TRACTOR_DRIVE_H; // size198: 110 px was the 59 in parked tractor scale
@@ -10895,7 +11004,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			z: bodyZ(player.x, player.y),
 			draw: () => { shadow193 = true; try { xfWrap(() => {
 				// v11.1 art hook: a dedicated hero-ride sheet (bike included) replaces the stand-in when present
-				if (mounted && images.get("v2/hero-ride") && phase !== "dead") { blit("v2/hero-ride", player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
+				const rideSheet = asSarah() ? "v2/sarah-ride" : "v2/hero-ride";
+				if (mounted && images.get(rideSheet) && phase !== "dead") { blit(rideSheet, player.x, player.y, ADULT, true, walkFrame(true), player.dir, drawCamX, drawCamY, false); return; }
 				if (mounted) paintRide(player.x, player.y, player.dir, drawCamX, drawCamY);
 				if (phase === "dead") {
 					if (plImg("death")) {
@@ -12963,6 +13073,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Tp: (x, y) => { player.x = x; player.y = y; snapPrev(); sync(true); },
 		v15Talk: (role) => { const n = world.npcs.find((x) => x.role === role); if (!n) return null; openTalk(n); return dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => c.label) } : null; },
 		v15Npcs: () => world.npcs.map((n) => n.role),
+		// v15.10: play-as-Sarah / pet / wildlife probe
+		v15Probe1510: () => {
+			const g = world?.npcs.find((n) => n.role === "sarah");
+			const wild = { raccoon: 0, turtle: 0, turtleOnRoad: 0, list: [] };
+			for (const e of world?.enemies ?? []) if (!e.dead && (e.kind === "raccoon" || e.kind === "turtle")) { wild[e.kind]++; const t = tileOf(e.x, e.y); if (e.kind === "turtle" && wRoad(t.tx, t.ty)) wild.turtleOnRoad++; wild.list.push({ kind: e.kind, x: Math.round(e.x), y: Math.round(e.y), road: wRoad(t.tx, t.ty), water: wNear(t.tx, t.ty, 2, wWater) }); }
+			const hd = useHud.getState().dialogue;
+			return { hero: w13.hero, body: plImg("walk") && images.get(plImg("walk")) === images.get("v2/sarah-walk") ? "v2/sarah-walk" : "other", giver: g ? v2Who(g) : null, giverPos: g ? { x: g.x, y: g.y } : null, giverH: g ? folkHeight(g) : 0,
+				player: { x: player.x, y: player.y }, pet: petBody ? { x: petBody.x, y: petBody.y, moving: petBody.moving } : null, dog: dogBody ? { x: dogBody.x, y: dogBody.y, withJustin: !!dogBody.withJustin } : null, dialogue: hd ? { speaker: hd.speaker, text: hd.text, choices: hd.choices.map((c) => ({ label: c.label })) } : null, wild };
+		},
+		v15Wild: (kind, x, y) => { const e = q11Spawn([kind, null, null, 5, 0, 2], { x, y }, "wild", false); if (e) { e.temper = "timid"; e.wild = true; } return !!e; },
 		propKinds: () => { const o = {}; for (const p of world?.props ?? []) o[p.kind] = (o[p.kind] ?? 0) + 1; return { map: mapId, n: world?.props.length ?? 0, kinds: o, thinWreck: world?.thinWreck195 ?? 0 }; },
 		v15Start: () => ({ x: player.x, y: player.y, st: v14.st, harmony: townSpot(ISO_TOWNS[0]), farm: farmCenter() }),
 		town145Goose: () => { q10.dog = Math.max(q10.dog, 4); },
@@ -13305,7 +13425,7 @@ function stripFrames(name, img) {
 const TALL_COMBAT = new Set();
 /** v12: gw14 sheets on their own grids (bike 78x76, tractor 143x100, hero-ride 87x92). */
 const TRACTOR_ROW = 6;
-const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2/tractor-drive": 4 };
+const V2_COLS = { "v2/bike-ride": 6, "v2/bike-parked": 1, "v2/hero-ride": 6, "v2/sarah-ride": 6, "v2/tractor-drive": 4 };
 /** v12: gw14 people (88x124 cells, 8 facing rows). */
 const V2_FOLK = /^v2\/(hollowed|holt|jack|mira|nora|sarah|cyndal|loki|marcel|justin|player|boss-collector|bandit-[a-z]+)-/;
 /** v12: raider attack / death come from the gw14 action sheets under the legacy -atk / -dead names. */

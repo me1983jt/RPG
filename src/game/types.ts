@@ -237,7 +237,7 @@ export interface Prop {
   label?: string;
 }
 
-export type BeastKind = "bandit" | "wolf" | "coyote" | "deer" | "moose" | "rabbit" | "squirrel";
+export type BeastKind = "bandit" | "wolf" | "coyote" | "deer" | "moose" | "rabbit" | "squirrel" | "raccoon" | "turtle";
 export type AimPart = "head" | "chest" | "arm" | "leg";
 
 export interface Npc {
@@ -470,6 +470,8 @@ export interface HudSnapshot {
   recipe: number;
   canPlace: boolean;
   dialogue: Dialogue | null;
+  /** v15.10: who the player is */
+  hero?: "justin" | "sarah";
   loot: { title: string; lines: LootLine[] } | null;
   blade: boolean;
   roleTitle: string;

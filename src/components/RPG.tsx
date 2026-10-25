@@ -130,6 +130,8 @@ export function RPG() {
   const [boots, setBoots] = useState(true);
   const [backstory, setBackstory] = useState<"veteran" | "mechanic" | "farmer" | "hunter">("hunter");
   const [hardMode, setHardMode] = useState(false);
+  // v15.10: who you play. Sarah gets her quests from Justin at the farm.
+  const [hero, setHero] = useState<"justin" | "sarah">("justin");
   const [jNotes, setJNotes] = useState<string | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
   const [step, setStep] = useState<"trade" | "points" | "trait">("trade");
@@ -318,7 +320,7 @@ export function RPG() {
 
   function startNew(): void {
     if (!trait || pointsLeft !== 0) return;
-    apiRef.current?.begin(name, role, bonus, trait, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode });
+    apiRef.current?.begin(name, role, bonus, trait, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode, hero });
   }
 
   return (
@@ -1112,6 +1114,26 @@ export function RPG() {
             </div>
             {step === "trade" ? (
               <>
+                <p className="mt-4 text-sm text-muted short:mt-2">Who are you?</p>
+                <div className="mt-1 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Character" data-testid="hero-pick">
+                  {([["justin", "Justin", "Your own farm. Sarah gives the jobs. Goose is yours once he's found."], ["sarah", "Sarah", "Justin gives the jobs. Her baby raccoon tags along."]] as const).map(([id, label, blurb]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={hero === id}
+                      data-testid={`hero-${id}`}
+                      className={`plank border px-3 py-2 text-left ${hero === id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
+                      onClick={() => {
+                        setHero(id);
+                        if (name === "Packer" || name === "Justin" || name === "Sarah") setName(label);
+                      }}
+                    >
+                      <span className="block font-display text-lg leading-none">Play as {label}</span>
+                      <span className="mt-1 block text-xs text-muted short:hidden">{blurb}</span>
+                    </button>
+                  ))}
+                </div>
                 <label className="mt-4 block text-sm text-muted short:mt-2" htmlFor="wanderer-name">
                   Name
                 </label>

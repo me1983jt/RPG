@@ -29,6 +29,8 @@ export type StartLook = {
   boots: boolean;
   backstory?: "veteran" | "mechanic" | "farmer" | "hunter" | "";
   hard?: boolean;
+  /** v15.10: play as Justin (default) or Sarah */
+  hero?: "justin" | "sarah";
 };
 
 const LOOK_RGB: Record<LookId, [number, number, number]> = {
