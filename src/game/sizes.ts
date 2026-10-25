@@ -13,8 +13,8 @@ export const SIZE_IN: Record<string, number> = {
  hero: 74, npc: 70.5, kid: 62, boss: 76, door: 80,
  // animals and bosses (full height, ears/antlers to hooves)
  moose: 92, deer: 62, bear: 40, wolf: 34, coyote: 29, rabbit: 10, squirrel: 8, crow: 10, grok: 98,
- // town buildings (Quest"s painted Harmony art). House ~2.75x the hero, as before.
- "town-house": 204, "town-church": 229, "town-farmhouse": 196, "town-farmhouse-lone": 184, "town-shed": 102, "town-sign": 73, "town-fence": 48,
+ // town buildings (Quest"s painted Harmony art). "Real doors": house ~4.3x the hero (x1.564 of the old 2.75x), so its door reads ~80 in.
+ "town-house": 319, "town-church": 358, "town-farmhouse": 306, "town-farmhouse-lone": 288, "town-shed": 159, "town-sign": 114, "town-fence": 48,
  // world props (PROP_SPEC kinds)
  "tree-dead": 297,
  "tree-scrub": 48,

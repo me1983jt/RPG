@@ -40,7 +40,7 @@ const vis = (im, x0, y0, sw, sh, thr = 0) => { let top = -1, bot = -1; for (let 
 const near = (a, b, t = TOL) => Math.abs(a - b) <= b * t;
 ok(SIZE_IN.hero === 74 && near(SIZE_IN.npc, 70, .03), `hero ${SIZE_IN.hero} in, NPCs ${SIZE_IN.npc} in (about 70)`);
 ok(SIZE_IN.door === 80 && SIZE_IN["town-fence"] === 48 && SIZE_IN.fence === 48, "door 80 in, fences 48 in");
-const hr = SIZE_IN["town-house"] / SIZE_IN.hero; ok(hr > 2.6 && hr < 2.9, `house is ${hr.toFixed(2)}x the hero (~2.75)`);
+const hr = SIZE_IN["town-house"] / SIZE_IN.hero; ok(hr > 4.15 && hr < 4.45, `house is ${hr.toFixed(2)}x the hero (~4.3, real doors)`);
 ok(SIZE_IN.moose > SIZE_IN.deer && SIZE_IN.grok > SIZE_IN.hero && SIZE_IN["town-church"] > SIZE_IN["town-house"] && SIZE_IN["town-shed"] < SIZE_IN["town-house"] && SIZE_IN["car-truck"] > SIZE_IN["car-sedan"], "ordering: moose > deer, Grok > hero, church > house > shed, truck > sedan");
 ok(near(PX_PER_IN, 129 * .806 / 74, .005), `PX_PER_IN ${PX_PER_IN} matches the 129 px hero sheet (fit .806)`);
 
@@ -74,7 +74,7 @@ const { boot } = await import("./v4-lib.mjs");
 const { browser, page, errs, T, begin } = await boot(url, { vw: 1600, vh: 1000, v14: true });
 await begin();
 const s = await T("v15Start");
-await T("v15Tp", s.harmony.x + 150, s.harmony.y + 150); await page.waitForTimeout(3000);
+await T("v15Tp", s.harmony.x + 275, s.harmony.y + 25); // real doors: Harmony is ~2500 px wide now; stand a bit east so the shed is in view too await page.waitForTimeout(3000);
 for (const kind of ["moose", "deer", "wolf"]) await page.evaluate((k) => window.__controlsTest.sizeSpawn?.(k), kind);
 await page.waitForTimeout(1500);
 const r = await T("sizeCheck");

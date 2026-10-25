@@ -4962,18 +4962,48 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** v15.9.7: the bigger towns (church, houses, fence) need their lot clear: no trees, rocks, wrecks or ruins on the
 	 * ground the town art stands on or in front of it. Quest props and labelled buildings stay. */
 	const LOT_KINDS = /^(tree-|maple$|rock$|ruin$|shack$|car-|scrap$|crates$|wall$|logs$)/;
+	// real doors: the lots grew with the 1.56x buildings. v15.9.7 cleared the layout's old x-extent +-260 px, -300..420 px deep;
+	// exactly that still goes. The rest of what the bigger lot covers is moved just behind the lot (props that a nearby marker's
+	// clear-out would take anyway still go), so tree/rock counts and the frame cost stay as they were. Deterministic, ids untouched.
+	const LOT_OLD_X = { harmony: [-560, 540], pittsfield: [-390, 360], skowhegan: [-400, 160] };
 	function clearTownLot(t, spot) {
 		if (!world || !spot || !TOWN_HOUSES[t.id]) return;
 		const parts = TOWN_HOUSES[t.id];
-		const xs = parts.map(([, dx]) => dx), x0 = Math.min(...xs) - 260, x1 = Math.max(...xs) + 260;
-		world.props = world.props.filter((p) => {
-			if (!LOT_KINDS.test(p.kind) || p.quest || p.label || p.built || p.p14 || p.f14) return true;
-			const c = propCenter(p), wx = c.x - spot.x, wy = c.y - spot.y;
-			const sdx = wx - wy, sdy = (wx + wy) * CAM_ISO_Y;
-			if (sdx < x0 || sdx > x1 || sdy < -300 || sdy > (p.kind === "ruin" || p.kind === "shack" ? 640 : 420)) return true;
-			vacate(world, p);
-			return false;
-		});
+		const xs = parts.map(([, dx]) => dx), x0 = Math.min(...xs) - 340, x1 = Math.max(...xs) + 340; // half a building is now ~310 px wide
+		const [o0, o1] = LOT_OLD_X[t.id] ?? [x0 + 340, x1 - 340];
+		const others = ISO_TOWNS.filter((o) => o.id !== t.id && o.map === t.map && o.at && !TOWN_HOUSES[o.id]).map((o) => [o.at[0] + WORLD_OX, o.at[1] + WORLD_OY]);
+		const nearOther = (tx, ty) => others.some(([cx, cy]) => { const dx = tx - cx, dy = ty - cy; return dx * dx + dy * dy <= 121 || (dx + dy > 0 && dx + dy <= 21 && Math.abs(dx - dy) <= 15); });
+		const tall = (p) => p.kind === "ruin" || p.kind === "shack";
+		const scr = (p) => { const c = propCenter(p), wx = c.x - spot.x, wy = c.y - spot.y; return { sdx: wx - wy, sdy: (wx + wy) * CAM_ISO_Y }; };
+		const inLot = (p) => { const { sdx, sdy } = scr(p); return sdx >= x0 && sdx <= x1 && sdy >= -340 && sdy <= (tall(p) ? 640 : 480); };
+		const inOld = (p) => { const { sdx, sdy } = scr(p); return sdx >= o0 - 260 && sdx <= o1 + 260 && sdy >= -300 && sdy <= (tall(p) ? 640 : 420); };
+		// left in place near another marker: its own clear-out (which runs for every marker on load) takes it, as before
+		const victims = world.props.filter((p) => LOT_KINDS.test(p.kind) && !(p.quest || p.label || p.built || p.p14 || p.f14) && inLot(p) && (inOld(p) || !nearOther(p.tx, p.ty)));
+		if (!victims.length) return;
+		const drop = new Set();
+		for (const p of victims) { vacate(world, p); if (inOld(p)) drop.add(p); }
+		const H = world.tiles.length / MAP_W, moving = new Set(victims), taken = new Set();
+		for (const q of world.props) if (!moving.has(q)) { const sp = PROP_SPEC[q.kind]; for (let y = 0; y < sp.h; y++) for (let x = 0; x < sp.w; x++) taken.add((q.ty + y) * MAP_W + q.tx + x); }
+		for (const p of victims) {
+			if (drop.has(p)) continue;
+			const sp = PROP_SPEC[p.kind], { sdx } = scr(p);
+			let moved = false;
+			for (let k = 0; k < 40 && !moved; k++) {
+				// step back (up-screen) past the lot, fanning sideways a little
+				const ty0 = -380 - (k >> 2) * 40, tx0 = sdx + ((k & 3) - 1.5) * 70, a = ty0 / CAM_ISO_Y;
+				const nx = Math.round((spot.x + (tx0 + a) / 2) / TILE - sp.w / 2), ny = Math.round((spot.y + (a - tx0) / 2) / TILE - sp.h / 2);
+				let ok = nx > 6 && ny > 6 && nx + sp.w < MAP_W - 6 && ny + sp.h < H - 6 && !nearOther(nx, ny);
+				for (let y = 0; ok && y < sp.h; y++) for (let x = 0; ok && x < sp.w; x++) {
+					const i = (ny + y) * MAP_W + nx + x;
+					if (world.blocked[i] || world.tiles[i] === 2 || world.tiles[i] === 5 || taken.has(i) || inFarm(nx + x, ny + y)) ok = false;
+				}
+				if (!ok) continue;
+				p.tx = nx; p.ty = ny; occupy(world, p); moved = true;
+				for (let y = 0; y < sp.h; y++) for (let x = 0; x < sp.w; x++) taken.add((ny + y) * MAP_W + nx + x);
+			}
+			if (!moved) drop.add(p);
+		}
+		world.props = world.props.filter((p) => !drop.has(p));
 	}
 	function townSpot(t) {
 		if (!world || mapId !== t.map) return null;
@@ -5048,7 +5078,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * the ground shadow goes down with the ground. Offsets are screen px at zoom 1 from the marker. */
 	/** v15.9.7: towns in the world are built from Quest's own painted Harmony scenery (church, houses, shed, notice board,
 	 * fence; cut from harmony_concept / farm_concept, colours untouched, see scripts/town-art-*.py). Scaled to the hero:
-	 * a house is ~2.75x the hero's height. Each entry: [art, dx, dy, height] in screen px at zoom 1 from the marker;
+	 * a house is ~4.3x (real doors, v15.9.9; was ~2.75x) the hero's height. Each entry: [art, dx, dy, height] in screen px at zoom 1 from the marker;
 	 * dy is where the art meets the ground. The front (toward the camera) is left open so the walk-in spot stays clear. */
 	const TOWN_ART = {};
 	function townArt(name) {
@@ -5057,15 +5087,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!img) { img = new Image(); img.src = `/game/town/${name}.png?v=${ART_V}`; TOWN_ART[name] = img; }
 		return img.complete && img.naturalWidth ? img : null;
 	}
-	// size198: every height comes from SIZE_IN (src/game/sizes.ts); house = 204 in = ~2.75x the 74 in hero
+	// size198: every height comes from SIZE_IN (src/game/sizes.ts); house = 319 in = ~4.3x the 74 in hero, so its door reads ~80 in (real doors)
 	const TH = (key, art) => townH(key, art);
 	const T_HOUSE = ["house", TH("town-house", "house")], T_CHURCH = ["church", TH("town-church", "church")], T_FARM = ["farmhouse", TH("town-farmhouse", "farmhouse")];
 	const T_SHED = ["shed", TH("town-shed", "shed")], T_SIGN = ["sign", TH("town-sign", "sign")], T_FENCE = ["fence", TH("town-fence", "fence")];
 	const tAt = ([art, h], dx, dy) => [art, dx, dy, h];
 	const TOWN_HOUSES = {
-		harmony: [tAt(T_FENCE, -560, 96), tAt(T_HOUSE, -330, -20), tAt(T_CHURCH, 0, -96), tAt(T_FARM, 330, -12), tAt(T_SHED, 540, 64), tAt(T_SIGN, -150, 70), tAt(T_FENCE, 420, 160)],
-		pittsfield: [tAt(T_FENCE, -390, 90), tAt(T_HOUSE, -190, -18), tAt(T_FARM, 190, -14), tAt(T_SHED, 360, 56), tAt(T_SIGN, -70, 66)],
-		skowhegan: [tAt(T_HOUSE, -190, -18), tAt(T_CHURCH, 160, -60), tAt(T_SIGN, -60, 66), tAt(T_FENCE, -400, 92)],
+		// real doors: buildings ~1.56x bigger than v15.9.7, so the lots are spread out with walkable streets (>=50 px at zoom 1) between
+		// them and kept off the lone-farmhouse markers nearby (Saw's camp by Harmony, the Pittsfield co-op / depot, the Skowhegan sub-entries)
+		harmony: [tAt(T_FENCE, -1000, 150), tAt(T_HOUSE, -620, -40), tAt(T_CHURCH, 0, -140), tAt(T_FARM, 700, -110), tAt(T_SHED, 1240, 0), tAt(T_SIGN, -270, 110), tAt(T_FENCE, 1250, 190)],
+		pittsfield: [tAt(T_FENCE, -700, 150), tAt(T_HOUSE, -1080, 20), tAt(T_SHED, 50, -200), tAt(T_FARM, 1300, -40), tAt(T_SIGN, -160, 100)], // co-op back left, depot front right
+		skowhegan: [tAt(T_HOUSE, -900, 60), tAt(T_CHURCH, 760, -60), tAt(T_SIGN, -330, 140), tAt(T_FENCE, -1000, 190)], // mill back left, Marcel's front, hospital right
 		_: [["farmhouse", 0, 15, TH("town-farmhouse-lone", "farmhouse")]],
 	};
 	const TOWN_KEY = { house: "town-house", church: "town-church", farmhouse: "town-farmhouse", shed: "town-shed", sign: "town-sign", fence: "town-fence" };
