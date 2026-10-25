@@ -16,6 +16,7 @@ import {
   ScrollText,
   DoorOpen,
   Map as MapIcon,
+  Repeat,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
@@ -408,13 +409,13 @@ export function RPG() {
             </div>
           ) : null}
           {hc.quest ? (
-            <section data-hud="quest-min" className={`pointer-events-auto mr-24 flex max-w-xs items-center gap-1 self-start plank border border-border bg-surface/95 px-2 py-1 ${fl("quest")}`}>
+            <section data-hud="quest-min" className={`pointer-events-auto mr-[9.5rem] flex max-w-xs short:mr-[10.5rem] items-center gap-1 self-start plank border border-border bg-surface/95 px-2 py-1 ${fl("quest")}`}>
               <ScrollText className="size-4 shrink-0 text-primary" aria-hidden />
               <p className="min-w-0 flex-1 truncate text-xs font-semibold">{hud.questText}</p>
               <MinBtn k="quest" label="quest panel" />
             </section>
           ) : (
-          <section data-hud="quest" className="pointer-events-auto mr-24 max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[6.5rem] short:px-2 short:py-1">
+          <section data-hud="quest" className="pointer-events-auto mr-[9.5rem] max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:mr-[10.5rem] short:px-2 short:py-1">
             <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
               <ScrollText className="size-4" aria-hidden />
               <span className="flex-1">{hud.region}</span>
@@ -650,7 +651,7 @@ export function RPG() {
                   </button>
                 </div>
                 <div className="mt-1 grid grid-cols-4 gap-1" role="tablist">
-                  {([["main", "Main"], ["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["allies", "Allies"], ["diary", "Diary"], ["gear", "Gear"]] as const).map(([k, l]) => (
+                  {([["main", "Main"], ["quests", "Quests"], ["skills", "Skills"], ["ach", "Awards"], ["allies", "Allies"], ["diary", "Diary"], ["gear", "Backpack"]] as const).map(([k, l]) => (
                     <button key={k} type="button" role="tab" aria-selected={jTab === k} data-testid={`tab-${k}`} className={`min-h-10 plank border px-1 text-xs font-semibold ${jTab === k ? "border-primary bg-primary text-bg" : "border-border bg-bg"}`} onClick={() => setJTab(k)}>
                       {l}
                     </button>
@@ -942,7 +943,7 @@ export function RPG() {
               {hud.v141 ? (
                 <>
                   <button type="button" data-v141="crouch" aria-pressed={hud.v141.crouch} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-12 plank border px-2 text-xs font-semibold ${hud.v141.crouch ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v141("crouch")}>{hud.v141.crouch ? "Crouched" : "Crouch"}</button>
-                  <button type="button" data-v141="auto" aria-pressed={hud.v141.auto} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-12 plank border px-2 text-xs font-semibold ${hud.v141.auto ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v141("auto")}>Auto {hud.v141.auto ? "on" : "off"}</button>
+                  {/* v15.10.4: Auto lives in the bottom action bar */}
                   <div data-v141="noise" role="meter" aria-label="Noise" aria-valuenow={hud.v141.noise} aria-valuemin={0} aria-valuemax={100} className="flex min-h-10 items-center gap-1 plank border border-border bg-surface/95 px-2 text-xs">
                     <span className="text-muted">Noise</span>
                     <span className="block h-2 w-14 bg-bg"><span className="block h-full" style={{ width: `${hud.v141.noise}%`, background: hud.v141.noise > 70 ? "#d0644a" : hud.v141.noise > 25 ? "#e0b050" : "#8fbf6a" }} /></span>
@@ -967,47 +968,47 @@ export function RPG() {
                     <MinBtn k="health" label="health panel" />
                   </section>
                 ) : (
-                <section data-hud="health" className="pointer-events-auto min-w-0 flex-1 plank border border-border bg-surface/95 px-3 py-2 short:px-2 short:py-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
+                <section data-hud="health" className="pointer-events-auto flex min-w-0 flex-1 items-end gap-1.5 self-end">
+                  <div data-hud="bars" className="hud-leather flex shrink-0 items-end gap-1 px-1.5 pb-1 pt-1.5">
+                    {([["HP", "Health", hud.hp, hud.maxHp, "hud-fill-hp"], ["AP", "Action points", hud.turnBased ? hud.ap : hud.stamina, hud.turnBased ? hud.maxAp : hud.maxStamina, "hud-fill-ap"]] as const).map(([t, l, v, m, c]) => (
+                      <div key={t} className="flex flex-col items-center gap-0.5">
+                        <div role="meter" aria-label={l} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={m} title={`${l} ${Math.ceil(v)}/${m}`} className="hud-tube relative h-24 w-5 overflow-hidden short:h-[clamp(3.5rem,26vh,6rem)] short:w-4">
+                          <div className={`absolute inset-x-0 bottom-0 ${c}`} style={{ height: `${Math.max(0, Math.min(100, (v / Math.max(1, m)) * 100))}%` }} />
+                        </div>
+                        <span className="hud-stamp text-[10px] leading-none">{t}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" data-hud="weapon" aria-label={`Weapon: ${hud.weaponName || "Empty hands"} (open pack)`} title={hud.weaponName || "Empty hands"} className="hud-metal flex h-[7.1rem] w-20 shrink-0 flex-col items-center justify-center gap-1 px-1 text-center short:h-[clamp(4.4rem,30vh,7.1rem)] short:w-16" onClick={() => apiRef.current?.togglePack()}>
+                    <Axe className="size-7 text-primary drop-shadow short:size-5" aria-hidden />
+                    <span className="line-clamp-2 text-[11px] font-semibold leading-tight text-fg short:text-[10px]">{hud.weaponName || "Empty hands"}</span>
+                  </button>
+                  <div className="hud-leather min-w-0 flex-1 px-2 py-1 short:py-0.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
+                        <p className="mt-0.5 truncate text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
+                      </div>
+                      <div className="flex shrink-0 items-start">
+                      {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
+                      <button type="button" className="-my-1 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
+                      <MinBtn k="health" label="health panel" tight />
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-start">
-                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
-                    <button type="button" className="-my-2 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary short:-my-1" onClick={() => apiRef.current?.tap("pause")}>
-                      Pause
-                    </button>
-                    <MinBtn k="health" label="health panel" tight />
+                    <div className="mt-1 h-1 overflow-hidden bg-bg scar" aria-label="Experience">
+                      <div className="h-full bg-primary scar" style={{ width: `${Math.max(0, Math.min(100, (hud.xp / hud.xpNext) * 100))}%` }} />
                     </div>
+                    <p className="mt-1 truncate text-xs text-muted short:mt-0.5">
+                      {Math.ceil(hud.hp)} / {hud.maxHp} · Lv {hud.level}
+                      {hud.turnBased ? ` · AP ${hud.ap}/${hud.maxAp}` : ""}
+                      {hud.safe15 ? <span data-safe15="1" className="ml-1 rounded-sm border border-border px-1 text-[10px] uppercase tracking-wide text-muted opacity-80">Safe zone</span> : null}
+                      {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
+                    </p>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden bg-bg scar short:mt-1" aria-label="Health">
-                    <div className="h-full bg-accent scar" style={{ width: `${Math.max(0, Math.min(100, (hud.hp / hud.maxHp) * 100))}%` }} />
-                  </div>
-                  <div className="mt-1 h-1 overflow-hidden bg-bg scar" aria-label="Experience">
-                    <div className="h-full bg-primary scar" style={{ width: `${Math.max(0, Math.min(100, (hud.xp / hud.xpNext) * 100))}%` }} />
-                  </div>
-                  <div className="mt-1 h-1 overflow-hidden bg-bg scar" aria-label="Stamina">
-                    <div className="h-full bg-fg scar" style={{ width: `${Math.max(0, Math.min(100, (hud.stamina / Math.max(1, hud.maxStamina)) * 100))}%` }} />
-                  </div>
-                  <p className="mt-1 truncate text-xs text-muted short:mt-0.5">
-                    {Math.ceil(hud.hp)} / {hud.maxHp} · Lv {hud.level}
-                    {hud.turnBased ? ` · AP ${hud.ap}/${hud.maxAp}` : ""}
-                    {hud.safe15 ? <span data-safe15="1" className="ml-1 rounded-sm border border-border px-1 text-[10px] uppercase tracking-wide text-muted opacity-80">Safe zone</span> : null}
-                    {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
-                  </p>
                 </section>
                 )}
-                <div className="pointer-events-auto flex shrink-0 flex-col gap-2 short:flex-row short:gap-1">
-                  <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}>
-                    <Minus className="size-5 short:size-4" aria-hidden />
-                  </ActionButton>
-                  <ActionButton label="Zoom in" onClick={() => apiRef.current?.nudgeZoom(1.2)}>
-                    <Plus className="size-5 short:size-4" aria-hidden />
-                  </ActionButton>
-                </div>
               </div>
-              <div data-hud="actions" className="pointer-events-auto grid grid-cols-6 gap-1 short:w-[22rem] short:shrink-0">
+              <div data-hud="actions" className="hud-actions pointer-events-auto grid grid-cols-7 gap-1 short:w-[25rem] short:shrink-0">
                 <ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
                   <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <MessageCircle className="size-4" aria-hidden />
@@ -1018,6 +1019,12 @@ export function RPG() {
                   <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
                     <Axe className="size-4" aria-hidden />
                     Attack
+                  </span>
+                </ActionButton>
+                <ActionButton wide label="Auto" pressed={!!hud.v141?.auto} onClick={() => apiRef.current?.v141("auto")}>
+                  <span data-v141="auto" className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
+                    <Repeat className="size-4" aria-hidden />
+                    {hud.v141?.auto ? "Auto on" : "Auto"}
                   </span>
                 </ActionButton>
                 <ActionButton wide label="Pack" pressed={hud.packOpen} onClick={() => apiRef.current?.togglePack()}>
@@ -1075,11 +1082,17 @@ export function RPG() {
         width={132}
         height={132}
         aria-label="Minimap"
-        className={playing && !hc.mini ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
+        className={playing && !hc.mini ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-10 h-20 w-20 plank border border-border bg-bg mr-12 short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
       />
 
+      {playing && hud.phase === "play" && !mapOpen ? (
+        <div data-hud="zoom" className="absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-20 flex flex-col gap-1">
+          <ActionButton label="Zoom in" onClick={() => apiRef.current?.nudgeZoom(1.2)}><Plus className="size-5 short:size-4" aria-hidden /></ActionButton>
+          <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}><Minus className="size-5 short:size-4" aria-hidden /></ActionButton>
+        </div>
+      ) : null}
       {playing ? (
-        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] right-[max(0.5rem,env(safe-area-inset-right))] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
+        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] right-[calc(max(0.5rem,env(safe-area-inset-right))+3rem)] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] right-[calc(max(0.5rem,env(safe-area-inset-right))+3rem)] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
         <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] short:pt-[max(0.25rem,env(safe-area-inset-top))] short:pb-[max(0.25rem,env(safe-area-inset-bottom))]">
@@ -1525,7 +1538,7 @@ function ActionButton({
       aria-label={label}
       aria-pressed={pressed}
       style={{ touchAction: "manipulation" }}
-      className={`flex select-none items-center justify-center plank border ${wide ? "h-14 w-full min-w-0 px-1 short:h-12" : "h-12 w-12 short:h-11 short:w-11"} ${pressed ? "border-primary bg-primary text-bg" : "border-border bg-surface text-fg"}`}
+      className={`flex select-none items-center justify-center hud-metal plank border ${wide ? "h-14 w-full min-w-0 px-1 short:h-12" : "h-12 w-12 short:h-11 short:w-11"} ${pressed ? "border-primary bg-primary text-bg" : "border-border bg-surface text-fg"}`}
       onClick={onClick}
     >
       {children}

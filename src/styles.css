@@ -125,3 +125,41 @@
   [data-hud="actions"] svg { width: 0.9rem; height: 0.9rem; }
   [data-hud="health-min"], [data-hud="quest-min"] { padding-top: 2px; padding-bottom: 2px; }
 }
+
+/* v15.10.4 HUD: worn leather and scratched, rusty metal (Fallout 2 feel, game browns/olives) */
+.hud-leather {
+  border: 2px solid #4a3220;
+  background-color: #3b2a1a;
+  background-image:
+    radial-gradient(ellipse at 20% 15%, rgba(255, 220, 160, 0.10), transparent 55%),
+    repeating-linear-gradient(37deg, rgba(0, 0, 0, 0.10) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, #4a3522, #2c1f13);
+  box-shadow: inset 0 0 0 1px rgba(200, 160, 100, 0.18), inset 0 0 10px rgba(0, 0, 0, 0.6), 0 2px 3px rgba(0, 0, 0, 0.5);
+  outline: 1px dashed rgba(190, 150, 90, 0.35);
+  outline-offset: -5px;
+}
+.hud-metal {
+  border-color: #5c4a32 !important;
+  background-color: #4a4a36;
+  background-image:
+    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px),
+    radial-gradient(circle at 85% 80%, rgba(140, 70, 25, 0.55), transparent 40%),
+    radial-gradient(circle at 10% 20%, rgba(120, 60, 20, 0.4), transparent 30%),
+    linear-gradient(180deg, #5b5a42, #36352a) !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 240, 200, 0.18), inset -2px -2px 0 rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.55);
+  color: #e8dcc0;
+}
+.hud-metal.bg-primary { background-image: linear-gradient(180deg, #8a6a2a, #5a4418) !important; color: #f4e2b0; border-color: #e0b15a !important; }
+.hud-tube {
+  background: #15110b;
+  border: 2px solid #6b5a3e;
+  box-shadow: inset 0 0 6px #000, 0 0 0 1px #20180e;
+}
+.hud-tube::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255,255,255,0.18), transparent 35%, transparent 70%, rgba(0,0,0,0.35)),
+    repeating-linear-gradient(0deg, transparent 0 9px, rgba(0,0,0,0.5) 9px 10px);
+}
+.hud-fill-hp { background: linear-gradient(180deg, #c4543a, #7a2a1a); }
+.hud-fill-ap { background: linear-gradient(180deg, #a8b060, #5e6a2a); }
+.hud-stamp { color: #d8c08a; font-weight: 800; letter-spacing: 0.05em; text-shadow: 1px 1px 0 #000; }
