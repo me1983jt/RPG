@@ -20,9 +20,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "town": "node scripts/copy-town.mjs",
+    "test:size": "node scripts/size198-test.mjs",
     "predev": "node scripts/copy-town.mjs",
-    "prebuild": "node scripts/copy-town.mjs",
-    "prebuild:dev": "node scripts/copy-town.mjs"
+    "prebuild": "node scripts/copy-town.mjs && node scripts/size198-test.mjs --static",
+    "prebuild:dev": "node scripts/copy-town.mjs && node scripts/size198-test.mjs --static"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

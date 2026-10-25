@@ -14,6 +14,7 @@ import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, classId, traitOf,
 import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
+import { BEAST_FIT, BEAST_IN, FOLK_IN, PX_PER_IN, SIZE_IN, TREE_VARY, sizedPx, townH } from "@/game/sizes";
 import { ART_SCALE, ART_SCALED } from "@/game/art-scale";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
@@ -5056,13 +5057,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!img) { img = new Image(); img.src = `/game/town/${name}.png?v=${ART_V}`; TOWN_ART[name] = img; }
 		return img.complete && img.naturalWidth ? img : null;
 	}
-	const HOUSE_H = Math.round(HERO_H * (SPRITE_FIT.hero ?? .806) * 2.75);
+	// size198: every height comes from SIZE_IN (src/game/sizes.ts); house = 204 in = ~2.75x the 74 in hero
+	const TH = (key, art) => townH(key, art);
+	const T_HOUSE = ["house", TH("town-house", "house")], T_CHURCH = ["church", TH("town-church", "church")], T_FARM = ["farmhouse", TH("town-farmhouse", "farmhouse")];
+	const T_SHED = ["shed", TH("town-shed", "shed")], T_SIGN = ["sign", TH("town-sign", "sign")], T_FENCE = ["fence", TH("town-fence", "fence")];
+	const tAt = ([art, h], dx, dy) => [art, dx, dy, h];
 	const TOWN_HOUSES = {
-		harmony: [["fence", -560, 96, 64], ["house", -330, -20, HOUSE_H], ["church", 0, -96, Math.round(HOUSE_H * 1.12)], ["farmhouse", 330, -12, Math.round(HOUSE_H * .96)], ["shed", 540, 64, Math.round(HOUSE_H * .5)], ["sign", -150, 70, Math.round(HOUSE_H * .36)], ["fence", 420, 160, 64]],
-		pittsfield: [["fence", -390, 90, 64], ["house", -190, -18, HOUSE_H], ["farmhouse", 190, -14, Math.round(HOUSE_H * .96)], ["shed", 360, 56, Math.round(HOUSE_H * .5)], ["sign", -70, 66, Math.round(HOUSE_H * .36)]],
-		skowhegan: [["house", -190, -18, HOUSE_H], ["church", 160, -60, Math.round(HOUSE_H * 1.12)], ["sign", -60, 66, Math.round(HOUSE_H * .36)], ["fence", -400, 92, 64]],
-		_: [["farmhouse", 0, 15, Math.round(HOUSE_H * .9)]],
+		harmony: [tAt(T_FENCE, -560, 96), tAt(T_HOUSE, -330, -20), tAt(T_CHURCH, 0, -96), tAt(T_FARM, 330, -12), tAt(T_SHED, 540, 64), tAt(T_SIGN, -150, 70), tAt(T_FENCE, 420, 160)],
+		pittsfield: [tAt(T_FENCE, -390, 90), tAt(T_HOUSE, -190, -18), tAt(T_FARM, 190, -14), tAt(T_SHED, 360, 56), tAt(T_SIGN, -70, 66)],
+		skowhegan: [tAt(T_HOUSE, -190, -18), tAt(T_CHURCH, 160, -60), tAt(T_SIGN, -60, 66), tAt(T_FENCE, -400, 92)],
+		_: [["farmhouse", 0, 15, TH("town-farmhouse-lone", "farmhouse")]],
 	};
+	const TOWN_KEY = { house: "town-house", church: "town-church", farmhouse: "town-farmhouse", shed: "town-shed", sign: "town-sign", fence: "town-fence" };
 	const townTop = (id) => Math.max(...(TOWN_HOUSES[id] ?? TOWN_HOUSES._).map(([, , dy, h]) => h - dy)) + 30;
 	function townGround(camX, camY) {
 		if (!world || !player || inside) return;
@@ -5108,6 +5114,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					ctx.globalAlpha = 1 - nf * .65;
 					ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
 					ctx.drawImage(img, x0, y0, w * zoom, hgt * zoom);
+					SIZE_SEEN.set(`town:${art}:${hgt}`, hgt);
 					ctx.restore();
 				} });
 			}
@@ -9426,32 +9433,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** v29 real-world sizing: every body is drawn so its *visible* figure (alpha bbox, SPRITE_FIT)
 	 * stands at a real height in inches, on the hero's scale (6'2" = HERO_H x hero fit). Hit tests,
 	 * health bars and click targets all read these same functions, so they stay in sync. */
-	const PX_PER_IN = HERO_H * (SPRITE_FIT.hero ?? .806) / 74;
+	// size198: PX_PER_IN and the inch tables live in src/game/sizes.ts
 	function realH(sheet, inches) {
-		return Math.round(inches * PX_PER_IN / (SPRITE_FIT[sheet] ?? .79));
+		return Math.round(inches * PX_PER_IN / (BEAST_FIT[sheet] ?? SPRITE_FIT[sheet] ?? .79));
 	}
-	/** Full visible height (top of head/antlers to hooves) in inches. v13.2: moose 92 puts the shoulder at ~66 px (the sheet's shoulder sits at 76% of its height). */
-	const BEAST_IN = {
-		holeb: 120, grok: 98, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
-		// v13.5: atv 91 in puts the quad at ~72 px long (6.5 ft) with the rider seated at ~5.5 ft
-		brute: 77, shield: 72, atv: 91, jumper: 69, scout: 68,
-		bear: 40, moose: 92, deer: 62, wolf: 34, coyote: 29, rabbit: 10, squirrel: 8, crow: 10
-	};
 	function beastH(enemy) {
 		const key = enemy.variant && BEAST_IN[enemy.variant] ? enemy.variant : enemy.kind;
 		const inches = BEAST_IN[key] ?? 70;
 		return realH(beastSheet(enemy), inches);
 	}
-	const FOLK_IN = {
-		justin: 74, sarah: 67, cyndal: 61.5, loki: 61, villager: 69,
-		rejean: 72, cal: 71, pete: 73, warden: 74, bram: 72, emile: 70, gus: 69, holt: 73, ivo: 70, paul: 71, walter: 69,
-		marcel: 70, adele: 66, sera: 66, mira: 65, nora: 66, ruth: 65, mae: 64, etta: 66
-	};
 	function folkHeight(npc) {
 		return realH(folkSheet(npc), FOLK_IN[npc.role] ?? 69);
 	}
 	/** v13.5 real size: the parked tractor art is 83 px (rear wheel 50 px = 4.5 ft); the charge sheets match it. */
-	const TRACTOR_DRIVE_H = 110, TRACTOR_RUN_H = 110;
+	const TRACTOR_DRIVE_H = Math.round(110 * SIZE_IN.tractor / 59), TRACTOR_RUN_H = TRACTOR_DRIVE_H; // size198: 110 px was the 59 in parked tractor scale
 	function tractorShift(charge) {
 		const t = Math.min(1, Math.max(0, charge || 0));
 		const along = t * 460;
@@ -10597,7 +10592,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
 				if (fadeTick && player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
 					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
-					const scale = tree ? .84 + n % 5 * .07 : 1;
+					const scale = tree ? TREE_VARY[0] + n % TREE_VARY[2] * TREE_VARY[1] : 1;
 					const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 					const ps = zoomPoint(pr.sx, pr.sy);
 					const ph = (vArt ? vArt.h : h * scale) * zoom;
@@ -10623,7 +10618,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				draw: () => {
 					const tree = prop.kind.startsWith("tree-");
 					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
-					const scale = tree ? .84 + n % 5 * .07 : 1;
+					const scale = tree ? TREE_VARY[0] + n % TREE_VARY[2] * TREE_VARY[1] : 1;
 					let tilt = 0;
 					let jx = 0;
 					let jy = 0;
@@ -10861,7 +10856,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!visible[t.ty * 156 + t.tx]) continue;
 			draws.push({
 				z: crow.x + crow.y + 2e4,
-				draw: () => blit("crow", crow.x, crow.y, Math.round(ADULT * .26), true, crow.frame, crow.dir, drawCamX, drawCamY, false, crow.alt)
+				draw: () => blit("crow", crow.x, crow.y, sizedPx(SIZE_IN.crow, BEAST_FIT.crow), true, crow.frame, crow.dir, drawCamX, drawCamY, false, crow.alt)
 			});
 		}
 		draws.push({
@@ -11116,7 +11111,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const alongX = road(prop.tx - 1, prop.ty) + road(prop.tx + 1, prop.ty), alongY = road(prop.tx, prop.ty - 1) + road(prop.tx, prop.ty + 1);
 		let face = alongX > alongY ? "sw" : alongY > alongX ? "se" : (h * 977) % 1 < .5 ? "se" : "sw";
 		if (!images.get(`v2/vehicles/${fam}-${v}-${face}`)) face = face === "se" ? "sw" : "se";
-		const art = { name: `v2/vehicles/${fam}-${v}-${face}`, h: images.get(`v2/vehicles/${fam}-${v}-${face}`)?.height || any?.height || VEH_H[fam] };
+		const art = { name: `v2/vehicles/${fam}-${v}-${face}`, h: sizedPx(SIZE_IN[prop.kind]) }; // size198: real size, not native px
 		vehCache.set(prop, art);
 		return art;
 	}
@@ -11260,6 +11255,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		drawH *= heroScale(name);
 		drawH *= figScale(name, drawH, images);
 		const dh = drawH * zoom;
+		SIZE_SEEN.set(name, drawH);
 		const dw = dh * (sw / sh);
 		// v14.1 (gif-compare): idle and aim holds lock the feet; each frame is shifted so its foot line sits where frame 0's does
 		if (sheet && /(idle|-gun)$/.test(name)) {
@@ -12786,6 +12782,45 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takeLoot
 	};
 	window.__controlsTest = {
+		/** size198: put a calm animal next to the hero so the size check sees it drawn. */
+		sizeSpawn: (kind) => { const dx = { moose: -170, deer: 150, wolf: 260 }[kind] ?? 0; const e = q10Spawn(kind, null, kind, { x: player.x + dx, y: player.y - dx * .4 }, [999, 0, 0], "size198", false); if (e) { e.temper = "wary"; e.aggro = false; } return e ? e.id : null; },
+		/** size198: rendered visible heights (px at zoom 1) of everything drawn so far, against SIZE_IN. */
+		sizeCheck: () => {
+			const imgToKind = {}; for (const [k, v] of Object.entries(PROP_SPEC)) if (!imgToKind[v.image]) imgToKind[v.image] = k;
+			const townIn = { house: "town-house", church: "town-church", shed: "town-shed", sign: "town-sign", fence: "town-fence" };
+			const alpha = (im) => { const c = document.createElement("canvas"); c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let top = -1, bot = -1; for (let y = 0; y < c.height && top < 0; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 0) { top = y; break; } for (let y = c.height - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 0) { bot = y; break; } return top < 0 ? 0 : (bot - top + 1) / c.height; };
+			const out = [];
+			for (const [name, drawH] of SIZE_SEEN) {
+				let key = null, fit = 0;
+				if (name.startsWith("town:")) {
+					const [, art, h] = name.split(":"); const im = TOWN_ART[art]; if (!im || !im.naturalWidth) continue;
+					key = art === "farmhouse" ? (+h === townH("town-farmhouse-lone", "farmhouse") ? "town-farmhouse-lone" : "town-farmhouse") : townIn[art]; fit = alpha(im);
+				} else if (name.startsWith("v2/vehicles/") || (imgToKind[name] && SIZE_IN[imgToKind[name]] != null)) {
+					const im = images.get(name); if (!im || !im.width) continue; key = name.startsWith("v2/vehicles/") ? (name.includes("truck") ? "car-truck" : "car-sedan") : imgToKind[name]; fit = alpha(im);
+				} else {
+					const im = images.get(name); if (!im || !im.width) continue;
+					const fam = figFamily(name);
+					if (/^(v2\/)?hero|^pl\//.test(name)) key = "hero";
+					else if (fam) key = fam.key === "boss-grok" ? "grok" : /^boss-/.test(fam.key) ? "boss" : /cyndal|loki/.test(fam.key) ? "kid" : "npc";
+					else if (/^(deer|moose|wolf|coyote|rabbit|squirrel|crow)$/.test(name)) key = name;
+					else continue;
+					if (/-(dead|death|down|hit|crouch)$/.test(name) || name.startsWith("overlay-")) continue;
+					const rows = sheetRowsOf(name) || 1;
+					if (BEAST_FIT[name] != null) {
+						// same definition as BEAST_FIT: mean visible share over every facing and frame
+						const cols = sheetCols(im), sw = Math.floor(im.width / cols), sh = Math.floor(im.height / rows);
+						const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
+						const d = g.getImageData(0, 0, im.width, im.height).data; let sum = 0, n = 0;
+						for (let r = 0; r < rows; r++) for (let f = 0; f < cols; f++) { let top = -1, bot = -1; for (let y = 0; y < sh; y++) { let hit = false; for (let x = 0; x < sw; x++) if (d[((r * sh + y) * im.width + f * sw + x) * 4 + 3] > 60) { hit = true; break; } if (hit) { if (top < 0) top = y; bot = y; } } sum += top < 0 ? 0 : (bot - top + 1) / sh; n++; }
+						fit = sum / n;
+					} else fit = measureFig(im, im.height / rows);
+				}
+				if (!key || !fit) continue;
+				const px = drawH * fit, vary = key.startsWith("tree-") ? [TREE_VARY[0], TREE_VARY[0] + (TREE_VARY[2] - 1) * TREE_VARY[1]] : [1, 1];
+				out.push({ name, key, drawH: Math.round(drawH * 10) / 10, fit: +fit.toFixed(3), px: +px.toFixed(1), want: +(SIZE_IN[key] * PX_PER_IN).toFixed(1), inches: +(px / PX_PER_IN).toFixed(1), tableIn: SIZE_IN[key], lo: vary[0], hi: vary[1] });
+			}
+			return { ppi: PX_PER_IN, table: { ...SIZE_IN }, out };
+		},
 		v14: () => ({ ...v14, craftOpen, buildFlip, buildTool, snow, mapId }),
 		v14Set: (patch) => { Object.assign(v14, patch); sync(true); },
 		v14Props: () => world ? world.props.filter((p) => ART14.has(p.kind) || p.f14 || p.p14).map((p) => ({ id: p.id, kind: p.kind, tx: p.tx, ty: p.ty, hp: p.hp, f14: p.f14 ?? null, p14: !!p.p14, open: !!p.open, flip: !!p.flip14, lit: !!p.lit14 })) : [],
@@ -13283,7 +13318,10 @@ function footXOf(img, cols, rows, sw, sh) {
 /** v14.1 scale check: NPC and raider sheets were drawn at 98-104 px against the hero's 69 px. At 11 px/ft every
  * person is drawn at real height: grown men and women 66 px (6 ft), kids (Cyndal, Loki) 58 px. Each character is
  * measured once from its walk/base sheet so all its poses share one scale. */
-const FIG_ADULT = 99, FIG_KID = 87; // v15.4: 1.5x (was 66 / 58)
+// size198: people/boss visible heights come from SIZE_IN (npc 70.5 in = 99 px, kid 62 in = 87 px, boss 76 in, The Grok 98 in)
+const FIG_ADULT = Math.round(SIZE_IN.npc * PX_PER_IN), FIG_KID = Math.round(SIZE_IN.kid * PX_PER_IN);
+/** size198: last drawn height (px at zoom 1, full image) per sprite name, for the size check. */
+const SIZE_SEEN = new Map();
 const figCache = new Map();
 function figFamily(name) {
 	if (/^(v2\/)?hero|^pl\/|^overlay-/.test(name)) return null;
@@ -13320,7 +13358,7 @@ function figScale(name, drawH, images) {
 		figCache.set(fam.key, frac);
 	}
 	if (frac < .2) return 1;
-	const want = (/cyndal|loki/.test(fam.key) ? FIG_KID : FIG_ADULT) * (/^boss-/.test(fam.key) ? 1.08 : 1);
+	const want = fam.key === "boss-grok" ? SIZE_IN.grok * PX_PER_IN : /^boss-/.test(fam.key) ? SIZE_IN.boss * PX_PER_IN : /cyndal|loki/.test(fam.key) ? FIG_KID : FIG_ADULT;
 	const k = Math.max(.4, Math.min(1.6, want / (frac * drawH)));
 	figLog[fam.key] = { frac: +frac.toFixed(3), k: +k.toFixed(3), px: Math.round(frac * drawH * k) };
 	return k;
