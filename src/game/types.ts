@@ -11,6 +11,18 @@ export const WORLD_OY = 20;
 export const HEX_CX = 80;
 export const HEX_CY = 78;
 export const HEX_R = 74;
+/** v15.10.3 (3x map): map generation still runs in the old 156-tile frame above (so the existing map comes out
+ * exactly as before), then the engine embeds every map at +MAP_OFF tiles in a MAP_W2 grid. Runtime code uses the *2 names.
+ * MAP_OFF is a multiple of 16 so the 16-tile terrain chunks keep their alignment. Map 0 (the home map) grows to HEX_R0. */
+export const MAP_OFF = 64;
+export const MAP_W2 = MAP_W + 2 * MAP_OFF;
+export const MAP_H2 = MAP_H + 2 * MAP_OFF;
+export const WORLD_OX2 = WORLD_OX + MAP_OFF;
+export const WORLD_OY2 = WORLD_OY + MAP_OFF;
+export const HEX_CX2 = HEX_CX + MAP_OFF;
+export const HEX_CY2 = HEX_CY + MAP_OFF;
+/** Home-map hex radius after the 3x expansion (area 128^2 / 74^2 = 2.99x). Other maps keep HEX_R. */
+export const HEX_R0 = 128;
 
 export const DIRT = 0;
 export const SCRUB = 1;
@@ -534,6 +546,8 @@ export const PLACES = {
 } as const;
 
 export const FARM = { tx: 36 + WORLD_OX, ty: 16 + WORLD_OY, r: 12 } as const;
+/** v15.10.3: FARM in the runtime (embedded) frame */
+export const FARM2 = { tx: FARM.tx + MAP_OFF, ty: FARM.ty + MAP_OFF, r: FARM.r } as const;
 
 export function inFarm(_tx: number, _ty: number): boolean {
   // v15.9.5: the farm lives only in Quest RPG's Harmony town; FARM is kept as the map anchor Harmony's entrance is found from

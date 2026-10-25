@@ -1,0 +1,33 @@
+// v15.10.3: clean daylight shots: Sarah + pet raccoon, a wild raccoon, a turtle at the water, Justin's quest.
+import { boot } from "./v4-lib.mjs";
+const dir = process.argv[2] || "/workspace/maine-rpg/shots/clean";
+const { browser, page } = await boot("http://127.0.0.1:8112/", { vw: 1280, vh: 860, safe: true });
+await page.getByTestId("hero-sarah").click();
+await page.getByRole("button", { name: /Hunter/ }).click();
+await page.getByRole("button", { name: "Next" }).click();
+for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "+" }).nth(4).click();
+await page.getByRole("button", { name: "Next" }).click();
+await page.getByRole("button", { name: /Keen eye/ }).click();
+await page.getByRole("button", { name: /Begin as/ }).click();
+await page.waitForTimeout(3500);
+const C = (f, a) => page.evaluate(f, a);
+
+const day = () => C(() => { const c = window.__controlsTest; c.choose?.("close"); c.setHour(12); c.v13Weather("clear"); });
+await day();
+await C(() => { const c = window.__controlsTest; const s = c.v15Start(); c.v15Tp(170 * 64 + 900, 142 * 64 + 700); c.setZoom(2.4); });
+await page.waitForTimeout(3000); await day(); await page.waitForTimeout(600);
+await page.screenshot({ path: `${dir}/c1-sarah-raccoon.png` });
+const [sx, sy] = [170 * 64 + 40, 142 * 64 + 32];
+await C(([x, y]) => { const c = window.__controlsTest; c.v15Tp(x + 150, y + 110); c.setZoom(2.4); }, [sx, sy]);
+await page.waitForTimeout(2500); await day();
+await C(([x, y]) => { const c = window.__controlsTest; c.v15Wild("turtle", x, y); }, [sx, sy]);
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${dir}/c2-turtle-water.png` });
+await C(([x, y]) => { const c = window.__controlsTest; const p = c.v15Probe1510().player; c.v15Wild("raccoon", p.x + 230, p.y + 90); }, [sx, sy]);
+await page.waitForTimeout(250);
+await page.screenshot({ path: `${dir}/c3-wild-raccoon.png` });
+await C(() => window.__controlsTest.choose("q11-hunt"));
+await page.waitForTimeout(600);
+await page.screenshot({ path: `${dir}/c4-justin-quest.png` });
+console.log(JSON.stringify((await C(() => window.__controlsTest.v15Probe1510())).wild.list.slice(-2)));
+await browser.close();

@@ -52,18 +52,20 @@ import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRo
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
 import { AILMENTS, INJURIES, INJ_FX, BACKSTORIES, COMPANIONS, COMPANION_NAME, CORE_STATS, DURA_MAX, DYES, ENDINGS, FOOD_VALUE, LOYALTY_FX, LOYALTY_HELP, LOYALTY_LEAVE, MAIN_ACTS, MAIN_JOURNAL, MAIN_TALK, MIGRATION, MOON_NAMES, NEED_RATE, NEW_SKILLS, RECIPES13, REBUILD, ROAD_EVENTS, SET_BONUS, SKILL_PERKS, TOWNS13, WEATHER, caravanOnRoad, CARAVAN_ROUTES as CARAVAN13, coreEffects, makeBounties, moonEffect, moonPhase, perkCount, pickEnding, pickRoadEvent, rollWeather, travelGas } from "@/game/v13";
 import {
-  HEX_CX,
-  HEX_CY,
+  HEX_CX2 as HEX_CX,
+  HEX_CY2 as HEX_CY,
   HEX_R,
-  MAP_H,
-  MAP_W,
+  MAP_H2 as MAP_H,
+  MAP_W2 as MAP_W,
+  MAP_W as MAP_W_GEN,
+  MAP_OFF,
   PROP_SPEC,
   RECIPES,
   TILE,
-  WORLD_OX,
-  WORLD_OY,
+  WORLD_OX2 as WORLD_OX,
+  WORLD_OY2 as WORLD_OY,
   inFarm,
-  FARM,
+  FARM2 as FARM,
   type AimPart,
   type BeastKind,
   type Dialogue,
@@ -92,7 +94,8 @@ import {
   WARDEN_NPC_ID,
   type World,
 } from "@/game/world";
-import { MAINE_SIDES } from "@/game/world";
+import { MAINE_SIDES, setGridSize } from "@/game/world";
+import { embedWorld, expandHome, hexRadius, CASTLE_SPOT } from "@/game/expand";
 
 export interface GameApi {
   destroy: () => void;
@@ -387,8 +390,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const edges = emptyEdges();
 	let world = null;
 	let player = null;
-	let explored = /* @__PURE__ */ new Uint8Array(24336);
-	let visible = /* @__PURE__ */ new Uint8Array(24336);
+	let explored = /* @__PURE__ */ new Uint8Array(MAP_W * MAP_H);
+	let visible = /* @__PURE__ */ new Uint8Array(MAP_W * MAP_H);
 	let quest = 0;
 	let questKills = 0;
 	/** Beta v2 additions: First Snow on Cambridge Road stage, Jack Ready trust, bunker found, kitchen restock day. */
@@ -1169,7 +1172,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		refreshGear(player);
 		player.hp = player.maxHp;
 		player.stamina = player.maxStamina;
-		explored = /* @__PURE__ */ new Uint8Array(24336);
+		explored = /* @__PURE__ */ new Uint8Array(MAP_W * MAP_H);
 		quest = 0;
 		questKills = 0;
 		snow = 0;
@@ -1236,7 +1239,35 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 		saveGame();
 	}
+	/** v15.10.3: saves from before the 3x map: every world position moves by MAP_OFF tiles (the old map sits in the
+	 * middle of the new grid) and the fog bitmaps are copied into the bigger grid. Inventory grid spots are left alone. */
+	const MIG_PX = new Set(["x", "y", "homeX", "homeY", "respawnX", "respawnY", "backX", "backY"]), MIG_T = new Set(["tx", "ty"]);
+	const MIG_SKIP = new Set(["gridPos", "bag", "items", "stash", "look", "rep", "invested"]);
+	function migrateMapV2(data) {
+		if (!data || data.mapV === 2) return;
+		const P = MAP_OFF * TILE, seen = new Set();
+		const walk = (o) => {
+			if (!o || typeof o !== "object" || seen.has(o)) return; seen.add(o);
+			if (Array.isArray(o)) { for (const v of o) walk(v); return; }
+			for (const k of Object.keys(o)) {
+				const v = o[k];
+				if (typeof v === "number" && Number.isFinite(v)) { if (MIG_PX.has(k)) o[k] = v + P; else if (MIG_T.has(k)) o[k] = v + MAP_OFF; }
+				else if (v && typeof v === "object" && !MIG_SKIP.has(k)) walk(v);
+			}
+		};
+		walk(data);
+		const fog = (b) => {
+			if (typeof b !== "string" || !b) return b;
+			const old = b64ToBytes(b, MAP_W_GEN * MAP_W_GEN), out = new Uint8Array(MAP_W * MAP_H);
+			for (let y = 0; y < MAP_W_GEN; y++) for (let x = 0; x < MAP_W_GEN; x++) out[(y + MAP_OFF) * MAP_W + x + MAP_OFF] = old[y * MAP_W_GEN + x];
+			return bytesToB64(out);
+		};
+		data.explored = fog(data.explored);
+		for (const r of data.regions ?? []) r.explored = fog(r.explored);
+		data.mapV = 2;
+	}
 	function bootSave(data) {
+		migrateMapV2(data);
 		worldSeed = data.seed ?? 5402695;
 		mapId = data.map ?? 0;
 		exitSides = data.exits && data.exits.length >= 2 ? data.exits : pickSides(worldSeed);
@@ -1365,7 +1396,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mounted = false;
 		mountId = -1;
 		opening = null;
-		const bytes = legacy ? /* @__PURE__ */ new Uint8Array(24336) : b64ToBytes(data.explored, 24336);
+		const bytes = legacy ? /* @__PURE__ */ new Uint8Array(MAP_W * MAP_H) : b64ToBytes(data.explored, MAP_W * MAP_H);
 		explored = new Uint8Array(bytes);
 		openedDoors.clear();
 		lootedChests.clear();
@@ -1474,6 +1505,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.goneNpcs = [...goneNpcs];
 		data.seed = worldSeed;
 		data.layout = MAINE_LAYOUT;
+		data.mapV = 2;
 		data.map = mapId;
 		data.exits = exitSides;
 		data.questTotal = questTotal;
@@ -1653,9 +1685,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function reveal(tx, ty, r, remember) {
 		const r2 = r * r;
 		for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) {
-			if (x < 0 || y < 0 || x >= 156 || y >= 156) continue;
+			if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_W) continue;
 			if ((x - tx) ** 2 + (y - ty) ** 2 > r2) continue;
-			const i = y * 156 + x;
+			const i = y * MAP_W + x;
 			visible[i] = 1;
 			if (remember) explored[i] = 1;
 		}
@@ -2055,7 +2087,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function q10Tile(rtx, rty) {
 		if (!world) return { x: 0, y: 0 };
 		const tx0 = rtx + WORLD_OX, ty0 = rty + WORLD_OY;
-		const open = (x, y) => x > 1 && y > 1 && x < 154 && y < 154 && !cellBlocked(world, x, y) && !cellBlocked(world, x + 1, y) && !cellBlocked(world, x, y + 1) && !cellBlocked(world, x - 1, y) && !cellBlocked(world, x, y - 1);
+		const open = (x, y) => x > 1 && y > 1 && x < (MAP_W - 2) && y < (MAP_W - 2) && !cellBlocked(world, x, y) && !cellBlocked(world, x + 1, y) && !cellBlocked(world, x, y + 1) && !cellBlocked(world, x - 1, y) && !cellBlocked(world, x, y - 1);
 		for (let r = 0; r < 14; r++) for (let y = ty0 - r; y <= ty0 + r; y++) for (let x = tx0 - r; x <= tx0 + r; x++) {
 			if (Math.max(Math.abs(x - tx0), Math.abs(y - ty0)) !== r) continue;
 			if (open(x, y)) return { x: (x + .5) * TILE, y: (y + .5) * TILE };
@@ -2465,7 +2497,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const m of q10All()) {
 			if (m.quiet) continue;
 			const tile = tileOf(m.x, m.y);
-			if (!explored[tile.ty * 156 + tile.tx] && m.mode !== "npc") continue;
+			if (!explored[tile.ty * MAP_W + tile.tx] && m.mode !== "npc") continue;
 			draws.push({ z: m.x + m.y + 1e5, draw: () => {
 				const raw = worldToScreen(m.x, m.y, dcx, dcy);
 				const p = zoomPoint(raw.sx, raw.sy);
@@ -2484,18 +2516,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (petBody) {
 			const tile = tileOf(petBody.x, petBody.y);
-			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(petBody.x, petBody.y), draw: () => {
+			if (visible[tile.ty * MAP_W + tile.tx]) draws.push({ z: bodyZ(petBody.x, petBody.y), draw: () => {
 				const nm = petBody.moving || !images.get("v2/raccoon-idle") ? "v2/raccoon-walk" : "v2/raccoon-idle";
 				const frame = petBody.moving ? Math.floor(petBody.anim) % 4 : Math.floor(performance.now() / (ANIM_MS.idle * 4)) % 4;
 				if (!images.get(nm)) return;
 				const r = worldToScreen(petBody.x, petBody.y, dcx, dcy), p = zoomPoint(r.sx, r.sy);
-				if (!noShadow141) softShadow(p.sx, p.sy + zoom, 10 * zoom, nm);
+				if (!noShadow141) softShadow(p.sx, p.sy - 2 * zoom, 11 * zoom, nm); // under the body, not behind the hind feet
 				blit(nm, petBody.x, petBody.y, realH("v2/raccoon-walk", SIZE_IN.raccoon), true, frame, petBody.dir, dcx, dcy);
 			} });
 		}
 		if (dogBody) {
 			const tile = tileOf(dogBody.x, dogBody.y);
-			if (visible[tile.ty * 156 + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
+			if (visible[tile.ty * MAP_W + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
 				const frame = dogBody.moving ? Math.floor(dogBody.anim) % 4 : 0;
 				// art hook: public/game/v2/biscuit-walk.png (and biscuit-idle.png) when present, else the coyote sheet
 				const own = dogBody.moving ? "v2/biscuit-walk" : images.get("v2/biscuit-idle") ? "v2/biscuit-idle" : "v2/biscuit-walk";
@@ -2780,7 +2812,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const a = Math.random() * Math.PI * 2;
 			const s = { x: player.x + Math.cos(a) * 16 * TILE, y: player.y + Math.sin(a) * 16 * TILE };
 			const t = tileOf(s.x, s.y);
-			if (t.tx > 4 && t.ty > 4 && t.tx < 150 && t.ty < 150) spot = s;
+			if (t.tx > 4 && t.ty > 4 && t.tx < (MAP_W - 6) && t.ty < (MAP_W - 6)) spot = s;
 		}
 		const e = q11Spawn(spec, spot ?? { x: player.x + 10 * TILE, y: player.y }, "hunt", false);
 		if (e) e.temper = kind === "bear" ? "hostile" : "wary";
@@ -3455,18 +3487,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	// now and then on a road's edge, never out on the road). Same timid AI as the rabbits.
 	const WILD_N = { raccoon: 5, turtle: 5 };
 	let wildT = 0, wildTrees = null, wildTreesOf = null;
-	const wTile = (tx, ty) => tx >= 0 && ty >= 0 && tx < 156 && ty < 156 ? world.tiles[ty * 156 + tx] : -1;
+	const wTile = (tx, ty) => tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_W ? world.tiles[ty * MAP_W + tx] : -1;
 	const wRoad = (tx, ty) => wTile(tx, ty) === 2;
 	const wWater = (tx, ty) => wTile(tx, ty) === 5 && v197Wet(tx, ty);
 	function wNear(tx, ty, r, f) { for (let y = ty - r; y <= ty + r; y++) for (let x = tx - r; x <= tx + r; x++) if (f(x, y)) return true; return false; }
 	function wTreeAt(tx, ty) {
-		if (wildTreesOf !== world) { wildTreesOf = world; wildTrees = new Uint8Array(156 * 156); for (const p of world.props) if (p.kind.startsWith("tree-") && p.tx >= 0 && p.ty >= 0 && p.tx < 156 && p.ty < 156) wildTrees[p.ty * 156 + p.tx] = 1; }
-		return tx >= 0 && ty >= 0 && tx < 156 && ty < 156 && wildTrees[ty * 156 + tx] === 1;
+		if (wildTreesOf !== world) { wildTreesOf = world; wildTrees = new Uint8Array(MAP_W * MAP_W); for (const p of world.props) if (p.kind.startsWith("tree-") && p.tx >= 0 && p.ty >= 0 && p.tx < MAP_W && p.ty < MAP_W) wildTrees[p.ty * MAP_W + p.tx] = 1; }
+		return tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_W && wildTrees[ty * MAP_W + tx] === 1;
 	}
 	const wTown = (tx, ty) => world.npcs.some((n) => Math.abs(n.x / TILE - tx) < 10 && Math.abs(n.y / TILE - ty) < 10) || world.props.some((p) => /house|church|shed|barn/.test(p.kind) && Math.abs(p.tx - tx) < 8 && Math.abs(p.ty - ty) < 8);
 	/** Where a wild animal of this kind may stand. Turtles: dry ground next to water, or (rarely) a road's edge near water. */
 	function wildHabitat(kind, tx, ty, shoulderOk) {
-		if (tx < 4 || ty < 4 || tx >= 152 || ty >= 152 || cellBlocked(world, tx, ty) || wRoad(tx, ty)) return false;
+		if (tx < 4 || ty < 4 || tx >= (MAP_W - 4) || ty >= (MAP_W - 4) || cellBlocked(world, tx, ty) || wRoad(tx, ty)) return false;
 		if (kind === "turtle") {
 			if (wNear(tx, ty, 2, wWater)) return shoulderOk || !wNear(tx, ty, 1, wRoad);
 			return shoulderOk && wNear(tx, ty, 1, wRoad) && wNear(tx, ty, 4, wWater);
@@ -3806,7 +3838,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				for (let k = 0; k < 40; k++) {
 					const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 30;
 					const tx = Math.round(t.tx + Math.cos(a) * r), ty = Math.round(t.ty + Math.sin(a) * r);
-					if (tx < 4 || ty < 4 || tx >= 152 || ty >= 152 || cellBlocked(world, tx, ty)) continue;
+					if (tx < 4 || ty < 4 || tx >= (MAP_W - 4) || ty >= (MAP_W - 4) || cellBlocked(world, tx, ty)) continue;
 					const hp = kind === "moose" ? 60 : kind === "deer" ? 26 : kind === "wolf" ? 22 : kind === "coyote" ? 14 : 6;
 					const atk = kind === "moose" ? 9 : kind === "deer" ? 3 : kind === "wolf" ? 5 : kind === "coyote" ? 3 : 1;
 					const e = q11Spawn([kind, null, null, hp, atk, Math.round(hp / 2)], { x: (tx + .5) * 64, y: (ty + .5) * 64 }, "mig", false);
@@ -4099,7 +4131,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (ring.has(k)) continue;
 			ring.add(k);
 			const road = world.tiles[ty * MAP_W + tx] === 2;
-			const n = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+			const n = (((tx - MAP_OFF) * 73856093) ^ ((ty - MAP_OFF) * 19349663)) >>> 0;
 			if (road) {
 				const at = (r) => world.tiles[Math.round(fc.ty + Math.sin(a * Math.PI / 180) * r) * MAP_W + Math.round(fc.tx + Math.cos(a * Math.PI / 180) * r)] === 2;
 				if (at(R + 2) && at(R - 2)) out.push({ k: "gate-wood", tx, ty, hp: 30, f: Math.abs(Math.cos(a * Math.PI / 180)) > .7 });
@@ -4412,7 +4444,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			for (let k = 0; k < 12; k++) {
 				const r = (EARLY_WOLF_R + 4 + k) * TILE, ang = a + (k % 2 ? 1 : -1) * k * .25;
 				const x = player.x + Math.cos(ang) * r, y = player.y + Math.sin(ang) * r;
-				if (x < 4 * TILE || y < 4 * TILE || x > 150 * TILE || y > 150 * TILE || pointBlocked(world, x, y, RADIUS)) continue;
+				if (x < 4 * TILE || y < 4 * TILE || x > (MAP_W - 6) * TILE || y > (MAP_W - 6) * TILE || pointBlocked(world, x, y, RADIUS)) continue;
 				e.x = x; e.y = y; e.homeX = x; e.homeY = y; e.aggro = false; e.path = []; break;
 			}
 		}
@@ -4478,7 +4510,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const a = Math.random() * Math.PI * 2, r = 900 + Math.random() * 1500;
 				const at = { x: player.x + Math.cos(a) * r, y: player.y + Math.sin(a) * r };
 				const t = tileOf(at.x, at.y);
-				if (t.tx < 4 || t.ty < 4 || t.tx > 150 || t.ty > 150 || pointBlocked(world, at.x, at.y, RADIUS)) continue;
+				if (t.tx < 4 || t.ty < 4 || t.tx > (MAP_W - 6) || t.ty > (MAP_W - 6) || pointBlocked(world, at.x, at.y, RADIUS)) continue;
 				spawnHollowed(4 + Math.floor(Math.random() * 3), at);
 				break;
 			}
@@ -4984,6 +5016,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const w = createWorld0(seed, map, exits);
 		thinTrees193(w, map);
 		thinWreck195(w);
+		// v15.10.3: move it into the 284 runtime grid; the home map gets its new outer ring (empty terrain)
+		const g0 = w.thinGhost193;
+		embedWorld(w);
+		if (g0) { const g = new Uint8Array(MAP_W * MAP_H); for (let y = 0; y < MAP_W_GEN; y++) for (let x = 0; x < MAP_W_GEN; x++) g[(y + MAP_OFF) * MAP_W + x + MAP_OFF] = g0[y * MAP_W_GEN + x]; w.thinGhost193 = g; }
+		if (map === 0) expandHome(w);
+		setGridSize(MAP_W, MAP_H);
 		return w;
 	}
 	const isTree193 = (p) => p.kind.startsWith("tree-");
@@ -4991,14 +5029,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * within 3 tiles: ~40% of those go. Deterministic per tile, ids untouched, lone pieces always stay. */
 	const WRECK195 = new Set(["car-sedan", "car-truck", "scrap", "crates", "wall"]);
 	function thinWreck195(w) {
-		const H = w.tiles.length / MAP_W;
+		const H = w.tiles.length / MAP_W_GEN;
 		const grid = new Uint8Array(w.tiles.length);
-		for (const p of w.props) if (WRECK195.has(p.kind)) grid[p.ty * MAP_W + p.tx] = 1;
+		for (const p of w.props) if (WRECK195.has(p.kind)) grid[p.ty * MAP_W_GEN + p.tx] = 1;
 		const before = w.props.length;
 		w.props = w.props.filter((p) => {
 			if (!WRECK195.has(p.kind) || p.quest || p.label) return true;
 			let nb = 0;
-			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H && grid[yy * MAP_W + xx]) nb++; }
+			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W_GEN && yy < H && grid[yy * MAP_W_GEN + xx]) nb++; }
 			if (nb < 3) return true;
 			const h = ((Math.imul(p.tx, 83492791) ^ Math.imul(p.ty, 2654435761) ^ 0x27d4eb2d) >>> 0) % 1000 / 1000;
 			if (h >= .4) return true;
@@ -5008,12 +5046,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		w.thinWreck195 = before - w.props.length;
 	}
 	function thinTrees193(w, map) {
-		const H = w.tiles.length / MAP_W;
+		const H = w.tiles.length / MAP_W_GEN;
 		const grid = new Uint8Array(w.tiles.length);
-		for (const p of w.props) if (isTree193(p)) grid[p.ty * MAP_W + p.tx] = 1;
+		for (const p of w.props) if (isTree193(p)) grid[p.ty * MAP_W_GEN + p.tx] = 1;
 		const nearRoad = new Uint8Array(w.tiles.length);
-		for (let y = 0; y < H; y++) for (let x = 0; x < MAP_W; x++) if (w.tiles[y * MAP_W + x] === 2) {
-			for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H) nearRoad[yy * MAP_W + xx] = 1; }
+		for (let y = 0; y < H; y++) for (let x = 0; x < MAP_W_GEN; x++) if (w.tiles[y * MAP_W_GEN + x] === 2) {
+			for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W_GEN && yy < H) nearRoad[yy * MAP_W_GEN + xx] = 1; }
 		}
 		const before = w.props.length;
 		// town entrance spots are still picked as if the cut trees stood (so arrivals land where they always did)
@@ -5022,17 +5060,17 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		w.props = w.props.filter((p) => {
 			if (!isTree193(p)) return true;
 			let nb = 0;
-			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W && yy < H && grid[yy * MAP_W + xx]) nb++; }
+			for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { if (!dx && !dy) continue; const xx = p.tx + dx, yy = p.ty + dy; if (xx >= 0 && yy >= 0 && xx < MAP_W_GEN && yy < H && grid[yy * MAP_W_GEN + xx]) nb++; }
 			let cut;
 			if (map === 0 && inFarm(p.tx, p.ty)) cut = .8;
-			else if (nearRoad[p.ty * MAP_W + p.tx]) cut = .72;
+			else if (nearRoad[p.ty * MAP_W_GEN + p.tx]) cut = .72;
 			else if (nb <= 3) cut = .55;
 			else if (nb <= 7) cut = .35;
 			else cut = .18;
 			if (map === 1) cut *= .6; // the North Woods stay woods
 			const h = ((Math.imul(p.tx, 73856093) ^ Math.imul(p.ty, 19349663) ^ 0x5bd1e995) >>> 0) % 1000 / 1000;
 			if (h >= cut) return true;
-			ghost[p.ty * MAP_W + p.tx] = 1;
+			ghost[p.ty * MAP_W_GEN + p.tx] = 1;
 			vacate(w, p);
 			return false;
 		});
@@ -5367,11 +5405,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			skillScores: p ? Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])) : {},
 			hp: p?.hp ?? 0, maxHp: p?.maxHp ?? 44,
 			injuries: inj,
-			companions: (l1.tComp ?? []).length ? JSON.parse(JSON.stringify(l1.tComp)) : [
+			// v15.10.3: who is playing (see shared-rules/sarah-playable-rpg-note.md); towns that don't know these keys hold them unchanged
+			character: asSarah() ? "sarah" : "justin", spriteSet: asSarah() ? "sarah" : "justin", questGiver: asSarah() ? "justin" : "sarah",
+			companions: ((c) => asSarah() && !c.some((x) => x.id === "raccoon") ? [...c, { id: "raccoon", name: "Sarah's raccoon", withYou: true, sprite: "v2/raccoon-walk" }] : c)((l1.tComp ?? []).length ? JSON.parse(JSON.stringify(l1.tComp)) : [
 				{ id: "cyndal", name: "Cyndal", withYou: !!escortBodies?.length },
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
-			],
+			]),
 			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			// v15.9: agility/grit live in w13.core; a real 0 stays 0
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => { const v = Number(k === "agility" || k === "grit" ? w13.core?.[k] : p?.[k]); return [k, Number.isFinite(v) ? v : 1]; })),
@@ -6565,7 +6605,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Snowmelt standing in the old Attean mill: flat dark water on the ground, under everything. */
 	function paintFlood(dcx, dcy) {
 		const f = world?.flood;
-		if (!f || !explored[f.ty * 156 + f.tx]) return;
+		if (!f || !explored[f.ty * MAP_W + f.tx]) return;
 		const t = performance.now() / 1000;
 		const blobs = [[0, 0, 2.6], [-1.6, .8, 1.5], [1.7, -.6, 1.6], [.4, 1.9, 1.3], [-.8, -1.8, 1.2], [2.4, 1.4, 1]];
 		ctx.save();
@@ -7198,8 +7238,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const prop = world.props.find((p) => p.id === mountId);
 			if (prop) {
 				const t = tileOf(player.x, player.y);
-				prop.tx = Math.max(1, Math.min(154, t.tx));
-				prop.ty = Math.max(1, Math.min(154, t.ty));
+				prop.tx = Math.max(1, Math.min((MAP_W - 2), t.tx));
+				prop.ty = Math.max(1, Math.min((MAP_W - 2), t.ty));
 			}
 		}
 		mounted = false;
@@ -7434,16 +7474,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function clearOutside(x, y) {
 		if (!world) return { x, y };
 		const t = tileOf(x, y);
-		const free = (tx, ty) => tx >= 0 && ty >= 0 && tx < 156 && ty < 156 && !cellBlocked(world, tx, ty);
+		const free = (tx, ty) => tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_W && !cellBlocked(world, tx, ty);
 		// open enough to walk away from: at least 60 connected open cells, not a pocket between props
 		const roomy = (tx, ty) => {
 			if (!free(tx, ty)) return false;
-			const seen = new Set([ty * 156 + tx]);
+			const seen = new Set([ty * MAP_W + tx]);
 			const q = [[tx, ty]];
 			while (q.length && seen.size < 60) {
 				const [cx, cy] = q.shift();
 				for (const [ax, ay] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
-					const k = ay * 156 + ax;
+					const k = ay * MAP_W + ax;
 					if (seen.has(k) || !free(ax, ay)) continue;
 					seen.add(k);
 					q.push([ax, ay]);
@@ -8658,7 +8698,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				prop.ty = bike.ty;
 			}
 		}
-		explored = region ? new Uint8Array(b64ToBytes(region.explored, 24336)) : /* @__PURE__ */ new Uint8Array(24336);
+		explored = region ? new Uint8Array(b64ToBytes(region.explored, MAP_W * MAP_H)) : /* @__PURE__ */ new Uint8Array(MAP_W * MAP_H);
 		openedDoors.clear();
 		for (const id of region?.opened ?? []) openedDoors.add(id);
 		lootedChests.clear();
@@ -10011,7 +10051,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const ax = Math.abs(wx - HEX_CX);
 		const ay = Math.abs(wy - HEX_CY);
 		const s3 = 1.7320508075688772;
-		return Math.min(HEX_R - (ay + ax / s3), s3 * .5 * HEX_R - ax);
+		const R0 = hexRadius(mapId); return Math.min(R0 - (ay + ax / s3), s3 * .5 * R0 - ax);
 	}
 	function edgeWave(tx, ty) {
 		const n = (ix, iy) => {
@@ -10080,7 +10120,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v15.4: a road tile runs along world Y when its road neighbours are above/below rather than left/right. */
 	function roadRunsY(tx, ty) {
-		const t = (x, y) => x >= 0 && y >= 0 && x < 156 && y < 156 && world.tiles[y * 156 + x] === 2 ? 1 : 0;
+		const t = (x, y) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_W && world.tiles[y * MAP_W + x] === 2 ? 1 : 0;
 		return t(tx, ty - 1) + t(tx, ty + 1) > t(tx - 1, ty) + t(tx + 1, ty);
 	}
 	/** v15.4: no square ground edges. Where two ground types meet, the "stronger" one (grass over road edges,
@@ -10091,14 +10131,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function paintGroundSpill(tx0, ty0, tx1, ty1) {
 		const SIDES = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 		for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-			const i = ty * 156 + tx;
+			const i = ty * MAP_W + tx;
 			const tile = world.tiles[i] ?? 0;
 			if (explored[i] !== 1 || tile < 0 || tile > 3) continue;
 			if (landFadeAt(tx + .5, ty + .5, tile) < .98) continue;
 			for (const [dx, dy] of SIDES) {
 				const nx = tx + dx, ny = ty + dy;
-				if (nx < 0 || ny < 0 || nx >= 156 || ny >= 156) continue;
-				const j = ny * 156 + nx, nt = world.tiles[j] ?? 0;
+				if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_W) continue;
+				const j = ny * MAP_W + nx, nt = world.tiles[j] ?? 0;
 				if (nt === tile || nt < 0 || nt > 3 || explored[j] !== 1 || SPILL_RANK[nt] <= SPILL_RANK[tile]) continue;
 				const fog = visible[j] !== 1 ? .42 : 1;
 				const fill = groundFill(nt, nx * 131 + ny * 977, nt === 2 && roadRunsY(nx, ny));
@@ -10181,37 +10221,37 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function v155MatAt(tx, ty, asph) {
 		const wx = tx + edgeWave(tx * 2.3, ty * 2.3) * .8 + edgeWave(tx * 7.1 + 5, ty * 7.1) * .3, wy = ty + edgeWave(ty * 2.3 + 40, tx * 2.3 + 17) * .8 + edgeWave(ty * 7.1 + 9, tx * 7.1 + 3) * .3;
 		const ix = Math.floor(wx), iy = Math.floor(wy);
-		if (ix < 0 || iy < 0 || ix > 155 || iy > 155) return -1;
-		const t = world.tiles[iy * 156 + ix];
-		if (t === 2) return inFarm(ix, iy) ? 4 : asph[iy * 156 + ix] ? 6 : 2;
+		if (ix < 0 || iy < 0 || ix > (MAP_W - 1) || iy > (MAP_W - 1)) return -1;
+		const t = world.tiles[iy * MAP_W + ix];
+		if (t === 2) return inFarm(ix, iy) ? 4 : asph[iy * MAP_W + ix] ? 6 : 2;
 		if (t === 5 && mapId === 0 && v197Wet(ix, iy)) return 7; // v15.9.7: lake / river water inside the map
 		return t >= 0 && t <= 4 ? t : -1;
 	}
 	/** v15.9.7: VOID tiles well inside the hex on map 0 are water (Great Moose Lake, the Kennebec, the Sebasticook). */
 	function v197Wet(ix, iy) {
-		const dx = Math.abs(ix - HEX_CX), dy = Math.abs(iy - HEX_CY), R = HEX_R - 3;
+		const dx = Math.abs(ix - HEX_CX), dy = Math.abs(iy - HEX_CY), R = hexRadius(mapId) - 3;
 		return dx <= Math.sqrt(3) / 2 * R && dy <= R - dx / Math.sqrt(3);
 	}
 	let v155AsphMap = null;
 	function v155Asph() {
 		if (v155AsphMap && v155AsphMap.w === world) return v155AsphMap.a;
 		// paved where the road runs near town lots (rubble) or is part of an edge highway; elsewhere a dirt track
-		const a = new Uint8Array(156 * 156);
-		for (let y = 0; y < 156; y++) for (let x = 0; x < 156; x++) {
-			if (world.tiles[y * 156 + x] !== 2) continue;
-			let near = x < 3 || y < 3 || x > 152 || y > 152;
+		const a = new Uint8Array(MAP_W * MAP_W);
+		for (let y = 0; y < MAP_W; y++) for (let x = 0; x < MAP_W; x++) {
+			if (world.tiles[y * MAP_W + x] !== 2) continue;
+			let near = x < 3 || y < 3 || x > (MAP_W - 4) || y > (MAP_W - 4);
 			for (let dy = -4; dy <= 4 && !near; dy++) for (let dx = -4; dx <= 4; dx++) {
 				const nx = x + dx, ny = y + dy;
-				if (nx >= 0 && ny >= 0 && nx < 156 && ny < 156 && world.tiles[ny * 156 + nx] === 3) { near = true; break; }
+				if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_W && world.tiles[ny * MAP_W + nx] === 3) { near = true; break; }
 			}
-			a[y * 156 + x] = near ? 1 : 0;
+			a[y * MAP_W + x] = near ? 1 : 0;
 		}
 		v155AsphMap = { w: world, a }; return a;
 	}
 	function v155Sig(cx, cy) {
 		let h = 0;
 		for (let y = cy * CH_T - 1; y <= cy * CH_T + CH_T; y++) for (let x = cx * CH_T - 1; x <= cx * CH_T + CH_T; x++) {
-			const t = x < 0 || y < 0 || x > 155 || y > 155 ? 9 : world.tiles[y * 156 + x];
+			const t = x < 0 || y < 0 || x > (MAP_W - 1) || y > (MAP_W - 1) ? 9 : world.tiles[y * MAP_W + x];
 			h = Math.imul(h ^ (t + 3), 16777619);
 		}
 		return h;
@@ -10232,7 +10272,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const mg = mask.getContext("2d");
 		const layer = document.createElement("canvas"); layer.width = layer.height = BW;
 		const lg = layer.getContext("2d");
-		const seed = cx * 7919 + cy * 104729;
+		const seed = (cx - MAP_OFF / 16) * 7919 + (cy - MAP_OFF / 16) * 104729; // v15.10.3: same look as before the map grew
 		const fillMat = (gg, mat, s) => {
 			// all variants, each rotated/flipped, mixed by big soft noise blobs
 			if (mat === 7) {
@@ -10380,7 +10420,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const fa = mg.createImageData(M, M);
 		for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
 			const tx = cx * CH_T - PADT + (i + .5) * step, ty = cy * CH_T - PADT + (j + .5) * step;
-			const t = world.tiles[Math.min(155, ty | 0) * 156 + Math.min(155, tx | 0)];
+			const t = world.tiles[Math.min((MAP_W - 1), ty | 0) * MAP_W + Math.min((MAP_W - 1), tx | 0)];
 			fa.data[(j * M + i) * 4 + 3] = 255 * landFadeAt(tx, ty, t) | 0;
 		}
 		mg.putImageData(fa, 0, 0);
@@ -10395,15 +10435,15 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	 * edge of what you've seen is a soft wavy fade instead of tile steps. */
 	function v155Fog() {
 		let h = 0;
-		for (let i = 0; i < 156 * 156; i++) h = Math.imul(h ^ (explored[i] * 2 + visible[i] + 1), 16777619) + i | 0;
+		for (let i = 0; i < MAP_W * MAP_W; i++) h = Math.imul(h ^ (explored[i] * 2 + visible[i] + 1), 16777619) + i | 0;
 		if (fogMasks && fogMasks.h === h && fogMasks.w === world) return fogMasks;
 		const mk = (f) => {
-			const raw = document.createElement("canvas"); raw.width = raw.height = 156;
-			const g = raw.getContext("2d"), id = g.createImageData(156, 156);
-			for (let i = 0; i < 156 * 156; i++) id.data[i * 4 + 3] = f(i);
+			const raw = document.createElement("canvas"); raw.width = raw.height = MAP_W;
+			const g = raw.getContext("2d"), id = g.createImageData(MAP_W, MAP_W);
+			for (let i = 0; i < MAP_W * MAP_W; i++) id.data[i * 4 + 3] = f(i);
 			g.putImageData(id, 0, 0);
-			const c = document.createElement("canvas"); c.width = c.height = 312;
-			const cg = c.getContext("2d"); cg.filter = "blur(1.2px)"; cg.drawImage(raw, 0, 0, 312, 312); cg.filter = "none";
+			const c = document.createElement("canvas"); c.width = c.height = MAP_W * 2;
+			const cg = c.getContext("2d"); cg.filter = "blur(1.2px)"; cg.drawImage(raw, 0, 0, MAP_W * 2, MAP_W * 2); cg.filter = "none";
 			return c;
 		};
 		fogMasks = { h, w: world, ex: mk((i) => explored[i] === 1 ? 255 : 0), dim: mk((i) => explored[i] === 1 && visible[i] !== 1 ? 140 : 0) };
@@ -10488,8 +10528,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.setTransform(dpr * z, dpr * CAM_ISO_Y * z, -dpr * z, dpr * CAM_ISO_Y * z, dpr * (viewW / 2 * (1 - z) - dcx * z), dpr * (viewH / 2 * (1 - z) - dcy * z));
 		const tx0 = Math.max(0, b.tx0);
 		const ty0 = Math.max(0, b.ty0);
-		const tx1 = Math.min(155, b.tx1);
-		const ty1 = Math.min(155, b.ty1);
+		const tx1 = Math.min((MAP_W - 1), b.tx1);
+		const ty1 = Math.min((MAP_W - 1), b.ty1);
 		drawGroundChunks(tx0, ty0, tx1, ty1); // v15.5 (old per-tile path: paintGroundRect/queueGroundRect/paintGroundSpill, unused)
 		ctx.globalAlpha = 1;
 	}
@@ -10539,7 +10579,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			lights.push({ x: q.sx, y: q.sy, r: 150 * zoom * flick(e.id), a: .85, warm: .75 });
 		}
 		for (const prop of world.props) {
-			if (!explored[prop.ty * 156 + prop.tx]) continue;
+			if (!explored[prop.ty * MAP_W + prop.tx]) continue;
 			const fire = FIRES[prop.kind] ?? ((prop.burn || 0) > 0 ? 200 : 0);
 			const lit = LIT_BUILDINGS[prop.kind];
 			if (!fire && !lit) continue;
@@ -10552,7 +10592,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const e of world.enemies) {
 			if (e.dead || (e.variant !== "torch" && e.variant !== "atv")) continue;
 			const tt = tileOf(e.x, e.y);
-			if (!visible[tt.ty * 156 + tt.tx]) continue;
+			if (!visible[tt.ty * MAP_W + tt.tx]) continue;
 			const q = at(e.x, e.y - 40);
 			lights.push({ x: q.sx, y: q.sy, r: (e.variant === "atv" ? 150 : 160) * zoom * flick(e.id), a: .9, warm: .55 });
 		}
@@ -10719,7 +10759,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const fadeIds = fadeTick ? new Set() : fadeKeep;
 		for (const prop of world.props) {
 			const t = prop.tx + prop.ty;
-			const i = prop.ty * 156 + prop.tx;
+			const i = prop.ty * MAP_W + prop.tx;
 			if (!explored[i]) continue;
 			if (prop.tx < bounds.tx0 - 2 || prop.ty < bounds.ty0 - 2 || prop.tx > bounds.tx1 + 2 || prop.ty > bounds.ty1 + 2) continue;
 			const spec = PROP_SPEC[prop.kind];
@@ -10732,7 +10772,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const tree = prop.kind.startsWith("tree-");
 				const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
 				if (fadeTick && player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
-					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
+					const n = (Math.imul(prop.tx - MAP_OFF, 374761393) ^ Math.imul(prop.ty - MAP_OFF, 668265263)) >>> 0;
 					const scale = tree ? TREE_VARY[0] + n % TREE_VARY[2] * TREE_VARY[1] : 1;
 					const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
 					const ps = zoomPoint(pr.sx, pr.sy);
@@ -10758,7 +10798,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				z: c.x + c.y + t * 0,
 				draw: () => {
 					const tree = prop.kind.startsWith("tree-");
-					const n = (Math.imul(prop.tx, 374761393) ^ Math.imul(prop.ty, 668265263)) >>> 0;
+					const n = (Math.imul(prop.tx - MAP_OFF, 374761393) ^ Math.imul(prop.ty - MAP_OFF, 668265263)) >>> 0;
 					const scale = tree ? TREE_VARY[0] + n % TREE_VARY[2] * TREE_VARY[1] : 1;
 					let tilt = 0;
 					let jx = 0;
@@ -10858,7 +10898,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (fadeTick) { for (const v of fadePick.values()) fadeIds.add(v.id); fadeKeep = fadeIds; }
 		for (const npc of world.npcs) {
 			const t = tileOf(npc.x, npc.y);
-			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (!visible[t.ty * MAP_W + t.tx]) continue;
 			if (!onScr(npc.x, npc.y, 140)) continue;
 			if (escortBodies && (npc.role === "cyndal" || npc.role === "loki")) continue;
 			draws.push({
@@ -10880,7 +10920,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		for (const gate of world.gates) {
 			const t = tileOf(gate.tx * 64, gate.ty * 64);
-			if (!explored[t.ty * 156 + t.tx]) continue;
+			if (!explored[t.ty * MAP_W + t.tx]) continue;
 			const x = gate.tx * 64 + 32;
 			const y = gate.ty * 64 + 32;
 			draws.push({
@@ -10901,8 +10941,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const enemy of world.enemies) {
 			if (enemy.dead && !(enemy.death > 0)) continue;
 			const t = tileOf(enemy.x, enemy.y);
-			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
-			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (t.tx < 0 || t.ty < 0 || t.tx >= MAP_W || t.ty >= MAP_W) continue;
+			if (!visible[t.ty * MAP_W + t.tx]) continue;
 			if (!onScr(enemy.x, enemy.y, 260, 260)) continue;
 			draws.push({
 				z: bodyZ(enemy.x, enemy.y),
@@ -10958,8 +10998,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const pile of piles) {
 			if (!hasLoot(pile)) continue;
 			const t = tileOf(pile.x, pile.y);
-			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
-			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (t.tx < 0 || t.ty < 0 || t.tx >= MAP_W || t.ty >= MAP_W) continue;
+			if (!visible[t.ty * MAP_W + t.tx]) continue;
 			if (!onScr(pile.x, pile.y, 160, 200)) continue;
 			draws.push({
 				z: pile.x + pile.y,
@@ -10993,8 +11033,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		for (const crow of crows) {
 			const t = tileOf(crow.x, crow.y);
-			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
-			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (t.tx < 0 || t.ty < 0 || t.tx >= MAP_W || t.ty >= MAP_W) continue;
+			if (!visible[t.ty * MAP_W + t.tx]) continue;
 			draws.push({
 				z: crow.x + crow.y + 2e4,
 				draw: () => blit("crow", crow.x, crow.y, sizedPx(SIZE_IN.crow, BEAST_FIT.crow), true, crow.frame, crow.dir, drawCamX, drawCamY, false, crow.alt)
@@ -11058,8 +11098,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		});
 		for (const scar of scars) {
 			const t = tileOf(scar.x, scar.y);
-			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
-			if (!explored[t.ty * 156 + t.tx]) continue;
+			if (t.tx < 0 || t.ty < 0 || t.tx >= MAP_W || t.ty >= MAP_W) continue;
+			if (!explored[t.ty * MAP_W + t.tx]) continue;
 			if (!onScr(scar.x, scar.y, 100, 160)) continue;
 			draws.push({
 				z: scar.x + scar.y - 4,
@@ -11214,8 +11254,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const pile of piles) {
 			if (!hasLoot(pile)) continue;
 			const t = tileOf(pile.x, pile.y);
-			if (t.tx < 0 || t.ty < 0 || t.tx >= 156 || t.ty >= 156) continue;
-			if (!visible[t.ty * 156 + t.tx]) continue;
+			if (t.tx < 0 || t.ty < 0 || t.tx >= MAP_W || t.ty >= MAP_W) continue;
+			if (!visible[t.ty * MAP_W + t.tx]) continue;
 			const mark = zoomPoint(worldToScreen(pile.x, pile.y, drawCamX, drawCamY).sx, worldToScreen(pile.x, pile.y, drawCamX, drawCamY).sy);
 			ctx.strokeStyle = "#d4a24a";
 			ctx.lineWidth = 2;
@@ -11247,7 +11287,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const have = [1, 2, 3, 4].filter((i) => images.get(`v2/vehicles/${fam}-${i}-se`) || images.get(`v2/vehicles/${fam}-${i}-sw`));
 		const any = have.length ? images.get(`v2/vehicles/${fam}-${have[0]}-se`) || images.get(`v2/vehicles/${fam}-${have[0]}-sw`) : null;
 		if (!have.length) return null; // art not loaded yet: old prop for now, decide again next frame
-		const h = (((prop.tx * 73856093) ^ (prop.ty * 19349663)) >>> 0) / 4294967296;
+		const h = ((((prop.tx - MAP_OFF) * 73856093) ^ ((prop.ty - MAP_OFF) * 19349663)) >>> 0) / 4294967296;
 		const v = have[Math.floor(h * have.length) % have.length];
 		const road = (tx, ty) => { const t = world.tiles[ty * MAP_W + tx]; return t === 2 || t === 5; };
 		const alongX = road(prop.tx - 1, prop.ty) + road(prop.tx + 1, prop.ty), alongY = road(prop.tx, prop.ty - 1) + road(prop.tx, prop.ty + 1);
@@ -11394,6 +11434,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const planted = footSrc.feet[(sheet ? facingRow(dir, rows, !!img.diag4) : 0) * fcols + (frame % fcols)];
 			if (planted) frac = planted;
 		}
+		// v15.10.3: the new low animals sit their bellies on the ground (the measured foot is the far toe; the contact shadow is under the body)
+		if (/^v2\/(turtle|raccoon(-wild)?)-(walk|idle)$/.test(name)) { frac = /turtle/.test(name) ? .925 : .955; }
 		drawH *= heroScale(name);
 		drawH *= figScale(name, drawH, images);
 		const dh = drawH * zoom;
@@ -11574,10 +11616,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		g.fillStyle = "#0c0f0c";
 		g.fillRect(0, 0, w, h);
 		if (!world || !player) return;
-		const sx = w / 156, sy = h / 156;
+		const sx = w / MAP_W, sy = h / MAP_W;
 		const colors = ["#6e5a3e", "#3e5a3a", "#7a7568", "#4a5248", "#d9e0dc"];
-		for (let ty = 0; ty < 156; ty++) for (let tx = 0; tx < 156; tx++) {
-			const i = ty * 156 + tx;
+		for (let ty = 0; ty < MAP_W; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+			const i = ty * MAP_W + tx;
 			const tile = world.tiles[i] ?? 0;
 			if (!explored[i]) continue;
 			g.fillStyle = tile === 5 ? "#24384a" : colors[tile] ?? "#8a7048";
@@ -11585,7 +11627,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		g.fillStyle = "rgba(240,230,212,.35)";
 		for (const p of world.props) {
-			if (!explored[p.ty * 156 + p.tx] || !canWalkIn(p)) continue;
+			if (!explored[p.ty * MAP_W + p.tx] || !canWalkIn(p)) continue;
 			g.fillRect(p.tx * sx - 1, p.ty * sy - 1, 4, 4);
 		}
 		q10Mini(g, sx, sy);
@@ -11607,8 +11649,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mctx.fillStyle = "#101410";
 		mctx.fillRect(0, 0, w, h);
 		if (!world || !player) return;
-		const sx = w / 156;
-		const sy = h / 156;
+		const sx = w / MAP_W;
+		const sy = h / MAP_W;
 		const colors = [
 			"#6e5a3e",
 			"#3e5a3a",
@@ -11622,8 +11664,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			miniBaseW = world; miniBaseT = renderNow;
 			const bctx = miniBase.getContext("2d");
 			bctx.clearRect(0, 0, w, h);
-			for (let ty = 0; ty < 156; ty++) for (let tx = 0; tx < 156; tx++) {
-				const i = ty * 156 + tx;
+			for (let ty = 0; ty < MAP_W; ty++) for (let tx = 0; tx < MAP_W; tx++) {
+				const i = ty * MAP_W + tx;
 				const tile = world.tiles[i] ?? 0;
 				if (!explored[i] || tile === 5) continue;
 				const fade = landFadeAt(tx + .5, ty + .5, tile);
@@ -11638,7 +11680,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mctx.globalAlpha = 1;
 		const rawObj = objectiveTile(quest);
 		const obj = { tx: rawObj.tx + WORLD_OX, ty: rawObj.ty + WORLD_OY };
-		if (mapId === 0 && visible[obj.ty * 156 + obj.tx]) {
+		if (mapId === 0 && visible[obj.ty * MAP_W + obj.tx]) {
 			mctx.fillStyle = "#d4a24a";
 			mctx.fillRect(obj.tx * sx - 1, obj.ty * sy - 1, 3, 3);
 		}
@@ -13074,6 +13116,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v15Talk: (role) => { const n = world.npcs.find((x) => x.role === role); if (!n) return null; openTalk(n); return dialogue ? { speaker: dialogue.speaker, text: dialogue.text, choices: dialogue.choices.map((c) => c.label) } : null; },
 		v15Npcs: () => world.npcs.map((n) => n.role),
 		// v15.10: play-as-Sarah / pet / wildlife probe
+		v1510Map: () => world ? { W: MAP_W, H: MAP_H, off: MAP_OFF, map: mapId, tiles: bytesToB64(world.tiles), gates: world.gates.map((g) => ({ side: g.side, tx: g.tx, ty: g.ty, ax: g.arriveTx, ay: g.arriveTy })), castle: world.castle ?? null, props: world.props.map((p) => [p.tx, p.ty]), enemies: world.enemies.map((e) => [e.x / TILE | 0, e.y / TILE | 0]) } : null,
 		v15Probe1510: () => {
 			const g = world?.npcs.find((n) => n.role === "sarah");
 			const wild = { raccoon: 0, turtle: 0, turtleOnRoad: 0, list: [] };
@@ -13239,10 +13282,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		},
 		leave: () => leaveHouse(),
 		insideInfo: () => inside ? { id: inside.id, kind: world?.props.find((p) => p.id === inside.id)?.kind ?? "", rx: inside.rx, ry: inside.ry, origin: roomOrigin(), scale: roomScale(), dims: roomDims(), door: roomDoor(), phase } : null,
-		exitCheck: () => world ? world.props.filter((p) => canWalkIn(p)).map((p) => { const d = doorPoint(p); const t = tileOf(d.x, d.y); const o = clearOutside(d.x, d.y); const ot = tileOf(o.x, o.y); const seen = new Set([ot.ty * 156 + ot.tx]); const q = [[ot.tx, ot.ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const k = ay * 156 + ax; if (ax < 0 || ay < 0 || ax >= 156 || ay >= 156 || seen.has(k) || cellBlocked(world, ax, ay)) continue; seen.add(k); q.push([ax, ay]); } } return { kind: p.kind, id: p.id, blocked: cellBlocked(world, t.tx, t.ty), moved: Math.round(Math.hypot(o.x - d.x, o.y - d.y)), reach: seen.size }; }) : [],
+		exitCheck: () => world ? world.props.filter((p) => canWalkIn(p)).map((p) => { const d = doorPoint(p); const t = tileOf(d.x, d.y); const o = clearOutside(d.x, d.y); const ot = tileOf(o.x, o.y); const seen = new Set([ot.ty * MAP_W + ot.tx]); const q = [[ot.tx, ot.ty]]; while (q.length && seen.size < 400) { const [x, y] = q.shift(); for (const [ax, ay] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const k = ay * MAP_W + ax; if (ax < 0 || ay < 0 || ax >= MAP_W || ay >= MAP_W || seen.has(k) || cellBlocked(world, ax, ay)) continue; seen.add(k); q.push([ax, ay]); } } return { kind: p.kind, id: p.id, blocked: cellBlocked(world, t.tx, t.ty), moved: Math.round(Math.hypot(o.x - d.x, o.y - d.y)), reach: seen.size }; }) : [],
 		doorOf: (kind) => { const p = world?.props.find((q) => q.kind === kind); return p ? doorPoint(p) : null; },
 		screenOf: (x, y) => { const r = worldToScreen(x, y, camX, camY); return zoomPoint(r.sx, r.sy); },
-		openSpotNear: (r) => { if (!world || !player) return null; const t = tileOf(player.x, player.y); for (let k = 0; k < 200; k++) { const a = k * 2.4, rr = r + (k % 3); const tx = Math.round(t.tx + Math.cos(a) * rr), ty = Math.round(t.ty + Math.sin(a) * rr); if (tx < 0 || ty < 0 || tx >= 156 || ty >= 156 || cellBlocked(world, tx, ty)) continue; if (world.props.some((p) => { const sp = PROP_SPEC[p.kind]; return tx >= p.tx - 1 && tx < p.tx + sp.w + 1 && ty >= p.ty - 3 && ty < p.ty + sp.h + 1; })) continue; const x = (tx + .5) * 64, y = (ty + .5) * 64; const sc = worldToScreen(x, y, camX, camY), zp = zoomPoint(sc.sx, sc.sy); if (zp.sx < 80 || zp.sx > viewW - 120 || zp.sy < 90 || zp.sy > viewH - 140) continue; if (pathTo(world, player.x, player.y, x, y)) return { x, y, sx: zp.sx, sy: zp.sy }; } return null; },
+		openSpotNear: (r) => { if (!world || !player) return null; const t = tileOf(player.x, player.y); for (let k = 0; k < 200; k++) { const a = k * 2.4, rr = r + (k % 3); const tx = Math.round(t.tx + Math.cos(a) * rr), ty = Math.round(t.ty + Math.sin(a) * rr); if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_W || cellBlocked(world, tx, ty)) continue; if (world.props.some((p) => { const sp = PROP_SPEC[p.kind]; return tx >= p.tx - 1 && tx < p.tx + sp.w + 1 && ty >= p.ty - 3 && ty < p.ty + sp.h + 1; })) continue; const x = (tx + .5) * 64, y = (ty + .5) * 64; const sc = worldToScreen(x, y, camX, camY), zp = zoomPoint(sc.sx, sc.sy); if (zp.sx < 80 || zp.sx > viewW - 120 || zp.sy < 90 || zp.sy > viewH - 140) continue; if (pathTo(world, player.x, player.y, x, y)) return { x, y, sx: zp.sx, sy: zp.sy }; } return null; },
 		dbg: () => ({ phase, intent: intent ? { kind: intent.kind, x: intent.x, y: intent.y, path: intent.path?.length } : null, opening: !!opening, travelLock, pointerDown, inside: !!inside, hold: holdWalk }),
 		forceEnter: (kind) => { const p = world?.props.find((q) => q.kind === kind); if (!p || !player) return false; const d = doorPoint(p); player.x = d.x; player.y = d.y; finishEnter(p); sync(true); return true; },
 		walkTo: (x, y) => { if (!world || !player) return false; const path = pathTo(world, player.x, player.y, x, y); intent = { kind: "walk", x, y, path: path ?? [] }; return !!path; },
@@ -13297,14 +13340,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			// a clear patch (no blocked tile and no prop within 5 tiles) near x,y, for clean close-ups
 			if (!world) return null;
 			const c = tileOf(x, y);
-			const occupied = new Set(world.props.map((p) => p.ty * 156 + p.tx));
+			const occupied = new Set(world.props.map((p) => p.ty * MAP_W + p.tx));
 			let best = null;
 			for (let r = 0; r <= R && !best; r++) for (let ty = c.ty - r; ty <= c.ty + r && !best; ty++) for (let tx = c.tx - r; tx <= c.tx + r && !best; tx++) {
 				if (Math.max(Math.abs(tx - c.tx), Math.abs(ty - c.ty)) !== r) continue;
 				let ok = true;
 				for (let dy = -7; dy <= 7 && ok; dy++) for (let dx = -7; dx <= 7 && ok; dx++) {
 					const ax = tx + dx, ay = ty + dy;
-					if (ax < 1 || ay < 1 || ax > 154 || ay > 154 || cellBlocked(world, ax, ay) || occupied.has(ay * 156 + ax)) ok = false;
+					if (ax < 1 || ay < 1 || ax > (MAP_W - 2) || ay > (MAP_W - 2) || cellBlocked(world, ax, ay) || occupied.has(ay * MAP_W + ax)) ok = false;
 				}
 				if (ok) best = { x: (tx + .5) * 64, y: (ty + .5) * 64 };
 			}
@@ -13443,6 +13486,7 @@ function sheetRowsOf(name) {
 	if (TALL_COMBAT.has(name)) return 8;
 	if (V2_COLS[name] || V2_FOLK.test(name) || name.startsWith("pl/") || name.startsWith("v2/armor/")) return 8;
 	if (name.startsWith("overlay-")) return 8;
+	if (/^v2\/(raccoon|raccoon-wild|turtle)-(walk|idle)$/.test(name)) return 8; // v15.10.3: the new 8-facing animal sheets
 	if (name.endsWith("-atk") || name.endsWith("-dead") || name.startsWith("guard-") || name === "bunker-room") return 4;
 	if (/^(v2\/)?hero/.test(name) || name.startsWith("npc-") || name.startsWith("raider") || name.startsWith("boss") || name === "villager" || name === "wolf" || name === "coyote" || name === "deer" || name === "moose" || name === "rabbit" || name === "squirrel" || name === "crow") return 8;
 	return 4;

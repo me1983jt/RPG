@@ -80,12 +80,16 @@ function noise(x: number, y: number): number {
   return a * (1 - sy) + b * sy;
 }
 
+/** v15.10.3: grid size in use. Generation runs in the old 156 frame; the engine embeds the result and switches this
+ * to the 284 runtime grid (setGridSize) so pathing / placement / collision work on the bigger map. */
+let RW = MAP_W, RH = MAP_H;
+export function setGridSize(w: number, h: number): void { RW = w; RH = h; }
 function idx(tx: number, ty: number): number {
-  return ty * MAP_W + tx;
+  return ty * RW + tx;
 }
 
 function inMap(tx: number, ty: number): boolean {
-  return tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H;
+  return tx >= 0 && ty >= 0 && tx < RW && ty < RH;
 }
 
 export function inHex(tx: number, ty: number): boolean {
@@ -151,6 +155,7 @@ export function propCenter(p: Prop): { x: number; y: number } {
 }
 
 export function createWorld(seed = SEED, mapId = 0, exits?: number[]): World {
+  RW = MAP_W; RH = MAP_H; // generation always happens in the old 156 frame
   genSalt = mapId === 0 && seed === SEED ? 0 : ((seed + mapId * 9176) | 0);
   const homeSides = exits && exits.length >= 2 ? exits : pickSides(seed);
   const mouths = (mapId === 0 ? homeSides : homeSides.map((side) => (side + 3) % 6)).filter((side, i, all) => all.indexOf(side) === i);
@@ -526,7 +531,7 @@ function line(x0: number, y0: number, x1: number, y1: number, plot: (x: number, 
 }
 
 function fits(world: World, tx: number, ty: number, w: number, h: number, allowRoad: boolean): boolean {
-  if (tx < 2 || ty < 2 || tx + w >= MAP_W - 2 || ty + h >= MAP_H - 2) return false;
+  if (tx < 2 || ty < 2 || tx + w >= RW - 2 || ty + h >= RH - 2) return false;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = idx(tx + x, ty + y);
@@ -1167,7 +1172,7 @@ export function pathTo(world: World, x: number, y: number, gx: number, gy: numbe
     if (!near) return null;
     goal = near;
   }
-  const tiles = findPath(world.blocked, MAP_W, MAP_H, s.tx, s.ty, goal.tx, goal.ty);
+  const tiles = findPath(world.blocked, RW, RH, s.tx, s.ty, goal.tx, goal.ty);
   if (!tiles) return null;
   return tiles.map((t) => ({ x: t.x * TILE, y: t.y * TILE }));
 }
