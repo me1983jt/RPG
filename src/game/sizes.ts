@@ -13,6 +13,8 @@ export const SIZE_IN: Record<string, number> = {
  hero: 74, npc: 70.5, kid: 62, boss: 76, door: 80,
  // animals and bosses (full height, ears/antlers to hooves)
  moose: 92, deer: 62, bear: 40, wolf: 34, coyote: 29, rabbit: 10, squirrel: 8, crow: 10, grok: 98,
+ // v15.10: Sarah's baby pet raccoon (10 in at the shoulder, ~12 in to the ear tips, ~21 in nose to tail), wild adult raccoons just under the coyote, painted turtles at rabbit size
+ raccoon: 12, "raccoon-wild": 26, turtle: 10,
  // town buildings (Quest"s painted Harmony art). "Real doors": house ~4.3x the hero (x1.564 of the old 2.75x), so its door reads ~80 in.
  "town-house": 319, "town-church": 358, "town-farmhouse": 306, "town-farmhouse-lone": 288, "town-shed": 159, "town-sign": 114, "town-fence": 48,
  // world props (PROP_SPEC kinds)
@@ -197,7 +199,7 @@ export const BEAST_IN: Record<string, number> = {
  holeb: 120, grok: SIZE_IN.grok, warden: 74, collector: 77, pelletier: 67, fur: 76, saw: 74, armor: 75, mask: 72,
  // v13.5: atv 91 in puts the quad at ~72 px long (6.5 ft) with the rider seated at ~5.5 ft
  brute: 77, shield: 72, atv: 91, jumper: 69, scout: 68,
- bear: SIZE_IN.bear, moose: SIZE_IN.moose, deer: SIZE_IN.deer, wolf: SIZE_IN.wolf, coyote: SIZE_IN.coyote, rabbit: SIZE_IN.rabbit, squirrel: SIZE_IN.squirrel, crow: SIZE_IN.crow
+ bear: SIZE_IN.bear, moose: SIZE_IN.moose, deer: SIZE_IN.deer, wolf: SIZE_IN.wolf, coyote: SIZE_IN.coyote, rabbit: SIZE_IN.rabbit, squirrel: SIZE_IN.squirrel, crow: SIZE_IN.crow, raccoon: SIZE_IN["raccoon-wild"], turtle: SIZE_IN.turtle
 };
 
 /** Drawn (full image) height in px at zoom 1 for something `inches` tall whose image is `fit` opaque. */
@@ -217,6 +219,6 @@ export function townH(key: string, art: string): number {
 
 /** Animal sheets: mean visible share of a frame"s height over every facing and frame (alpha > 60). Iso facings differ, so the
  * mean is the honest "how tall it reads" number; SPRITE_FIT (single facing) drew deer/moose ~13% short. */
-export const BEAST_FIT: Record<string, number> = {"deer": 0.668, "moose": 0.612, "wolf": 0.487, "coyote": 0.487, "rabbit": 0.423, "squirrel": 0.389, "crow": 0.235};
+export const BEAST_FIT: Record<string, number> = {"deer": 0.668, "moose": 0.612, "wolf": 0.487, "coyote": 0.487, "rabbit": 0.423, "squirrel": 0.389, "crow": 0.235, "v2/raccoon-walk": 0.398, "v2/raccoon-wild-walk": 0.351, "v2/turtle-walk": 0.288};
 /** Trees vary per tile around their table height (natural spread), drawn at x0.84..x1.12. */
 export const TREE_VARY = [0.84, 0.07, 5] as const; // min, step, steps

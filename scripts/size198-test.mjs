@@ -44,6 +44,9 @@ const hr = SIZE_IN["town-house"] / SIZE_IN.hero; ok(hr > 4.15 && hr < 4.45, `hou
 ok(SIZE_IN.moose > SIZE_IN.deer && SIZE_IN.grok > SIZE_IN.hero && SIZE_IN["town-church"] > SIZE_IN["town-house"] && SIZE_IN["town-shed"] < SIZE_IN["town-house"] && SIZE_IN["car-truck"] > SIZE_IN["car-sedan"], "ordering: moose > deer, Grok > hero, church > house > shed, truck > sedan");
 ok(near(PX_PER_IN, 129 * .806 / 74, .005), `PX_PER_IN ${PX_PER_IN} matches the 129 px hero sheet (fit .806)`);
 
+// v15.10: wildlife and Sarah's pet raccoon
+ok(SIZE_IN["raccoon-wild"] < SIZE_IN.coyote && SIZE_IN["raccoon-wild"] >= SIZE_IN.coyote - 4 && SIZE_IN.raccoon < SIZE_IN["raccoon-wild"] / 1.8, `wild raccoon ${SIZE_IN["raccoon-wild"]} in just under the coyote ${SIZE_IN.coyote} in; baby pet ${SIZE_IN.raccoon} in`);
+ok(SIZE_IN.turtle === SIZE_IN.rabbit && ["v2/raccoon-walk", "v2/raccoon-wild-walk", "v2/turtle-walk"].every((k) => BEAST_FIT[k]), `turtle ${SIZE_IN.turtle} in = rabbit; raccoon/turtle sheets carry a BEAST_FIT`);
 // --- static: the art still has the opaque share the table assumes; drawn heights land on the table ---
 const types = readFileSync(join(root, "src/game/types.ts"), "utf8");
 const specs = [...types.matchAll(/^\s*"?([\w-]+)"?: \{[^}]*drawH: ([^,]+), image: "([^"]+)"/gm)];
