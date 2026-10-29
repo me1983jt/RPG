@@ -25,3 +25,6 @@
 
 ## Terrain update (Oct 22, 2026)
 For the new terrain rules (no square ground; realistic dirt and paved roads with pebbles, cracks and graffiti spots; worn patchy grass; few repeats; scaled to the larger characters), see "Justin's additions" in `TERRAIN_SPEC.md`.
+
+## v15.10.9 (Oct 29)
+Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin walk L/R/turn/crouch-pickup, Goose trot, raccoon walk, Sarah farm sit) with npm run town. No RPG code change.
