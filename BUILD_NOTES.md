@@ -45,3 +45,7 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 - The Hollowed: name still in src/game/v141.ts HOLLOWED (one spot). New HOLLOW_KINDS there: walker, Bloated (slow, tough),
   Gaunt runner (fast, frail), Old (elite, maps 3+). Optional sheets v2/hollowed-{bloated,runner,elite}-walk.png are
   picked up when Build delivers them; until then all use v2/hollowed-walk.
+
+## v15.10.12 (Oct 29)
+- APK smoke test fix: the not-yet-drawn Hollowed kind sheets are no longer preloaded (404s). When Build delivers
+  v2/hollowed-{bloated,runner,elite}-walk.png, add them to the sprite list in engine.ts (comment marks the spot).

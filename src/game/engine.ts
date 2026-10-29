@@ -167,7 +167,7 @@ var IMAGES = [
 	"v2/tracks/wolf-left", "v2/tracks/wolf-right",
 	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
 	"v2/hollowed-walk", "v2/hollowed-walk-atk", "v2/hollowed-walk-dead",
-	"v2/hollowed-bloated-walk", "v2/hollowed-runner-walk", "v2/hollowed-elite-walk", // v15.10.10: Build art pending (optional)
+	// v15.10.12: add "v2/hollowed-bloated-walk", "v2/hollowed-runner-walk", "v2/hollowed-elite-walk" here when Build delivers them
 	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x","garden","smokehouse","raincollector","still"].map((n) => `v14/${n}`),
 	"hero",
 	"hero-axe",
