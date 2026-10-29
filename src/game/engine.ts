@@ -5418,7 +5418,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
 			]).map((x) => x.id === "goose" ? { ...x, withYou: !!x.withYou && !gooseDown(), laidUp: gooseDown(), ...(gooseDown() ? { where: "farm" } : {}) } : x), // v15.10.6: Goose laid up at the farm (handoff fields only)
-			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.gooseLaidUp": gooseDown(), "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
+			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.gooseLaidUp": gooseDown(), "story.player": asSarah() ? "sarah" : "justin", "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			// v15.9: agility/grit live in w13.core; a real 0 stays 0
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => { const v = Number(k === "agility" || k === "grit" ? w13.core?.[k] : p?.[k]); return [k, Number.isFinite(v) ? v : 1]; })),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
