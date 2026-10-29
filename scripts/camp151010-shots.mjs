@@ -1,0 +1,16 @@
+import { chromium } from "playwright";
+const b = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
+const page = await (await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1.5 })).newPage();
+await page.addInitScript(() => { window.__v13Quiet = true; window.__v14Skip = true; window.__safeOff = true; });
+await page.goto("http://127.0.0.1:8112/", { waitUntil: "networkidle" });
+await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: "networkidle" }); await page.waitForTimeout(2500);
+await page.fill("#wanderer-name", "Justin");
+await page.getByRole("button", { name: /Hunter/ }).click(); await page.getByRole("button", { name: "Next" }).click();
+for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "+" }).nth(4).click();
+await page.getByRole("button", { name: "Next" }).click(); await page.getByRole("button", { name: /Keen eye/ }).click();
+await page.getByRole("button", { name: /Begin as/ }).click(); await page.waitForTimeout(3500);
+const ps = await page.evaluate(() => window.__controlsTest.props1510("campfire")); console.log(JSON.stringify(ps));
+const i = +(process.argv[2] || 0);
+await page.evaluate((p) => { const c = window.__controlsTest; c.choose?.("close"); c.setHour(12); c.v13Weather?.("clear"); c.setZoom(2.4); c.v15Tp(p.x + 90, p.y + 70); }, ps[i]);
+await page.mouse.click(640, 300); await page.waitForTimeout(500); await page.evaluate((p) => window.__controlsTest.v15Tp(p.x + 90, p.y + 70), ps[i]); await page.waitForTimeout(3000);
+await page.screenshot({ path: "/workspace/maine-rpg/shots/v151010/campfire-bedroll.png" }); await b.close();

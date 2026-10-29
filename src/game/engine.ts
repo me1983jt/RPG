@@ -441,6 +441,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	// v15.9.3 Performance mode: on by default on phones (touch + small screen / Android / iPhone). Lower internal
 	// resolution, Low-graphics effects, fewer weather particles, nearer AI pause.
 	const phone193 = typeof navigator !== "undefined" && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820));
+	// v15.10.10 phone speed: weak phones (<=4 cores or <=3 GB RAM) start at 30 fps and a lower render scale
+	const weak1510 = phone193 && (((navigator as any).hardwareConcurrency || 8) <= 4 || ((navigator as any).deviceMemory || 8) <= 3);
 	let perfMode = (() => { try { const v = localStorage.getItem("maine-rpg-perf"); return v ? v === "on" : phone193; } catch { return phone193; } })();
 	/** High-graphics effects actually in use (Performance mode forces the Low look). */
 	const hiFx = () => gfxHigh && !perfMode;
@@ -9391,7 +9393,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return best;
 	}
 	/** v15.9.5: hard particle cap; lower at night and in Performance mode (night is the slow case on phones). */
-	function partCap195() { return perfMode || nightShade(clock) > .22 ? 60 : 140; }
+	function partCap195() { return perfMode ? (weak1510 ? 35 : 60) : nightShade(clock) > .22 ? 60 : 140; }
 	function burst(x, y, color, n, big) {
 		n = Math.min(n, Math.max(0, partCap195() - particles.length));
 		for (let i = 0; i < n; i++) {
@@ -9465,7 +9467,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
 		// v15.9.3: Performance mode draws at 0.75x the device pixel ratio (capped at 1.5) and the browser scales it up
-		const dpr = perfMode ? Math.max(.75, Math.min(1.5, (window.devicePixelRatio || 1) * .75)) : Math.min(2, window.devicePixelRatio || 1);
+		const dpr = perfMode ? Math.max(.75, Math.min(weak1510 ? 1.2 : 1.5, (window.devicePixelRatio || 1) * (weak1510 ? .6 : .75))) : Math.min(2, window.devicePixelRatio || 1);
 		viewW = Math.max(1, rect.width);
 		viewH = Math.max(1, rect.height);
 		// v15.9.3: only touch the backing store when the size really changes (assigning width every frame
@@ -10888,6 +10890,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						if (prop.kind === "firering" && prop.lit14 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 6, 30, false, 0, 0, drawCamX, drawCamY);
 						if ((prop.f14 || prop.p14) && buildOpen && (prop.hp ?? 0) < maxHp14(prop)) paintHp14(pt, H, (prop.hp ?? 0) / maxHp14(prop));
 					} else { const tT = performance.now(); blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0); if (tree) pAdd("trees", tT); }
+					if (prop.kind === "campfire" && images.get("v2/bedroll")) blit("v2/bedroll", c.x + (prop.id % 2 ? 40 : -40), c.y + 22, 36, false, 0, 0, drawCamX, drawCamY); // v15.10.10: Build bedroll (6 ft) beside each campfire
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
 					if ((prop.kind === "firepot" || prop.kind === "firepot-up" || prop.kind === "firepot-3") && images.get("fx-fire")) blit("fx-fire", c.x, c.y - h * .35, h * .8, false, 0, 0, drawCamX, drawCamY);
@@ -11762,7 +11765,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// v15.9.4: FPS counter (pause menu, off by default) and a 30 / 60 fps cap (default 60)
 	let showFps = (() => { try { return localStorage.getItem("maine-rpg-fps") === "on"; } catch { return false; } })();
-	let fpsCap = (() => { try { return localStorage.getItem("maine-rpg-cap") === "30" ? 30 : 60; } catch { return 60; } })();
+	let fpsCap = (() => { try { const v = localStorage.getItem("maine-rpg-cap"); return v ? (v === "30" ? 30 : 60) : (weak1510 ? 30 : 60); } catch { return weak1510 ? 30 : 60; } })();
+	// v15.10.10: on a phone with no saved cap, drop to 30 fps after ~4 s of running under 40 fps (steadier frames, cooler phone)
+	let capAuto1510 = (() => { try { return phone193 && !localStorage.getItem("maine-rpg-cap"); } catch { return false; } })();
+	let slow1510 = 0;
 	const fpsTimes = [];
 	let fpsNow = 0;
 	function paintFps() {
@@ -11781,6 +11787,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (fpsCap === 30 && now - last < 1000 / 30 - 4) { requestAnimationFrame(frame); return; }
 		fpsTimes.push(now); while (fpsTimes.length && now - fpsTimes[0] > 1000) fpsTimes.shift();
 		fpsNow = fpsTimes.length;
+		if (capAuto1510 && fpsCap === 60 && now > 8000) { slow1510 = fpsNow < 40 ? slow1510 + 1 : Math.max(0, slow1510 - 2); if (slow1510 > 240) { fpsCap = 30; capAuto1510 = false; sync(true); } }
 		const dt = Math.min(.1, (now - last) / 1e3);
 		last = now;
 		acc += dt;
@@ -12969,7 +12976,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setAim,
 		setTurnBased,
 		setShowFps(on) { showFps = !!on; try { localStorage.setItem("maine-rpg-fps", showFps ? "on" : "off"); } catch {} sync(true); },
-		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; try { localStorage.setItem("maine-rpg-cap", String(fpsCap)); } catch {} sync(true); },
+		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; capAuto1510 = false; try { localStorage.setItem("maine-rpg-cap", String(fpsCap)); } catch {} sync(true); },
 		setPerfMode(on) { perfMode = !!on; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
 		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
@@ -13094,6 +13101,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
 		wmOpen: () => openWorldMap(),
 		// v15.9: travel through the destination menu (the hex overview is gone). Returns the same summary v154Go used to.
+		props1510: (kind) => world.props.filter((q) => q.kind === kind).slice(0, 8).map((q) => ({ id: q.id, ...propCenter(q) })),
 		use159: (kind) => { const p = world.props.find((q) => q.kind === kind); if (!p) return null; const c = propCenter(p); player.x = c.x + 60; player.y = c.y + 60; const before = { scrap: player.scrap, hp: player.hp, gas: countOf("gas") }; const r = use159(p); return { r, before, after: { scrap: player.scrap, hp: player.hp, gas: countOf("gas") } }; },
 		skillScores: () => Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])),
 		travelGo: (id, kind = "loc") => { openWorldMap(); const offered = !!dialogue?.choices?.some((c) => c.id === `v159-go-${kind}-${id}`); if (offered) applyChoice(`v159-go-${kind}-${id}`); else close13(); const m = wmState(); return { offered, phase, map: mapId, name: world?.name ?? "", warn: m.warn, safe: player ? safeAt(player.x, player.y)?.id ?? null : null, shacks: world ? world.props.filter((p) => p.kind === "shack").length : 0, hostiles: world ? world.enemies.filter((e) => !e.dead).length : 0, town: !!town }; },

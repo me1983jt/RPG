@@ -28,3 +28,10 @@ For the new terrain rules (no square ground; realistic dirt and paved roads with
 
 ## v15.10.9 (Oct 29)
 Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin walk L/R/turn/crouch-pickup, Goose trot, raccoon walk, Sarah farm sit) with npm run town. No RPG code change.
+
+## v15.10.10 (Oct 29) — main RPG only (no new Quest town pull; towns stay at the v15.10.9 copies)
+- Grok Build art merged (non-Sarah, files that open): v2/bedroll.png drawn beside every campfire (6 ft); v2/weapon-slot.png as the rusty weapon-slot frame.
+  Build files btn-talk, hud-journal and notice-board are corrupt PNGs in Drive; cook-pot/trail-marker/hud-stats look mislabeled — not used.
+- Phone speed: weak phones (<=4 cores or <=3 GB) start at 30 fps and a lower render scale; any phone with no saved cap drops to 30 fps
+  after ~4 s under 40 fps; Low graphics caps weather particles at 35 on weak phones. Pause menu "Performance mode" renamed
+  "Low graphics (phone speed)". How to: tap Pause (bottom name panel) -> "Frame rate cap: 60 fps" to switch to 30; "Low graphics (phone speed)" On.

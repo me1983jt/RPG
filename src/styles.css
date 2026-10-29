@@ -179,3 +179,13 @@
     repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px),
     radial-gradient(circle at 85% 80%, rgba(140, 70, 25, 0.5), transparent 40%),
     linear-gradient(180deg, #5e4630, #3a2a1a) !important; }
+
+/* v15.10.10: Grok Build rusty weapon slot (72x72) behind the weapon name */
+.hud-metal.hud-wslot {
+  background-image: url("/game/v2/weapon-slot.png"),
+    radial-gradient(circle at 85% 80%, rgba(140, 70, 25, 0.55), transparent 40%),
+    linear-gradient(180deg, #5b5a42, #36352a) !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: auto 100%, auto, auto;
+}

@@ -993,7 +993,7 @@ export function RPG() {
                     Talk
                   </span>
                 </ActionButton></div>
-                  <button type="button" data-hud="weapon" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets relative flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-0.5 self-end px-1 text-center short:h-12 short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
+                  <button type="button" data-hud="weapon" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets hud-wslot relative flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-0.5 self-end px-1 text-center short:h-12 short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
                     onPointerDown={() => { weaponHold.current = window.setTimeout(() => { weaponHold.current = -1; apiRef.current?.togglePack(); }, 550); }}
                     onPointerUp={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
                     onPointerLeave={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
@@ -1466,7 +1466,7 @@ export function RPG() {
             Frame rate cap: {hud.fpsCap ?? 60} fps
           </button>
           <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
-            Performance mode: {hud.perfMode ? "On" : "Off"}
+            Low graphics (phone speed): {hud.perfMode ? "On" : "Off"}
           </button>
           <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
             Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
