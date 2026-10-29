@@ -161,5 +161,21 @@
     repeating-linear-gradient(0deg, transparent 0 9px, rgba(0,0,0,0.5) 9px 10px);
 }
 .hud-fill-hp { background: linear-gradient(180deg, #c4543a, #7a2a1a); }
-.hud-fill-ap { background: linear-gradient(180deg, #a8b060, #5e6a2a); }
+.hud-fill-ap { background: linear-gradient(180deg, #5a86b0, #2a4a6a); }
 .hud-stamp { color: #d8c08a; font-weight: 800; letter-spacing: 0.05em; text-shadow: 1px 1px 0 #000; }
+
+/* v15.10.5: rivets on framed panels and buttons, framed minimap */
+.hud-leather, .hud-metal, .hud-frame { position: relative; }
+.hud-leather::before, .hud-metal::before, .hud-frame::before {
+  content: ""; position: absolute; inset: 3px; pointer-events: none;
+  background:
+    radial-gradient(circle at 3px 3px, #b89a6a 0 1.5px, #3a2a18 2px, transparent 2.6px) top left / 50% 50% no-repeat,
+    radial-gradient(circle at calc(100% - 3px) 3px, #b89a6a 0 1.5px, #3a2a18 2px, transparent 2.6px) top right / 50% 50% no-repeat,
+    radial-gradient(circle at 3px calc(100% - 3px), #b89a6a 0 1.5px, #3a2a18 2px, transparent 2.6px) bottom left / 50% 50% no-repeat,
+    radial-gradient(circle at calc(100% - 3px) calc(100% - 3px), #b89a6a 0 1.5px, #3a2a18 2px, transparent 2.6px) bottom right / 50% 50% no-repeat;
+}
+.hud-frame { border: 3px solid #6a4e32 !important; box-shadow: 0 0 0 1px #20160c, inset 0 0 8px #000, 0 2px 4px rgba(0,0,0,0.6); }
+.hud-metal { background-color: #4a3826; background-image:
+    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px),
+    radial-gradient(circle at 85% 80%, rgba(140, 70, 25, 0.5), transparent 40%),
+    linear-gradient(180deg, #5e4630, #3a2a1a) !important; }

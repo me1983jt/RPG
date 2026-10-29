@@ -32,7 +32,7 @@ export default async function ({ page, T, shot }) {
   await click(/Thank you, Sarah/);
   await st("snow done");
   await click("Journal"); await shot("15-journal-done"); await click("Journal");
-  await click("Pack"); await shot("16-pack-cider"); await page.getByRole("button", { name: "Close pack" }).click();
+  await click("Backpack"); await shot("16-pack-cider"); await page.getByRole("button", { name: "Close pack" }).click();
   // Jack Ready
   const jack = await T("npcOf", "cal"); console.log("jack", JSON.stringify(jack));
   await T("setZoom", 1.4);

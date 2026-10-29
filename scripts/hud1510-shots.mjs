@@ -1,8 +1,8 @@
-// v15.10.4: HUD shots: daytime world map with the full HUD (desktop) and phone landscape.
+// v15.10.4/5: HUD shots: daytime world map with the full HUD (desktop) and phone landscape.
 import { chromium } from "playwright";
 const dir = process.argv[2] || "/workspace/maine-rpg/shots/hud";
 const browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
-for (const [name, vw, vh, dsf, mobile] of [["hud-day-desktop", 1280, 800, 1.5, false], ["hud-phone-landscape", 844, 390, 3, true]]) {
+for (const [name, vw, vh, dsf, mobile] of [["hud-v15105-day", 1280, 800, 1.5, false], ["hud-v15105-phone", 844, 390, 3, true]]) {
   const ctx = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: dsf, isMobile: mobile, hasTouch: mobile });
   const page = await ctx.newPage();
   await page.addInitScript(() => { window.__v13Quiet = true; window.__v14Skip = true; });
