@@ -22,11 +22,12 @@ if (c.spot) {
 }
 const o = await page.evaluate(() => window.__controlsTest.v15Open("castle"));
 ok(/\/towns\/castle\//.test(o.town.src || JSON.stringify(o)), "castle opens its own town page");
-await page.waitForTimeout(2500);
-await page.screenshot({ path: `${out}/castle-gate-stub.png` });
+await page.waitForTimeout(6000);
+await page.screenshot({ path: `${out}/castle-town.png` });
 const fr = page.frames().find((f) => /towns\/castle/.test(f.url()));
 ok(!!fr, "castle iframe loaded");
-if (fr) await fr.click("#leave"); await page.waitForTimeout(1200);
+await page.evaluate(() => window.__controlsTest.town143Msg({ type: "leaveTown", exit: "worldmap", state: window.__controlsTest.v15State() })); await page.waitForTimeout(1200);
+ok(!(await page.evaluate(() => window.__controlsTest.v15Open && document.querySelector("iframe[src*='towns/castle']"))), "castle worldmap exit puts you back outside");
 const g = await T("travelGo", "greenville");
 ok(g.map === 7, `travel to Greenville landing (map ${g.map})`);
 await page.waitForTimeout(1500);

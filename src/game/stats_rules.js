@@ -553,7 +553,9 @@
   "repKeys": {
    "harmony": "harmony",
    "pittsfield": "pittsfield",
-   "skowhegan": "skowhegan"
+   "skowhegan": "skowhegan",
+   "greenville": "greenville",
+   "castle": "castle"
   },
   "repKeysDescription": "rep[<key>] used for checks and prices in each town (RPG rep object keys)",
   "scorePerXp": 1,
@@ -621,14 +623,18 @@
    "ponds",
    "harmony",
    "pittsfield",
-   "skowhegan"
+   "skowhegan",
+   "greenville",
+   "castle"
   ],
   "start": 0,
   "hostileAt": -15,
   "townKeys": [
    "harmony",
    "pittsfield",
-   "skowhegan"
+   "skowhegan",
+   "greenville",
+   "castle"
   ]
  },
  "townScoreXp": 1,
