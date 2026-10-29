@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2075;
+const ART_V = 2076;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -46,7 +46,7 @@ import { autoInfo, b64ToBytes, bytesToB64, getSlot, hasSave, restoreAutosave, se
 import { useHud, useModeResult } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt as locAtRaw, locLocked, mooseheadOpen, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
-import { HOLLOWED, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
+import { HOLLOWED, HOLLOW_KINDS, pickHollowKind, hollowName, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
@@ -167,6 +167,7 @@ var IMAGES = [
 	"v2/tracks/wolf-left", "v2/tracks/wolf-right",
 	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
 	"v2/hollowed-walk", "v2/hollowed-walk-atk", "v2/hollowed-walk-dead",
+	"v2/hollowed-bloated-walk", "v2/hollowed-runner-walk", "v2/hollowed-elite-walk", // v15.10.10: Build art pending (optional)
 	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x","garden","smokehouse","raincollector","still"].map((n) => `v14/${n}`),
 	"hero",
 	"hero-axe",
@@ -1007,11 +1008,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** The hero's own front walk frame, dyed like the in-world sprite, scaled up for the pack screen,
 	 * with worn armor overlays from their walk sheets drawn on the same cell (so they line up). */
+	let figureDrew = new Set();
 	function heroFigure() {
 		if (!player) return "";
 		const family = GEAR[player.weaponId]?.family;
 		const plName = plImg("idle") || plImg("walk");
 		const name = plName || (family === "axe" || family === "pry" ? "hero-axe" : family === "pickaxe" ? "hero-pick" : family === "carbine" || family === "revolver" || family === "scatter" ? "hero-gun" : family === "knife" ? "hero-knife" : "hero");
+		figureDrew = new Set();
 		const worn = plName ? [] : EQUIP_SLOTS.map((slot) => player[SLOT_FIELD[slot]]).filter((id) => id && images.get(`overlay-${id}`));
 		const armorLayers = plName ? armorLayerNames(plName.slice(3)) : [];
 		const key = `${name}:${player.hair}:${armorLayers.join(",")}:${JSON.stringify(w13.dye)}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}:${worn.join(",")}`;
@@ -1033,11 +1036,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		g.drawImage(src, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
 		for (const ln of armorLayers) {
 			const ai = images.get(ln);
-			if (ai && ai.width === img.width && ai.height === img.height) g.drawImage(armorSource(ln, ai), col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+			if (ai && ai.width === img.width && ai.height === img.height) { g.drawImage(armorSource(ln, ai), col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4); if (ln.startsWith("overlay-")) figureDrew.add(ln.slice(8)); }
 		}
 		for (const id of worn) {
 			const ov = images.get(`overlay-${id}`);
-			if (ov && ov.width === img.width && ov.height === img.height) g.drawImage(ov, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4);
+			if (ov && ov.width === img.width && ov.height === img.height) { g.drawImage(ov, col * cw, row * ch, cw, ch, 0, 0, cw * 4, ch * 4); figureDrew.add(id); }
 		}
 		figureKey = key;
 		figureUrl = cv.toDataURL("image/png");
@@ -1045,13 +1048,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function invView(p) {
 		const lay = layoutGrid(p);
+		const figure = heroFigure();
 		const slots = {};
 		const overlays = [];
 		for (const slot of EQUIP_SLOTS) {
 			const id = p[SLOT_FIELD[slot]];
 			slots[slot] = id ? invItem(p, id) : null;
 			// the -portrait file only when the item has no walk-sheet overlay (that one is drawn into the figure)
-			if (id && !images.get(`overlay-${id}`) && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png?v=${ART_V}`);
+			if (id && !figureDrew.has(id) && overlayState.get(`${id}-portrait`) === "ok") overlays.push(`/game/overlay/${id}-portrait.png?v=${ART_V}`);
 			if (id) wantOverlay(id);
 		}
 		return {
@@ -1060,7 +1064,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			over: lay.over,
 			items: lay.items.map((it) => invItem(p, it.id, it.x, it.y)).filter(Boolean),
 			slots,
-			figure: heroFigure(),
+			figure,
 			overlays,
 			atk: p.atk,
 			def: p.def
@@ -1102,7 +1106,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	let overlayBase = "hero";
-	function paintOverlays(frame, dir, lunge) {
+	function paintHeroOverlays(frame, dir, lunge) {
 		if (!player) return;
 		overlayBase = heroKey();
 		for (const slot of EQUIP_SLOTS) {
@@ -4468,7 +4472,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		sync(true);
 	}
 	// ---- the Hollowed
-	function spawnHollowed(n, at, spread = 70) {
+	function spawnHollowed(n, at, spread = 70, kind = null) {
 		const out = [];
 		for (let i = 0; i < n; i++) {
 			const a = i / n * Math.PI * 2, r = spread * (.4 + Math.random() * .6);
@@ -4476,7 +4480,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (pointBlocked(world, x, y, RADIUS)) { x = at.x; y = at.y; }
 			spawnRaider("gray", { x, y });
 			const e = world.enemies[world.enemies.length - 1];
-			Object.assign(e, { hollow: true, raid: false, aggro: false, name: HOLLOWED, hp: 18, maxHp: 18, atk: 5, xp: 6, elite: false, variant: "", wander: Math.random() * 6 });
+			const hk = (kind && HOLLOW_KINDS.find((k) => k.id === kind)) || pickHollowKind(Math.random(), (mapId ?? 0) >= 3);
+			Object.assign(e, { hollow: true, hk: hk.id, hspd: hk.speed, raid: false, aggro: false, name: hollowName(hk), hp: hk.hp, maxHp: hk.hp, atk: hk.atk, xp: hk.xp, elite: !!hk.elite, variant: "", wander: Math.random() * 6 });
 			out.push(e);
 		}
 		return out;
@@ -4494,6 +4499,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (e.aggro) { gx = player.x; gy = player.y; sp = 74; }
 			else if (e.heard && clock - e.heard.t < 40) { gx = e.heard.x; gy = e.heard.y; if (Math.hypot(gx - e.x, gy - e.y) < 30) e.heard = null; }
 			else { e.wander -= dt; if (e.wander <= 0) { e.wander = 4 + Math.random() * 5; const a = Math.random() * Math.PI * 2; e.goal = { x: e.homeX + Math.cos(a) * 90, y: e.homeY + Math.sin(a) * 90 }; } if (e.goal) { gx = e.goal.x; gy = e.goal.y; sp = 30; } }
+			sp *= e.hspd || 1;
 			if (e.crippleLeg > 0) sp *= .5;
 			if (gx != null) {
 				if (e.pathT <= 0 || !e.path) { e.path = pathTo(world, e.x, e.y, gx, gy); e.pathT = .7; }
@@ -6859,7 +6865,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const n = `v2/armor/${piece}-${tier}-${act}`;
 			if (images.get(n)) out.push(n);
 			else if (act !== "walk" && images.get(`v2/armor/${piece}-${tier}-walk`) && (act === "idle" || act === "run")) out.push(`v2/armor/${piece}-${tier}-walk`);
+			else { wantOverlay(id); if (images.get(`overlay-${id}`)) out.push(`overlay-${id}`); }
 		}
+		// v15.10.10: the back slot (backpack / pack frame) has no v2/armor piece; its overlay sheet goes on last-but-head
+		const back = player.backId;
+		if (back) { wantOverlay(back); if (images.get(`overlay-${back}`)) out.splice(Math.max(0, out.length - (player.headId && out.some((n) => n.endsWith(player.headId) || n.includes("/head-")) ? 1 : 0)), 0, `overlay-${back}`); }
 		return out;
 	}
 	/** Armor dye: a multiply tint per piece (v13.dye[piece] = hex), cached per layer and colour. */
@@ -6889,11 +6899,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		for (const n of armorDrawn) {
 			const img = images.get(n);
 			if (!img) continue;
-			blitLayer(n, frame, dir, dcx, dcy, lunge);
+			blitLayer(n, frame, dir, dcx, dcy, lunge, act);
 		}
 	}
-	function blitLayer(n, frame, dir, dcx, dcy, lunge) {
-		const body = plImg(act0(n)) || plImg("walk");
+	function blitLayer(n, frame, dir, dcx, dcy, lunge, act = "") {
+		const body = (n.startsWith("overlay-") ? plImg(act) : plImg(act0(n))) || plImg("walk");
 		const bimg = body && images.get(body);
 		const img = images.get(n);
 		if (!bimg || !img || !ctx) return;
@@ -6903,8 +6913,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cols = sheetCols(img), g141 = Math.round(img.height / (img.width / cols * 124 / 88)), rows = g141 === 6 || g141 === 4 ? g141 : 8; img.diag4 = rows === 4;
 		const sw = img.width / cols, sh = img.height / rows;
 		const fcols = sheetCols(bimg);
+		// v15.10.10: a sheet with fewer frames than the body (4-frame overlays on the 14-frame walk) plays the same share of the cycle
+		if (cols !== fcols) frame = Math.min(cols - 1, Math.floor((frame % fcols) / fcols * cols));
 		let frac = bimg.foot ?? .92;
-		if (bimg.feet) { const f = bimg.feet[(dir % 8) * fcols + (frame % fcols)]; if (f) frac = f; }
+		const brows = Math.round(bimg.height / (bimg.width / fcols * 124 / 88)) === 6 ? 6 : 8;
+		if (bimg.feet) { const f = bimg.feet[facingRow(dir, brows) * fcols + (frame % fcols)]; if (f) frac = f; }
 		const dh = HERO_H * heroScale(body) * zoom;
 		const dw = dh * (sw / sh);
 		ctx.drawImage(armorSource(n, img), (frame % cols) * sw, facingRow(dir, rows, !!img.diag4) * sh, sw, sh, foot.sx + lean.x * zoom - dw / 2, foot.sy + lean.y * zoom - dh * frac, dw, dh);
@@ -9583,7 +9596,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v12: gw14 bandit sheets stand in for the legacy raider-* art when present. */
 	function v2Bandit(enemy) {
-		if (enemy.hollow) return images.get("v2/hollowed-walk") ? "v2/hollowed-walk" : "";
+		if (enemy.hollow) { const k = HOLLOW_KINDS.find((q) => q.id === enemy.hk); if (k && k.sheet !== "hollowed" && images.get(`v2/${k.sheet}-walk`)) return `v2/${k.sheet}-walk`; return images.get("v2/hollowed-walk") ? "v2/hollowed-walk" : ""; }
 		if (enemy.kind !== "bandit" && !(enemy.kind == null && enemy.variant)) return "";
 		const v = enemy.variant;
 		let k = "";
@@ -11105,7 +11118,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const f = Math.min(3, Math.floor((1 - swingAnim / .48) * 4));
 					blit(atkName, player.x, player.y, HERO_H, false, f, 0, drawCamX, drawCamY, false);
 				} else blit(heroKey(), player.x, player.y, HERO_H, true, player.frame, player.dir, drawCamX, drawCamY, reach > 0);
-				if (!flinch && !axeSwing && !idle && !HERO69.has(heroKey()) && !(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintOverlays(player.frame, player.dir, reach > 0);
+				if (!flinch && !axeSwing && !idle && !HERO69.has(heroKey()) && !(swingAnim > 0 && !work && (TALL_COMBAT.has(atkName) || facingCam && images.get(atkName)))) paintHeroOverlays(player.frame, player.dir, reach > 0);
 				if (swingAnim > 0 && !work && !axeSwing && !TALL_COMBAT.has(atkName)) paintSwingArc();
 			}, drawCamX, drawCamY); } finally { shadow193 = false; } }
 		});
@@ -13029,7 +13042,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v14Hurt: (id, d) => { const p = world?.props.find((q) => q.id === id); if (p) hurtProp(p, d); },
 		v14Cmd: (cmd, arg) => api.v14(cmd, arg),
 		l141: () => ({ ...l1, rows: gridRows(player), bag: player.bag.map((s) => ({ ...s })), small: !!player.small, bagLv: player.bagLv ?? 0, xf: xfStats.n, hard: !!w13.hard, mapId, phase, x: player.x, y: player.y, piles: piles.map((p) => ({ title: p.title, n: p.items.reduce((a, b) => a + b.qty, 0), x: p.x, y: p.y })) }),
-		l141Hollow: (n, dx, dy) => spawnHollowed(n, { x: player.x + dx, y: player.y + dy }).map((e) => e.id),
+		l141Hollow: (n, dx, dy, kind) => spawnHollowed(n, { x: player.x + dx, y: player.y + dy }, 70, kind || null).map((e) => e.id),
 		l141Enemies: () => world.enemies.filter((e) => !e.dead).map((e) => ({ id: e.id, hollow: !!e.hollow, x: e.x, y: e.y, aggro: !!e.aggro, heard: !!e.heard, name: e.name, hp: e.hp, kind: e.kind, d: Math.hypot(e.x - player.x, e.y - player.y) })),
 		l141Noise: (n, dx = 0, dy = 0) => emitNoise(n, player.x + dx, player.y + dy),
 		l141Loot: (id) => { const r = LOOT_RUNS.find((x) => x.id === id); openWorldMap(); close13(); const m = wmState(); m.q = r.q; m.r = r.r; m.path = []; m.from = [r.q - 1, r.r]; lootEnter(r); return piles.filter((p) => p.title.startsWith(r.name)).map((p) => ({ title: p.title, items: p.items.map((i) => ({ ...i })), d: Math.round(Math.hypot(p.x - player.x, p.y - player.y)) })); },
@@ -13101,6 +13114,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wm: () => ({ phase, mapId, name: world?.name, map: v14.map, clock }),
 		wmOpen: () => openWorldMap(),
 		// v15.9: travel through the destination menu (the hex overview is gone). Returns the same summary v154Go used to.
+		wear1510: (fields, dir) => { Object.assign(player, fields); if (dir != null) { player.dir = dir; player.idleAnim = player.anim; } figureKey = ""; sync(true); return armorLayerNames("walk"); },
 		props1510: (kind) => world.props.filter((q) => q.kind === kind).slice(0, 8).map((q) => ({ id: q.id, ...propCenter(q) })),
 		use159: (kind) => { const p = world.props.find((q) => q.kind === kind); if (!p) return null; const c = propCenter(p); player.x = c.x + 60; player.y = c.y + 60; const before = { scrap: player.scrap, hp: player.hp, gas: countOf("gas") }; const r = use159(p); return { r, before, after: { scrap: player.scrap, hp: player.hp, gas: countOf("gas") } }; },
 		skillScores: () => Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])),

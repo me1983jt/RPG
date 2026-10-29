@@ -4,6 +4,24 @@ import type { BagStack } from "./gear";
 /** The horde's name lives here and nowhere else. Change it once and every line in the game follows. */
 export const HOLLOWED = "Hollowed";
 
+/** v15.10.10: kinds of the Hollowed (starved, sick backwoods folk; never called zombies in the UI).
+ *  name is shown as "<name> <HOLLOWED>" except for the plain walker. sheet = optional public/game/v2/<sheet>-walk.png
+ *  (Grok Build art pending); until it lands every kind draws with v2/hollowed-walk. */
+export interface HollowKind { id: string; name: string; hp: number; atk: number; xp: number; speed: number; weight: number; sheet: string; elite?: boolean }
+export const HOLLOW_KINDS: HollowKind[] = [
+  { id: "walker", name: "", hp: 18, atk: 5, xp: 6, speed: 1, weight: 70, sheet: "hollowed" },
+  { id: "bloated", name: "Bloated", hp: 34, atk: 7, xp: 9, speed: .7, weight: 15, sheet: "hollowed-bloated" },
+  { id: "runner", name: "Gaunt", hp: 12, atk: 4, xp: 8, speed: 1.8, weight: 12, sheet: "hollowed-runner" },
+  { id: "elite", name: "Old", hp: 60, atk: 10, xp: 25, speed: 1.15, weight: 3, sheet: "hollowed-elite", elite: true },
+];
+export function pickHollowKind(r: number, allowElite = true): HollowKind {
+  const ks = HOLLOW_KINDS.filter((k) => allowElite || !k.elite);
+  let t = r * ks.reduce((a, k) => a + k.weight, 0);
+  for (const k of ks) { t -= k.weight; if (t <= 0) return k; }
+  return ks[0];
+}
+export const hollowName = (k: HollowKind) => (k.name ? `${k.name} ${HOLLOWED}` : HOLLOWED);
+
 export interface LootRun { id: string; name: string; q: number; r: number; days: number; blurb: string;
   /** loot by depth: [near the road, partway in, the back room] */
   tiers: [string, number][][] }

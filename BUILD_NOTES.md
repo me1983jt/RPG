@@ -35,3 +35,13 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 - Phone speed: weak phones (<=4 cores or <=3 GB) start at 30 fps and a lower render scale; any phone with no saved cap drops to 30 fps
   after ~4 s under 40 fps; Low graphics caps weather particles at 35 on weak phones. Pause menu "Performance mode" renamed
   "Low graphics (phone speed)". How to: tap Pause (bottom name panel) -> "Frame rate cap: 60 fps" to switch to 30; "Low graphics (phone speed)" On.
+
+## v15.10.11 (Oct 29) — armor shows on Justin, the Hollowed kinds
+- Paper doll fix: the in-world hero is drawn from the v2 player sheets, but armor only looked for v2/armor/* layers
+  (none exist), so overlay/<item>.png was never drawn. Now each worn piece (and the back slot) falls back to its
+  overlay sheet, on the body's facing, with the frame mapped to the same share of the cycle and the body's foot line.
+  A second function named paintOverlays (prop windows) was shadowing the old hero overlay painter; renamed.
+  Pack-screen portraits now show for every worn piece the figure did not draw. ART_V 2076.
+- The Hollowed: name still in src/game/v141.ts HOLLOWED (one spot). New HOLLOW_KINDS there: walker, Bloated (slow, tough),
+  Gaunt runner (fast, frail), Old (elite, maps 3+). Optional sheets v2/hollowed-{bloated,runner,elite}-walk.png are
+  picked up when Build delivers them; until then all use v2/hollowed-walk.
