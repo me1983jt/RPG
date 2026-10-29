@@ -4976,6 +4976,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	// ======== v14.3 town layer: a separate town game in a full-screen iframe (see town.ts / TOWN_PROTOCOL.md) ========
 	let town = null, townN = 0;
 	var CAMPS13_AT = [["camp0", 50, 30], ["camp1", 30, 70], ["camp2", 30, 30]];
+	/** v15.10.6: Goose is laid up at the farm (v3.dog.down set when he went down) */
+	function gooseDown() { return !!(v3?.dog && v3.dog.down >= 0); }
 	function townSrc(id) {
 		const o = typeof window !== "undefined" && window.__townSrc;
 		const app = townApp(id), ent = townEntry(id), q = app !== ent ? `?town=${ent}` : "";
@@ -5415,8 +5417,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ id: "cyndal", name: "Cyndal", withYou: !!escortBodies?.length },
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
-			]),
-			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
+			]).map((x) => x.id === "goose" ? { ...x, withYou: !!x.withYou && !gooseDown(), laidUp: gooseDown(), ...(gooseDown() ? { where: "farm" } : {}) } : x), // v15.10.6: Goose laid up at the farm (handoff fields only)
+			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.gooseLaidUp": gooseDown(), "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			// v15.9: agility/grit live in w13.core; a real 0 stays 0
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => { const v = Number(k === "agility" || k === "grit" ? w13.core?.[k] : p?.[k]); return [k, Number.isFinite(v) ? v : 1]; })),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
@@ -9611,7 +9613,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (enemy.kind === "moose") return "moose";
 		if (enemy.kind === "rabbit") return "rabbit";
 		if (enemy.kind === "squirrel") return "squirrel";
-		if (enemy.kind === "raccoon") return "v2/raccoon-wild-walk";
+		if (enemy.kind === "raccoon") { // v15.10.6: wild raccoons stand on their idle sheet when they stop
+			const now = performance.now();
+			if (enemy._px !== enemy.x || enemy._py !== enemy.y) { enemy._px = enemy.x; enemy._py = enemy.y; enemy._mvT = now; }
+			return now - (enemy._mvT ?? 0) < 300 || !images.get("v2/raccoon-wild-idle") ? "v2/raccoon-wild-walk" : "v2/raccoon-wild-idle";
+		}
 		if (enemy.kind === "turtle") return "v2/turtle-walk";
 		return enemy.id % 3 === 1 ? "raider-gray" : enemy.id % 3 === 2 ? "raider-blue" : "raider";
 	}

@@ -115,6 +115,8 @@ function Stick141({ onMove }: { onMove: (x: number, y: number) => void }) {
 export function RPG() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
+  const weaponHold = useRef(0); // v15.10.6: weapon slot hold timer (-1 = the hold opened the Backpack)
+  const weaponTap = useRef(0); // last weapon-slot tap time, for double-tap = Backpack
   const apiRef = useRef<GameApi | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef(0);
@@ -991,7 +993,11 @@ export function RPG() {
                     Talk
                   </span>
                 </ActionButton></div>
-                  <button type="button" data-hud="weapon" aria-label={`Attack with ${hud.weaponName || "Empty hands"}`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets relative flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-0.5 self-end px-1 text-center short:h-12 short:w-20" onClick={() => apiRef.current?.tap("attack")}>
+                  <button type="button" data-hud="weapon" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets relative flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-0.5 self-end px-1 text-center short:h-12 short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={() => { weaponHold.current = window.setTimeout(() => { weaponHold.current = -1; apiRef.current?.togglePack(); }, 550); }}
+                    onPointerUp={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
+                    onPointerLeave={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
+                    onClick={() => { if (weaponHold.current === -1) { weaponHold.current = 0; return; } const now = Date.now(); if (now - weaponTap.current < 320) { weaponTap.current = 0; apiRef.current?.togglePack(); return; } weaponTap.current = now; apiRef.current?.tap("attack"); }}>
                     <span className="flex items-center gap-1"><Axe className="size-6 text-[#cfc6b0] drop-shadow short:size-5" aria-hidden /><Crosshair className="size-5 text-[#e0a040] short:size-4" aria-hidden /></span>
                     <span className="line-clamp-1 text-[10px] font-semibold leading-tight text-fg">{hud.weaponName || "Empty hands"}</span>
                   </button>
