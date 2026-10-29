@@ -113,6 +113,18 @@ function Stick141({ onMove }: { onMove: (x: number, y: number) => void }) {
 }
 
 export function RPG() {
+  // v15.10.13: phones/tablets go true full screen + landscape lock on the first touch (browsers need a gesture; the APK is already immersive)
+  useEffect(() => {
+    if (typeof window === "undefined" || !matchMedia("(pointer: coarse)").matches) return;
+    const go = () => {
+      const d = document as Document & { webkitFullscreenElement?: Element };
+      const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+      try { if (!document.fullscreenElement && !d.webkitFullscreenElement) (el.requestFullscreen ? el.requestFullscreen({ navigationUI: "hide" }).catch(() => {}) : el.webkitRequestFullscreen?.()); } catch { /* not allowed */ }
+      try { (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.("landscape")?.catch(() => {}); } catch { /* not supported */ }
+    };
+    window.addEventListener("pointerup", go);
+    return () => window.removeEventListener("pointerup", go);
+  }, []);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
   const weaponHold = useRef(0); // v15.10.6: weapon slot hold timer (-1 = the hold opened the Backpack)
@@ -329,6 +341,12 @@ export function RPG() {
 
   return (
     <div className="fixed inset-0 h-dvh w-full overflow-hidden bg-bg text-fg touch-none">
+      {/* v15.10.13: landscape-only standard (game and town iframes). Phones in portrait get a rotate prompt; the APK is locked to sensorLandscape. */}
+      <div className="rotate-lock" data-testid="rotate-lock" role="alert" onPointerDown={() => { try { (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.("landscape")?.catch(() => {}); } catch { /* not supported */ } }}>
+        <div className="rotate-lock-phone" aria-hidden />
+        <p className="font-display text-2xl">Turn your phone sideways</p>
+        <p className="text-sm opacity-80">Maine RPG plays in landscape only.</p>
+      </div>
       <svg width="0" height="0" className="absolute" aria-hidden>
         <filter id="rough-edge" x="-4%" y="-4%" width="108%" height="108%">
           <feTurbulence type="turbulence" baseFrequency="0.55" numOctaves="2" seed="4" result="n" />
@@ -1571,7 +1589,7 @@ function TownLayer({ town, api }: { town: { id: string; src: string; n: number }
   }, [api]);
   return (
     <div data-testid="town-layer" className="absolute inset-0 z-[70] bg-black">
-      <iframe ref={frame} data-testid="town-frame" title={`Town: ${town.id}`} src={town.src} className="block h-full w-full border-0" />
+      <iframe ref={frame} data-testid="town-frame" title={`Town: ${town.id}`} src={town.src} allow="fullscreen" className="block h-full w-full border-0" />
     </div>
   );
 }

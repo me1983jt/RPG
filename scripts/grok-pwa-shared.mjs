@@ -166,7 +166,9 @@ export function renderWebManifest(hostHeader) {
       id: "/",
       start_url: "/",
       scope: "/",
-      display: "standalone",
+      display: "fullscreen",
+      display_override: ["fullscreen", "standalone"],
+      orientation: "landscape",
       background_color: "#000000",
       theme_color: "#000000",
       icons: [

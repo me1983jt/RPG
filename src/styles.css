@@ -189,3 +189,19 @@
   background-position: center;
   background-size: auto 100%, auto, auto;
 }
+
+/* v15.10.13: landscape only. Touch devices held in portrait see a rotate prompt over everything (towns included). */
+.rotate-lock { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-lock { display: flex; position: fixed; inset: 0; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px;
+    background: radial-gradient(circle at 50% 40%, #3a3526, #15130d); color: #e8dcc0; }
+  .rotate-lock-phone { width: 46px; height: 80px; border: 4px solid #a88a4a; border-radius: 8px; animation: rotate-lock-turn 2.2s ease-in-out infinite; }
+}
+@keyframes rotate-lock-turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+
+/* v15.10.13: very short landscape phones (<= 400 px tall, e.g. 740x360): shrink the HUD so it all fits the screen */
+@media (orientation: landscape) and (max-height: 400px) {
+  [data-hud="health"], [data-hud="health-min"] { zoom: 0.8; }
+  [data-hud="quest"], [data-hud="quest-min"] { zoom: 0.72; }
+  [data-hud="menu"], [data-hud="zoom"] { zoom: 0.82; }
+}

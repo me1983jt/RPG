@@ -58,3 +58,10 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   on phones, 8 on desktop); the pack-screen hero uses ART_V.
 - Armor overlays: only chest and head use the old overlay sheets; they are scaled to the body's figure height and
   stood on its foot line (fits the v2 Justin body). Legs/feet/hands wait for Build's redraw.
+
+## v15.10.14 (Oct 29) — landscape only, full screen
+- Landscape is a hard standard: APK locked to sensorLandscape (apk-kit/patch_android.py); PWA manifest orientation
+  landscape + display fullscreen; touch devices held in portrait get a "Turn your phone sideways" cover over the game
+  and any town iframe; first touch requests full screen + landscape lock in browsers. Town iframe allows fullscreen.
+- Very short landscape phones (<= 400 px tall) shrink the HUD so nothing falls off the bottom (checked 740x360, 915x412, 1280x800).
+- Quest note: towns are covered by the main shell's lock; their own pages should also assume landscape in their next pass.
