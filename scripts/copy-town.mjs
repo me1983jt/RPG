@@ -10,8 +10,10 @@ const towns = [
   { id: "harmony", src: process.env.TOWN_HARMONY_SRC || "/workspace/quest-harmony" },
   { id: "pittsfield", src: process.env.TOWN_PITTSFIELD_SRC || "/workspace/quest-pittsfield" },
   { id: "skowhegan", src: process.env.TOWN_SKOWHEGAN_SRC || "/workspace/quest-skowhegan" },
-  // v15.9.9: Greenville town game copied in as-is (not hooked to the world map yet)
+  // v15.9.9: Greenville town game copied in as-is (v15.10.6: on the world map at the Greenville landing)
   { id: "greenville", src: process.env.TOWN_GREENVILLE_SRC || "/workspace/quest-greenville" },
+  // v15.10.6: the castle (Dixville Notch). Quest RPG has not built it yet, so towns-stub/castle.html (closed gates) stands in
+  { id: "castle", src: process.env.TOWN_CASTLE_SRC || "/workspace/quest-castle" },
 ].map((t) => ({ ...t, stub: stubOf(t.id) }));
 for (const t of towns) {
   const out = join(root, "public/towns", t.id);

@@ -5001,6 +5001,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		{ id: "sk-hospital", name: "Redington hospital", map: 2, at: [Q11_SITES.skowHospital.tx, Q11_SITES.skowHospital.ty + 3], app: "skowhegan", entry: "hospital", sub: true },
 		{ id: "sk-mill", name: "Woolen mill floor", map: 2, at: [Q11_SITES.skowMill.tx, Q11_SITES.skowMill.ty + 3], app: "skowhegan", entry: "mill", sub: true },
 		{ id: "sk-marcel", name: "Marcel's store", map: 2, at: [62, 64], app: "skowhegan", entry: "marcelstore", sub: true },
+		// v15.10.6: Greenville (Quest RPG town game) at the Greenville landing; map 7 only opens with Moosehead
+		{ id: "greenville", name: "Greenville · Moosehead Lake", map: 7, app: "greenville", entry: "greenville", lock: "moosehead" },
+		// v15.10.6: the castle at Dixville Notch on the far NW of the 3x home map (CASTLE_SPOT, runtime tiles); opens with Moosehead (Justin, Oct 25)
+		{ id: "castle", name: "The Castle · Dixville Notch", map: 0, at: [CASTLE_SPOT.tx - WORLD_OX, CASTLE_SPOT.ty - WORLD_OY], app: "castle", entry: "castle", lock: "moosehead" },
 	];
 	const townDef = (id) => ISO_TOWNS.find((t) => t.id === id);
 	const townApp = (id) => { const t = townDef(id); return t ? t.app ?? "harmony" : id; };
@@ -5187,7 +5191,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (h) { const a = Math.atan2(e.homeY - h.y, e.homeX - h.x) || 1; e.homeX = h.x + Math.cos(a) * (h.r + 60); e.homeY = h.y + Math.sin(a) * (h.r + 60); }
 		if (player && safeAt(player.x, player.y)) e.aggro = false;
 	}
-	function townOpen(t) { const a = w13.main?.act ?? 1; return (!t.act || a >= t.act || !!w13.seen?.[t.id]) && (!t.upto || a <= t.upto || !!w13.seen?.[t.id]); }
+	function townOpen(t) { const a = w13.main?.act ?? 1; if (t.lock === "moosehead" && !mooseheadOpen(l1.tf)) return false; return (!t.act || a >= t.act || !!w13.seen?.[t.id]) && (!t.upto || a <= t.upto || !!w13.seen?.[t.id]); }
 	function townTick() {
 		if (!player || inside || town || phase !== "play") return;
 		for (const t of ISO_TOWNS) {
@@ -5293,7 +5297,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 	}
 	const townFade = new Map();
-	const TOWN_ICON159 = { harmony: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville" };
+	const TOWN_ICON159 = { harmony: "harmony", pittsfield: "pittsfield", skowhegan: "skowhegan", skow: "skowhegan", greenville: "greenville", castle: "greenville" };
 	/** v15.9.7: lone buildings out in the world (a shack or a ruin with no town around it) are lootable: walk in and
 	 * open the chest. Nearby ones that still hold something get a small "Loot" tag, like the approved HUD mockup. */
 	function loneBuilding(p) {
@@ -5550,7 +5554,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		refreshGear(p);
 	}
 	/** v15.3 fast travel: ride time in hours from any town to the named one. */
-	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5, skow: 2.5 }; // v15.7: 'skow' (the bridge entry) rides to Skowhegan
+	const FT15_HOURS = { harmony: 1.5, pittsfield: 2, skowhegan: 2.5, skow: 2.5, greenville: 5, castle: 7 }; // v15.7: 'skow' (the bridge entry) rides to Skowhegan
 	const FT15_ALIAS = { skow: "skowhegan" };
 	function fastTravel15(ft) {
 		const from = townDef(town?.id ?? "")?.name ?? "town";
