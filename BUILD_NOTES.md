@@ -49,3 +49,12 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 ## v15.10.12 (Oct 29)
 - APK smoke test fix: the not-yet-drawn Hollowed kind sheets are no longer preloaded (404s). When Build delivers
   v2/hollowed-{bloated,runner,elite}-walk.png, add them to the sprite list in engine.ts (comment marks the spot).
+
+## v15.10.13 (Oct 29) — phone startup crash fix
+- Cause (most likely; no JS errors in desktop/phone-emulated runs): memory/GPU pressure right after the menu opens.
+  All ~600 sheets (~680 MB decoded) were decoded and soft-edged at once, every sprite stayed in a CPU-backed
+  willReadFrequently canvas (re-uploaded to the GPU on every draw), and hero.png loaded twice (?v=2072 and ?v=ART_V).
+  Fix: sprites are copied into plain GPU canvases and the work canvas freed; image loading is bounded (3 at a time
+  on phones, 8 on desktop); the pack-screen hero uses ART_V.
+- Armor overlays: only chest and head use the old overlay sheets; they are scaled to the body's figure height and
+  stood on its foot line (fits the v2 Justin body). Legs/feet/hands wait for Build's redraw.

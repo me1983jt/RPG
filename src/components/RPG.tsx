@@ -42,12 +42,12 @@ function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { l
       });
     void (async () => {
       try {
-        const hero = await load("/game/hero.png?v=2072");
+        const hero = await load("/game/hero.png?v=2076");
         const ids = [trousers ? "trousers" : "", boots ? "boots" : "", coat, hat].filter(Boolean);
         const parts: HTMLImageElement[] = [];
         for (const id of ids) {
           try {
-            parts.push(await load(`/game/overlay/${id}.png?v=2072`));
+            parts.push(await load(`/game/overlay/${id}.png?v=2076`));
           } catch {
             /* missing sheet stays off the preview */
           }

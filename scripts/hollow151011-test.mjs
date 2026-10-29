@@ -11,7 +11,8 @@ await page.getByRole("button", { name: /Hunter/ }).click(); await page.getByRole
 for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "+" }).nth(4).click();
 await page.getByRole("button", { name: "Next" }).click(); await page.getByRole("button", { name: /Keen eye/ }).click();
 await page.getByRole("button", { name: /Begin as/ }).click(); await page.waitForTimeout(3000);
-for (const k of ["walker", "bloated", "runner", "elite"]) await page.evaluate((k) => window.__controlsTest.l141Hollow(1, 400, 0, k), k);
-await page.waitForTimeout(2000);
+for (const k of ["walker", "bloated", "runner", "elite"]) await page.evaluate((k) => window.__controlsTest.l141Hollow(1, ({walker:-260,bloated:-90,runner:90,elite:260})[k], 120, k), k);
+await page.evaluate(() => { const c = window.__controlsTest; c.choose?.("close"); c.setHour(12); c.setZoom(2.2); }); await page.waitForTimeout(1200);
+await page.screenshot({ path: "/workspace/maine-rpg/shots/v151010/hollowed-kinds.png" });
 console.log(JSON.stringify(await page.evaluate(() => window.__controlsTest.l141Enemies().filter((e) => e.hollow).map((e) => [e.name, e.hp]))), errs.slice(0, 3));
 await b.close();

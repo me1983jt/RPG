@@ -6865,7 +6865,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const n = `v2/armor/${piece}-${tier}-${act}`;
 			if (images.get(n)) out.push(n);
 			else if (act !== "walk" && images.get(`v2/armor/${piece}-${tier}-walk`) && (act === "idle" || act === "run")) out.push(`v2/armor/${piece}-${tier}-walk`);
-			else { wantOverlay(id); if (images.get(`overlay-${id}`)) out.push(`overlay-${id}`); }
+			// old 4-frame overlays only for chest and head: legs/feet/hands were drawn for the old walk and fight the v2 stride
+			else if (piece === "chest" || piece === "head") { wantOverlay(id); if (images.get(`overlay-${id}`)) out.push(`overlay-${id}`); }
 		}
 		// v15.10.10: the back slot (backpack / pack frame) has no v2/armor piece; its overlay sheet goes on last-but-head
 		const back = player.backId;
@@ -6918,9 +6919,32 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let frac = bimg.foot ?? .92;
 		const brows = Math.round(bimg.height / (bimg.width / fcols * 124 / 88)) === 6 ? 6 : 8;
 		if (bimg.feet) { const f = bimg.feet[facingRow(dir, brows) * fcols + (frame % fcols)]; if (f) frac = f; }
-		const dh = HERO_H * heroScale(body) * zoom;
+		let dh = HERO_H * heroScale(body) * zoom;
+		if (n.startsWith("overlay-")) {
+			// v15.10.12: the old overlay sheets were drawn on a figure that fills ~80% of its cell (head .14, feet .94);
+			// scale them to the body's own figure height and stand their feet on the body's foot line
+			const fig = figSpan(bimg);
+			dh *= fig / .8;
+			frac = .94;
+		}
 		const dw = dh * (sw / sh);
 		ctx.drawImage(armorSource(n, img), (frame % cols) * sw, facingRow(dir, rows, !!img.diag4) * sh, sw, sh, foot.sx + lean.x * zoom - dw / 2, foot.sy + lean.y * zoom - dh * frac, dw, dh);
+	}
+	/** Share of a body cell's height the figure fills (head top to foot), measured once from the first cell. */
+	function figSpan(bimg) {
+		if (bimg.figSpan) return bimg.figSpan;
+		let span = .8;
+		try {
+			const cols = sheetCols(bimg), cw = Math.floor(bimg.width / cols), rows = Math.max(1, Math.round(bimg.height / (cw * 124 / 88))), ch = Math.floor(bimg.height / rows);
+			const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+			const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(bimg, 0, 0, cw, ch, 0, 0, cw, ch);
+			const d = g.getImageData(0, 0, cw, ch).data; let top = -1, bot = -1;
+			for (let y = 0; y < ch && top < 0; y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 40) { top = y; break; }
+			for (let y = ch - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 40) { bot = y; break; }
+			if (top >= 0 && bot > top) span = (bot - top + 1) / ch;
+		} catch { /* keep default */ }
+		bimg.figSpan = span;
+		return span;
 	}
 	function act0(n) {
 		return n.split("-").slice(2).join("-");
@@ -13653,6 +13677,19 @@ function measurePose(img, sheet, sheetRows = 4) {
 	return { foot: frac || .92, feet, footX };
 }
 function softenSprite(img, radius, protectRows = 0) {
+	return gpuCopy(softenSprite0(img, radius, protectRows));
+}
+/** v15.10.12 phone crash/speed fix: hand the renderer a plain (GPU-backed) canvas and free the CPU work canvas. */
+function gpuCopy(c) {
+	const out = document.createElement("canvas");
+	out.width = c.width; out.height = c.height;
+	const g = out.getContext("2d");
+	if (!g) return c;
+	g.drawImage(c, 0, 0);
+	c.width = 0; c.height = 0;
+	return out;
+}
+function softenSprite0(img, radius, protectRows = 0) {
 	const canvas = document.createElement("canvas");
 	canvas.width = img.width;
 	canvas.height = img.height;
@@ -13762,8 +13799,14 @@ async function loadImages(images) {
 }
 const LAZY_SHEET = /^boss-|-(atk|dead|death|gun-atk|axe|down|hit|crouch|carry|talk)$/;
 const LAZY_STATE = { pending: -1, done: Promise.resolve() };
+const PHONE_LOAD = typeof navigator !== "undefined" && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 function loadSet(images, list) {
-	return Promise.all(list.map((name) => new Promise((resolve) => {
+	const queue = list.slice();
+	const workers = Array.from({ length: Math.min(queue.length, PHONE_LOAD ? 3 : 8) }, async () => { while (queue.length) await loadOne(images, queue.shift()); });
+	return Promise.all(workers).then(() => void 0);
+}
+function loadOne(images, name) {
+	return new Promise((resolve) => {
 		const img = new Image();
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
@@ -13789,5 +13832,5 @@ function loadSet(images, list) {
 		};
 		img.onerror = () => resolve();
 		img.src = `/game/${ART_ALIAS[name] ?? name}.png?v=${ART_V}`;
-	}))).then(() => void 0);
+	});
 }
