@@ -205,3 +205,26 @@
   [data-hud="quest"], [data-hud="quest-min"] { zoom: 0.72; }
   [data-hud="menu"], [data-hud="zoom"] { zoom: 0.82; }
 }
+
+/* v15.11.0: Fallout-style bottom interface bar, code-drawn placeholders (worn olive metal, browns) until Grok Build art lands */
+.fobar {
+  border: 3px solid #2a2418; border-top-color: #6b6448;
+  background-color: #4a4834;
+  background-image:
+    repeating-linear-gradient(95deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 6px),
+    radial-gradient(circle at 12% 70%, rgba(130,70,25,0.45), transparent 30%),
+    radial-gradient(circle at 78% 20%, rgba(110,60,20,0.35), transparent 25%),
+    linear-gradient(180deg, #5c5a40, #3a3828 60%, #2c2a1e);
+  box-shadow: inset 0 1px 0 rgba(255,240,200,0.2), inset 0 -2px 0 rgba(0,0,0,0.5), 0 -2px 6px rgba(0,0,0,0.55);
+}
+.fobar-screen { background: #0f130b; border: 2px solid #1c1a12; box-shadow: inset 0 0 8px #000, 0 0 0 1px #6b6448; color: #9fd080; font-family: ui-monospace, monospace; text-shadow: 0 0 3px rgba(120,200,90,0.5); }
+.fobar-plate { background: linear-gradient(180deg, #3e3020, #2a2016); border: 2px solid #1c150c; box-shadow: inset 0 1px 0 rgba(255,220,160,0.15), 0 0 0 1px #6a5434; color: #e8dcc0; }
+.fobar-digits { color: #f0c860; text-shadow: 0 0 4px rgba(240,180,60,0.6); font-family: ui-monospace, monospace; }
+.fobar-slot { border: 2px solid #1c150c; }
+.fobar-btn { background: linear-gradient(180deg, #6a5a3c, #43381f); border: 2px solid #1c150c; box-shadow: inset 1px 1px 0 rgba(255,230,180,0.25), inset -1px -1px 0 rgba(0,0,0,0.5); color: #ecdcb8; }
+.fobar-btn:active, .fobar-btn.on { background: linear-gradient(180deg, #3a3020, #5a4a2c); color: #f4d070; box-shadow: inset 2px 2px 3px rgba(0,0,0,0.6); }
+.fobar-red { background: linear-gradient(180deg, #8a3a22, #5a2214); color: #f4e0c0; }
+.fobar-light { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2a2a18; border: 1px solid #12100a; box-shadow: inset 0 1px 1px rgba(0,0,0,0.7); }
+.fobar-light.on { background: radial-gradient(circle at 35% 35%, #f8f0a0, #b8d040 45%, #5a7a10); box-shadow: 0 0 4px rgba(200,230,80,0.8); }
+@media (orientation: landscape) and (max-height: 400px) { [data-fobar="1"] { zoom: 1; } }
+@media (orientation: landscape) and (max-height: 400px) { [data-fobar="1"] [data-hud="menu"] { zoom: 1; } }

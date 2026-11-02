@@ -493,6 +493,9 @@ export interface HudSnapshot {
   pack: PackSlot[];
   inv: InvView | null;
   weaponName: string;
+  weaponBName?: string;
+  weaponGun?: boolean;
+  weaponBGun?: boolean;
   coatName: string;
   headName: string;
   legsName: string;

@@ -18,6 +18,9 @@ import {
   Map as MapIcon,
   Repeat,
   Crosshair,
+  ArrowLeftRight,
+  Settings,
+  Footprints,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
@@ -529,7 +532,7 @@ export function RPG() {
                 Ride
               </button>
             ) : null}
-            {hud.log.length > 0 && !journalOpen && !mapOpen && !hud.buildOpen ? (
+            {hud.log.length > 0 && !journalOpen && !mapOpen && !hud.buildOpen && (hc.health || hud.statsOpen || hud.dialogue) ? (
               // On short (phone landscape) screens the hero stands mid-screen right above this list, so show
               // only the two newest lines, smaller, at the left edge instead of centred over the hero.
               <ul
@@ -963,12 +966,11 @@ export function RPG() {
 
               {hud.v141 ? (
                 <>
-                  <button type="button" data-v141="crouch" aria-pressed={hud.v141.crouch} style={{ touchAction: "manipulation" }} className={`min-h-10 min-w-12 plank border px-2 text-xs font-semibold ${hud.v141.crouch ? "border-primary bg-primary text-bg" : "border-border bg-surface"}`} onClick={() => apiRef.current?.v141("crouch")}>{hud.v141.crouch ? "Crouched" : "Crouch"}</button>
                   {/* v15.10.4: Auto lives in the bottom action bar */}
                   {/* v15.10.5: Noise is a tall bar beside HP and AP */}
                 </>
               ) : null}
-{tb?.on ? <Tb15Bar tb={tb} api={apiRef} /> : null}
+{tb?.on ? <Tb15Order tb={tb} /> : null}
             </div>
 
             <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
@@ -986,66 +988,61 @@ export function RPG() {
                     <MinBtn k="health" label="health panel" />
                   </section>
                 ) : (
-                <section data-hud="health" className="pointer-events-auto flex min-w-0 flex-1 items-end gap-1.5 self-end">
-                  <div data-hud="bars" className="hud-leather flex shrink-0 items-end gap-1 px-1.5 pb-1 pt-1.5">
-                    {([["HP", "Health", hud.hp, hud.maxHp, "hud-fill-hp"], ["AP", "Action points", hud.turnBased ? hud.ap : hud.stamina, hud.turnBased ? hud.maxAp : hud.maxStamina, "hud-fill-ap"]] as const).map(([t, l, v, m, c]) => (
-                      <div key={t} className="flex flex-col items-center gap-0.5">
-                        <div role="meter" aria-label={l} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={m} title={`${l} ${Math.ceil(v)}/${m}`} className="hud-tube relative h-24 w-5 overflow-hidden short:h-[clamp(3.5rem,26vh,6rem)] short:w-4">
-                          <div className={`absolute inset-x-0 bottom-0 ${c}`} style={{ height: `${Math.max(0, Math.min(100, (v / Math.max(1, m)) * 100))}%` }} />
-                        </div>
-                        <span className="hud-stamp text-[10px] leading-none">{t}</span>
-                      </div>
-                    ))}
-                    {hud.v141 ? (
-                      <div className="flex flex-col items-center gap-0.5">
-                        <div data-v141="noise" role="meter" aria-label="Noise" aria-valuenow={hud.v141.noise} aria-valuemin={0} aria-valuemax={100} className="hud-tube relative h-24 w-5 overflow-hidden short:h-[clamp(3.5rem,26vh,6rem)] short:w-4">
-                          <div className="absolute inset-x-0 bottom-0" style={{ height: `${hud.v141.noise}%`, background: hud.v141.noise > 70 ? "#b4482e" : hud.v141.noise > 25 ? "#c49a40" : "#8a8a5a" }} />
-                        </div>
-                        <span className="hud-stamp text-[10px] leading-none">Noise</span>
-                      </div>
-                    ) : null}
+                <section data-hud="health" data-fobar="1" className="fobar pointer-events-auto flex min-w-0 flex-1 items-stretch gap-1 self-end p-1">
+                  {/* v15.11.0: one Fallout-style bottom interface bar: log, HP/AP, two weapon slots, buttons */}
+                  <div data-fobar="log" className="fobar-screen min-w-0 flex-1 overflow-hidden px-1.5 py-1 text-[11px] leading-tight">
+                    {(hud.log.slice(-3)).map((line, i) => <p key={hud.logIds?.[Math.max(0, hud.log.length - 3) + i] ?? `${line}-${i}`} className="truncate">{"\u203a "}{line}</p>)}
+                    {!hud.log.length ? <p className="opacity-60">{"\u203a "}{hud.name} · {hud.roleTitle}</p> : null}
                   </div>
-                  <div className="w-16 shrink-0 self-end short:w-14"><ActionButton wide label="Talk" onClick={() => apiRef.current?.tap("interact")}>
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <MessageCircle className="size-4" aria-hidden />
-                    Talk
-                  </span>
-                </ActionButton></div>
-                  <button type="button" data-hud="weapon" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets hud-wslot relative flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-0.5 self-end px-1 text-center short:h-12 short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
+                  <div data-fobar="stats" className="fobar-plate flex w-[7.5rem] shrink-0 flex-col justify-center gap-0.5 px-1.5 py-1 short:w-[6.5rem]">
+                    <div className="flex items-baseline justify-between"><span className="hud-stamp text-[10px]">HP</span><span data-hud="hp-text" className="fobar-digits text-base font-bold tabular-nums leading-none">{Math.ceil(hud.hp)}<span className="text-[10px] opacity-70">/{hud.maxHp}</span></span></div>
+                    <div className="h-1 overflow-hidden bg-black/60" aria-label="Experience"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, (hud.xp / hud.xpNext) * 100))}%` }} /></div>
+                    {tb?.on ? (
+                      <div data-fobar="ap" role="meter" aria-label={`Action points ${tb.ap} of ${tb.maxAp}`} aria-valuenow={tb.ap} aria-valuemax={tb.maxAp} className="flex flex-wrap items-center gap-[3px]">
+                        <span className="hud-stamp mr-0.5 text-[10px]">AP</span>
+                        {Array.from({ length: tb.maxAp ?? 0 }, (_, i) => <span key={i} className={`fobar-light ${i < (tb.ap ?? 0) ? "on" : ""}`} />)}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 text-[10px] text-muted"><span>Lv {hud.level}</span>{hud.v141 ? <span data-v141="noise" aria-label="Noise" className="flex-1 h-1 bg-black/60"><span className="block h-full" style={{ width: `${hud.v141.noise}%`, background: hud.v141.noise > 70 ? "#b4482e" : hud.v141.noise > 25 ? "#c49a40" : "#8a8a5a" }} /></span> : null}{hud.safe15 ? <span data-safe15="1">Safe</span> : null}</div>
+                    )}
+                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-4 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[9px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "E" : j.id === "arms" ? "A" : "L"}</span>)}</span> : null}
+                  </div>
+                  <button type="button" data-hud="weapon" data-fobar="slot-a" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets fobar-slot relative flex w-24 shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-center short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
                     onPointerDown={() => { weaponHold.current = window.setTimeout(() => { weaponHold.current = -1; apiRef.current?.togglePack(); }, 550); }}
                     onPointerUp={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
                     onPointerLeave={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
                     onClick={() => { if (weaponHold.current === -1) { weaponHold.current = 0; return; } const now = Date.now(); if (now - weaponTap.current < 320) { weaponTap.current = 0; apiRef.current?.togglePack(); return; } weaponTap.current = now; apiRef.current?.tap("attack"); }}>
-                    <span className="flex items-center gap-1"><Axe className="size-6 text-[#cfc6b0] drop-shadow short:size-5" aria-hidden /><Crosshair className="size-5 text-[#e0a040] short:size-4" aria-hidden /></span>
+                    <span className="absolute left-1 top-0.5 hud-stamp text-[9px]">1</span>
+                    <span className="flex items-center gap-1">{hud.weaponGun ? <Crosshair className="size-6 text-[#e0a040] short:size-5" aria-hidden /> : <Axe className="size-6 text-[#cfc6b0] drop-shadow short:size-5" aria-hidden />}</span>
                     <span className="line-clamp-1 text-[10px] font-semibold leading-tight text-fg">{hud.weaponName || "Empty hands"}</span>
+                    {tb?.on ? <span className="text-[9px] text-[#e0b050]">{hud.weaponGun ? tb.cost?.gun : tb.cost?.melee} AP{tb.mag ? ` · ${tb.mag.n}/${tb.mag.max}` : ""}</span> : null}
                   </button>
-                  <div className="w-16 shrink-0 self-end short:w-14"><ActionButton wide label="Auto" pressed={!!hud.v141?.auto} onClick={() => apiRef.current?.v141("auto")}>
-                  <span data-v141="auto" className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <Repeat className="size-4" aria-hidden />
-                    {hud.v141?.auto ? "Auto on" : "Auto"}
-                  </span>
-                </ActionButton></div>
-                  <div className="hud-leather min-w-[12rem] max-w-sm flex-1 self-end px-2 py-1 short:py-0.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h1 className="truncate font-display text-lg leading-none short:text-base">{hud.name}</h1>
-                        <p className="mt-0.5 truncate text-xs uppercase tracking-wide text-primary short:hidden">{hud.roleTitle}</p>
-                      </div>
-                      <div className="flex shrink-0 items-start">
-                      {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
-                      <button type="button" className="-my-1 min-h-10 min-w-12 shrink-0 px-2 text-sm text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
-                      <MinBtn k="health" label="health panel" tight />
-                      </div>
+                  <button type="button" data-fobar="slot-b" aria-label={`Swap to ${hud.weaponBName || "Empty hands"}`} title={`Swap to ${hud.weaponBName || "Empty hands"}`} className="hud-metal fobar-slot relative flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-center opacity-90" style={{ touchAction: "manipulation" }} onClick={() => apiRef.current?.v141("swapSlots")}>
+                    <span className="absolute left-1 top-0.5 hud-stamp text-[9px]">2</span>
+                    <ArrowLeftRight className="size-4 text-[#cfc6b0]" aria-hidden />
+                    <span className="line-clamp-2 text-[9px] leading-tight text-fg">{hud.weaponBName || "Empty hands"}</span>
+                  </button>
+                  {tb?.on ? (
+                    <div data-tb15="bar" className="flex w-[5.5rem] shrink-0 flex-col gap-1">
+                      <span data-tb15="turn" className={`truncate text-center text-[10px] font-bold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? `Your turn · R${tb.round}` : `${tb.cur}`}</span>
+                      {tb.mag ? <button type="button" data-tb15="reload" disabled={!tb.mine} className="fobar-btn min-h-8 flex-1 text-[10px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbReload")}>Reload {tb.cost?.reload}AP</button> : null}
+                      <button type="button" data-tb15="end" disabled={!tb.mine} className="fobar-btn fobar-red min-h-8 flex-1 text-[11px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEnd")}>End Turn</button>
+                      <button type="button" data-tb15="endcombat" disabled={!tb.mine || !tb.canEnd} className="fobar-btn min-h-8 flex-1 text-[10px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEndCombat")}>End Combat</button>
                     </div>
-                    <div className="mt-1 h-1 overflow-hidden bg-bg scar" aria-label="Experience">
-                      <div className="h-full bg-primary scar" style={{ width: `${Math.max(0, Math.min(100, (hud.xp / hud.xpNext) * 100))}%` }} />
-                    </div>
-                    <p className="mt-1 truncate text-xs text-muted short:mt-0.5">
-                      {Math.ceil(hud.hp)} / {hud.maxHp} · Lv {hud.level}
-                      {hud.turnBased ? ` · AP ${hud.ap}/${hud.maxAp}` : ""}
-                      {hud.safe15 ? <span data-safe15="1" className="ml-1 rounded-sm border border-border px-1 text-[10px] uppercase tracking-wide text-muted opacity-80">Safe zone</span> : null}
-                      {hud.inside ? " · Inside" : ""} · Wood {hud.wood} · Stone {hud.stone} · Iron {hud.scrap} · Shells {hud.shells}
-                    </p>
+                  ) : null}
+                  <div data-hud="menu" className="grid w-[13.5rem] shrink-0 grid-cols-4 gap-1 short:w-[12rem]">
+                    {([
+                      ["Talk", <MessageCircle key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("interact")],
+                      ["Char", <ScrollText key="i" className="size-4" aria-hidden />, hud.statsOpen, () => apiRef.current?.toggleStats()],
+                      ["Pack", <Backpack key="i" className="size-4" aria-hidden />, hud.packOpen, () => apiRef.current?.togglePack()],
+                      ["Map", <MapIcon key="i" className="size-4" aria-hidden />, mapOpen, () => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen(false); setMapOpen((o) => !o); }],
+                      ["Auto", <Repeat key="i" className="size-4" aria-hidden />, !!hud.v141?.auto, () => apiRef.current?.v141("auto")],
+                      ["Journal", <BookOpen key="i" className="size-4" aria-hidden />, journalOpen && !hud.statsOpen && !hud.packOpen, () => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen)); }],
+                      ["Options", <Settings key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("pause")],
+                      [hud.v141?.crouch ? "Stand" : "Crouch", <Footprints key="i" className="size-4" aria-hidden />, !!hud.v141?.crouch, () => apiRef.current?.v141("crouch")],
+                    ] as const).map(([l, icon, on, fn]) => (
+                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex min-h-[2.6rem] flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>{icon}{l}</button>
+                    ))}
                   </div>
                 </section>
                 )}
@@ -1064,53 +1061,7 @@ export function RPG() {
         className={playing && !hc.mini ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] left-[max(0.5rem,env(safe-area-inset-left))] z-10 h-20 w-20 plank hud-frame border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
       />
 
-      {playing && hud.phase === "play" && !hud.dialogue && !(hud.v13?.main.ending && hud.v13.main.slide < 99) ? (
-        <div data-hud="menu" className="hud-menu absolute top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] z-40 flex w-16 flex-col gap-1.5 short:w-14 short:gap-1">
-<ActionButton wide label="Stats" pressed={hud.statsOpen} onClick={() => apiRef.current?.toggleStats()}>
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <ScrollText className="size-4" aria-hidden />
-                    Stats
-                  </span>
-                </ActionButton>
-<ActionButton
-                  wide
-                  label="Journal"
-                  pressed={journalOpen && !hud.statsOpen && !hud.packOpen}
-                  onClick={() => {
-                    if (hud.statsOpen) apiRef.current?.toggleStats();
-                    if (hud.packOpen) apiRef.current?.togglePack();
-                    setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen));
-                  }}
-                >
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <BookOpen className="size-4" aria-hidden />
-                    Journal
-                  </span>
-                </ActionButton>
-<ActionButton wide label="Backpack" pressed={hud.packOpen} onClick={() => apiRef.current?.togglePack()}>
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <Backpack className="size-4" aria-hidden />
-                    Backpack
-                  </span>
-                </ActionButton>
-<ActionButton
-                  wide
-                  label="Map"
-                  pressed={mapOpen}
-                  onClick={() => {
-                    if (hud.statsOpen) apiRef.current?.toggleStats();
-                    if (hud.packOpen) apiRef.current?.togglePack();
-                    setJournalOpen(false);
-                    setMapOpen((o) => !o);
-                  }}
-                >
-                  <span className="flex flex-col items-center gap-0.5 text-[11px] font-semibold leading-none">
-                    <MapIcon className="size-4" aria-hidden />
-                    Map
-                  </span>
-                </ActionButton>
-        </div>
-      ) : null}
+      {/* v15.11.0: the top-right menu column moved into the bottom interface bar */}
       {playing && hud.phase === "play" && !mapOpen ? (
         <div data-hud="zoom" className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-[calc(max(0.5rem,env(safe-area-inset-left))+5.5rem)] z-20 flex flex-row gap-1 short:left-[calc(max(0.5rem,env(safe-area-inset-left))+6rem)]">
           <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}><Minus className="size-5 short:size-4" aria-hidden /></ActionButton>
@@ -1594,40 +1545,66 @@ function TownLayer({ town, api }: { town: { id: string; src: string; n: number }
   );
 }
 
-type Tb15 = { on: boolean; enabled: boolean; mine?: boolean; ap?: number; maxAp?: number; round?: number; cur?: string;
-  order?: { me: boolean; name: string; cur: boolean }[]; mag?: { n: number; max: number } | null; cost?: Record<string, number>;
-  popup?: { id: number; name: string; parts: { part: string; label: string; hit: number; ap: number }[] } | null };
-/** v15 turn-based HUD: whose turn, AP pips, reload and end turn. Narrow enough for a portrait phone. */
-function Tb15Bar({ tb, api }: { tb: Tb15; api: { current: any } }) {
-  const pips = Array.from({ length: tb.maxAp ?? 0 }, (_, i) => i < (tb.ap ?? 0));
+type Tb15 = { on: boolean; enabled: boolean; mine?: boolean; ap?: number; maxAp?: number; round?: number; cur?: string; canEnd?: boolean;
+  order?: { me: boolean; ally?: boolean; name: string; cur: boolean }[]; mag?: { n: number; max: number } | null; cost?: Record<string, number>;
+  popup?: { id: number; name: string; body?: "person" | "deer" | "moose"; parts: { part: string; label: string; hit: number; ap: number }[] } | null };
+/** v15.11.0: turn order strip (AP, End Turn and End Combat live in the bottom bar). */
+function Tb15Order({ tb }: { tb: Tb15 }) {
   return (
-    <div data-tb15="bar" className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1 plank border border-primary bg-surface/95 px-2 py-1 text-xs">
-      <span data-tb15="turn" className={`font-semibold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? "Your turn" : `${tb.cur}'s turn`}</span>
-      <span className="text-muted">R{tb.round}</span>
-      <span data-tb15="ap" aria-label={`Action points ${tb.ap} of ${tb.maxAp}`} className="flex items-center gap-0.5">
-        <span className="text-muted">AP</span>
-        {pips.map((on, i) => <span key={i} className="inline-block h-2.5 w-2.5 rounded-full border border-primary" style={{ background: on ? "#e0b050" : "transparent" }} />)}
-      </span>
-      {tb.mag ? (
-        <button type="button" data-tb15="reload" disabled={!tb.mine} className="min-h-8 plank border border-border bg-surface px-2 font-semibold disabled:opacity-50" onClick={() => api.current?.v141("tbReload")}>Reload {tb.mag.n}/{tb.mag.max} · {tb.cost?.reload}AP</button>
-      ) : null}
-      <button type="button" data-tb15="end" disabled={!tb.mine} className="min-h-8 plank bg-primary px-3 font-semibold text-bg disabled:opacity-50" onClick={() => api.current?.v141("tbEnd")}>End turn</button>
+    <div data-tb15="order" className="pointer-events-none flex max-w-full flex-wrap items-center gap-1 text-[10px]">
+      <span className="fobar-plate px-1.5 py-0.5 font-bold text-primary">Combat · R{tb.round}</span>
+      {(tb.order ?? []).map((o, i) => (
+        <span key={i} className={`fobar-plate px-1.5 py-0.5 ${o.cur ? "outline outline-2 outline-[#e0b050]" : "opacity-80"} ${o.me ? "text-primary" : o.ally ? "text-[#9fc080]" : "text-[#e07a5a]"}`}>{o.name}</span>
+      ))}
     </div>
   );
 }
+/** v15.11.0: placeholder body outlines drawn in code (Grok Build art replaces them later). Zones are [part, cx, cy] in a 200x200 box. */
+const AIM_BODY: Record<string, { path: string; zones: Record<string, [number, number]> }> = {
+  person: {
+    path: "M100 18 a16 16 0 1 1 -0.1 0 Z M82 52 h36 l14 10 l10 48 h-12 l-8 -36 v46 l6 62 h-14 l-8 -52 h-8 l-8 52 h-14 l6 -62 v-46 l-8 36 h-12 l10 -48 Z",
+    zones: { head: [134, 20], eyes: [100, 30], arms: [140, 92], torso: [100, 80], groin: [100, 124], legs: [86, 162] },
+  },
+  deer: {
+    path: "M38 70 l10 -30 l6 4 l-4 18 l14 -16 l4 4 l-12 22 h8 q4 14 18 16 h64 q18 0 20 18 v8 l-6 4 v46 h-10 l-2 -40 h-6 l-4 40 h-10 v-42 h-50 l-6 42 h-10 l2 -42 l-6 0 l-4 42 h-10 l4 -50 q-14 -6 -14 -22 l-12 -4 q-8 -4 -4 -12 Z",
+    zones: { head: [44, 78], eyes: [40, 70], arms: [70, 150], torso: [120, 104], groin: [150, 124], legs: [140, 158] },
+  },
+  moose: {
+    path: "M22 40 l12 -8 l4 10 l8 -12 l6 10 l6 -10 l4 14 h4 l-4 22 q-4 16 -14 22 q-8 6 -14 0 l-6 -10 q-4 -8 4 -14 Z M60 74 q20 -18 40 -14 h56 q20 4 22 26 v14 l-6 4 v54 h-11 l-2 -44 h-6 l-4 44 h-11 v-46 h-44 l-6 46 h-11 l2 -46 h-6 l-4 46 h-11 l4 -60 q-6 -10 -2 -24 Z",
+    zones: { head: [40, 56], eyes: [36, 48], arms: [76, 156], torso: [120, 98], groin: [160, 122], legs: [150, 160] },
+  },
+};
+/** v15.11.0 aimed-shot screen: tap a body part on the outline (or the list) to see and take the shot. */
 function AimPopup({ tb, api }: { tb: Tb15; api: { current: any } }) {
   const p = tb.popup!;
+  const body = AIM_BODY[p.body ?? "person"] ?? AIM_BODY.person;
+  const fire = (part: string) => api.current?.v141("tbAttack", [p.id, part]);
+  const ok = (q: { hit: number; ap: number }) => !!q.hit && q.ap <= (tb.ap ?? 0);
   return (
-    <div data-tb15="aim" className="pointer-events-auto absolute inset-x-2 bottom-28 z-[65] mx-auto max-w-sm plank border border-primary bg-surface/95 p-2 text-sm">
-      <div className="mb-1 flex items-center justify-between"><b>Aim at the {p.name}</b><span className="text-xs text-muted">AP {tb.ap}/{tb.maxAp}</span></div>
-      <div className="grid grid-cols-2 gap-1">
-        {p.parts.map((q) => (
-          <button key={q.part} type="button" data-part={q.part} disabled={!q.hit || q.ap > (tb.ap ?? 0)} className="flex min-h-10 items-center justify-between plank border border-border bg-bg/60 px-2 disabled:opacity-40" onClick={() => api.current?.v141("tbAttack", [p.id, q.part])}>
-            <span className="font-semibold">{q.label}</span><span className="text-xs">{q.hit ? `${q.hit}%` : "—"} · {q.ap}AP</span>
-          </button>
-        ))}
+    <div data-tb15="aim" className="pointer-events-auto absolute inset-0 z-[65] flex items-center justify-center bg-black/55 p-2" onClick={() => api.current?.v141("tbClose")}>
+      <div className="fobar flex max-h-full w-full max-w-[40rem] gap-2 p-2" onClick={(e) => e.stopPropagation()}>
+        <div className="fobar-screen relative aspect-square h-[min(70vh,16rem)] shrink-0">
+          <svg viewBox="0 0 200 200" className="h-full w-full" aria-label={`Outline of the ${p.name}`}>
+            <path d={body.path} fill="rgba(150,190,110,.16)" stroke="#9fc080" strokeWidth="2" strokeLinejoin="round" />
+            {p.parts.map((q) => { const z = body.zones[q.part]; if (!z) return null; return (
+              <g key={q.part} data-zone={q.part} className={ok(q) ? "cursor-pointer" : "opacity-40"} onClick={() => ok(q) && fire(q.part)}>
+                <circle cx={z[0]} cy={z[1]} r="13" fill="rgba(0,0,0,.55)" stroke={ok(q) ? "#e0b050" : "#6a5a3a"} strokeWidth="2" />
+                <text x={z[0]} y={z[1] + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#f0dca0">{q.hit ? q.hit : "-"}</text>
+              </g>); })}
+          </svg>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex items-center justify-between text-sm"><b className="truncate text-primary">Aim at the {p.name}</b><span className="text-xs text-muted">AP {tb.ap}/{tb.maxAp}</span></div>
+          <div className="grid flex-1 grid-cols-2 gap-1">
+            {p.parts.map((q) => (
+              <button key={q.part} type="button" data-part={q.part} disabled={!ok(q)} className="fobar-btn flex min-h-10 items-center justify-between px-2 disabled:opacity-40" onClick={() => fire(q.part)}>
+                <span className="font-semibold">{q.label}</span><span className="text-xs tabular-nums">{q.hit ? `${q.hit}%` : "—"} · {q.ap}AP</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="fobar-btn min-h-10 w-full px-2 text-xs" onClick={() => api.current?.v141("tbClose")}>Cancel</button>
+        </div>
       </div>
-      <button type="button" className="mt-1 w-full plank border border-border px-2 py-1 text-xs" onClick={() => api.current?.v141("tbClose")}>Cancel</button>
     </div>
   );
 }
