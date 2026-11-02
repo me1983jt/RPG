@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2077;
+const ART_V = 2078;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -940,6 +940,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** Icon file for an item: public/game/items/<id>.png, else the generic one for its shape. */
 	function itemIcon(g) {
+		if (ICON15[g.id]) return `/game/items/v15133/${ICON15[g.id]}.png?v=${ART_V}`;
 		return `/game/items/${(OPTIONAL_ART.has(`items/${g.id}`) ? null : ITEM_ICON[g.id]) ?? g.id}.png?v=${ART_V}`;
 	}
 	function invItem(p, id, x = -1, y = -1) {
@@ -6986,6 +6987,45 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function act0(n) {
 		return n.split("-").slice(2).join("-");
 	}
+	/** v15.13.3: Build-Redo-3 hero gun poses (v2/player-rifle-aim, -rifle-fire 4 frames, -pistol-aim; 132x186, 6 rows).
+	 * Long guns (carbine family: carbines, lever guns, scoped; scatter: shotguns) aim and fire on the rifle sheets;
+	 * the revolver holds the pistol aim (no pistol fire sheet yet: a muzzle flash at the barrel while firing). Melee unchanged. */
+	const NEW_POSE15 = new Set(["rifle-aim", "rifle-fire", "pistol-aim"]);
+	function newPose(gun, family, using, moving) {
+		if (!gun || asSarah() || work) return "";
+		const long = family === "carbine" || family === "scatter";
+		if (swingAnim > 0) {
+			if (long && plImg("rifle-fire")) return "rifle-fire";
+			if (!long && plImg("pistol-aim")) return "pistol-aim";
+			return "";
+		}
+		if (!moving && using) {
+			if (long && plImg("rifle-aim")) return "rifle-aim";
+			if (!long && plImg("pistol-aim")) return "pistol-aim";
+		}
+		return "";
+	}
+	function newPoseScale(name) {
+		const w = images.get(plImg("walk")), img = images.get(name);
+		if (!w || !img) return 1;
+		const k = figSpan(w) / figSpan(img);
+		return k > .5 && k < 1.5 ? k : 1;
+	}
+	/** Barrel tip per hex row (cell px from the foot point), measured on the sheets. */
+	const POSE_TIP15 = { "pistol-aim": [[20, -95], [37, -94], [-23, -53], [-35, -66], [-36, -93], [-26, -96]], "rifle-fire": [[26, -96], [56, -93], [32, -52], [-40, -74], [-52, -92], [-28, -96]] };
+	function paintPoseFlash(act, frame, drawH, dcx, dcy) {
+		const tips = POSE_TIP15[act];
+		const fx = images.get("fx-muzzle");
+		if (!tips || !fx || !ctx || !(swingAnim > 0) || frame > 1) return;
+		let dir = player.dir;
+		if (dir === 0 || dir === 4) dir = dir === 0 ? 1 : 3;
+		const [tx, ty] = tips[facingRow(dir, 6)] ?? [0, -90];
+		const raw = worldToScreen(player.x, player.y, dcx, dcy);
+		const foot = zoomPoint(raw.sx, raw.sy);
+		const k = drawH * heroScale("pl/x") * zoom / 186;
+		const s = (act === "rifle-fire" ? 30 : 22) * zoom;
+		ctx.drawImage(fx, foot.sx + tx * k - s / 2, foot.sy + ty * k - s / 2, s, s);
+	}
 	/** v13: draw the player from the pl/* sheets with weapon, hit and down poses, plus armor layers. */
 	function paintPlayerBody(flinch, drawCamX, drawCamY) {
 		if (!plImg("walk") || !player) return false;
@@ -7000,6 +7040,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		let frame = player.frame;
 		let lunge = false;
 		if (flinch) { act = flinch.name.slice(3); frame = flinch.frame; }
+		else if (newPose(gun, family, using, moving)) { act = newPose(gun, family, using, moving); frame = act === "rifle-fire" ? Math.max(0, Math.min(colsOf(act) - 1, Math.floor((.48 - swingAnim) * 1000 / ANIM_MS.fire))) : 0; }
 		else if (swingAnim > 0 && !work && gun && plImg("gun-atk")) { act = "gun-atk"; frame = Math.min(colsOf("gun-atk") - 1, Math.floor((.48 - swingAnim) * 1000 / ANIM_MS.fire)); }
 		else if (swingAnim > 0 && !work && meleeFrame()) {
 			// stand-in art: punch and swing play the 6-frame axe rows, the kick plays the walk rows with a lunge;
@@ -7020,8 +7061,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (moving && v13Running() && newWalk15() && !images.get("v2/player-run")) act = "walk";
 		else if (moving && v13Running() && plImg("run")) act = "run";
 		const name = plImg(act) || plImg("walk");
-		blit(name, player.x, player.y, HERO_H, true, frame, player.dir, drawCamX, drawCamY, lunge);
-		paintArmor(act, frame, player.dir, drawCamX, drawCamY, lunge);
+		const pose15 = NEW_POSE15.has(act);
+		// v15.13.3: Build's 132x186 aim/fire sheets draw at the walk's figure height (both measured from their own first cell)
+		const ph = pose15 ? HERO_H * newPoseScale(name) : HERO_H;
+		blit(name, player.x, player.y, ph, true, frame, player.dir, drawCamX, drawCamY, lunge);
+		// v15.13.3: the boots/gloves/trousers and old chest/head overlays are cut for the walk grid and float off the new
+		// aim/fire poses, so they are hidden while the hero holds or fires a gun (they come back on the next step)
+		if (pose15) { armorDrawn = []; paintPoseFlash(act, frame, ph, drawCamX, drawCamY); }
+		else paintArmor(act, frame, player.dir, drawCamX, drawCamY, lunge);
 		if (swingAnim > 0 && !work && act === "walk") paintSwingArc();
 		void axe;
 		return true;
@@ -7436,6 +7483,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		return true;
 	}
+	/** v15.13.3: Build's painted weapon icons (Redo-1/Redo-2), public/game/items/v15133/<name>.png; old icons stay on disk. */
+	const ICON15 = {
+		revolver: "revolver", carbine: "rifle-bolt", "carbine-std": "rifle-bolt", "carbine-good": "rifle-bolt",
+		levergun: "carbine-lever", winchester: "carbine-lever", scoped: "rifle-scoped",
+		shotgun: "shotgun-pump", scatter: "shotgun-double",
+		knife: "knife-hunting", "knife-std": "knife-hunting", "knife-good": "knife-hunting", skin: "knife-hunting",
+		hatchet: "hatchet", "hatchet-std": "axe-felling", "hatchet-good": "axe-felling", hudson: "axe-felling"
+	};
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
 		docbag: "kit",
@@ -10967,7 +11022,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						void dh; void sc;
 						if (prop.kind === "firering" && prop.lit14 && images.get("fx-fire")) blit("fx-fire", c.x, c.y - 6, 30, false, 0, 0, drawCamX, drawCamY);
 						if ((prop.f14 || prop.p14) && buildOpen && (prop.hp ?? 0) < maxHp14(prop)) paintHp14(pt, H, (prop.hp ?? 0) / maxHp14(prop));
-					} else { const tT = performance.now(); blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, h * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0); if (tree) pAdd("trees", tT); }
+					} else { const tT = performance.now(); blit(terrainPick(prop.skin && images.get(`v2/${prop.skin}`) ? `v2/${prop.skin}` : treeArt || spec.image, prop.id ?? 0), c.x + jx, c.y + jy, (prop.skin?.startsWith("props/") && images.get(`v2/${prop.skin}`) ? images.get(`v2/${prop.skin}`).height * FIG_ADULT / 66 : h) * scale * chip, false, 0, 0, drawCamX, drawCamY, false, 0, tilt, 1, tree && (n & 32) !== 0); if (tree) pAdd("trees", tT); }
 					if (prop.kind === "campfire" && images.get("v2/bedroll")) blit("v2/bedroll", c.x + (prop.id % 2 ? 40 : -40), c.y + 22, 36, false, 0, 0, drawCamX, drawCamY); // v15.10.10: Build bedroll (6 ft) beside each campfire
 					if (prop.label && !(prop.skin && images.get(`v2/${prop.skin}`))) paintSign(prop.label, c.x, c.y, h * scale, drawCamX, drawCamY);
 					if ((prop.flash || 0) > 0 && images.get("fx-muzzle")) blit("fx-muzzle", c.x, c.y - 28, 54, false, 0, 0, drawCamX, drawCamY);
@@ -13537,6 +13592,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		heroLogStart: () => { heroLog = []; },
 		heroLogTake: () => { const l = heroLog || []; heroLog = []; return l; },
 		hurtNow: () => { if (player) player.hurt = .4; },
+		// v15.13.3 test hooks: hold a drawn gun (aim pose) and list Build prop skins on this map
+		holdAim15: (sec = 30) => { drawn = sec; },
+		bagSet15: (ids) => { if (player) { player.bag = ids.map((id) => ({ id, qty: 1 })); sync(true); } return player?.bag.length ?? 0; },
+		props15: () => world ? world.props.filter((p) => p.skin?.startsWith("props/")).map((p) => ({ skin: p.skin, kind: p.kind, x: (p.tx + .5) * TILE, y: (p.ty + .5) * TILE })) : [],
 		swingNow: () => {
 			swingAnim = .48;
 			reach = .22;

@@ -468,7 +468,7 @@ function createSkowhegan(seed: number, homeSides: number[]): World {
   // stand-in gorge edge: boulders along the lip, rails on the bridge (art hook: v2/skowhegan-bridge via the prop skin)
   for (let tx = 2; tx < MAP_W - 2; tx += 2) {
     if (Math.abs(tx - cx) <= 3 || !inHex(tx, gy - 1)) continue;
-    if ((tx * 7) % 10 < 7) addProp(world, "rock", tx, gy - 1);
+    if ((tx * 7) % 10 < 7) addProp(world, "rock", tx, gy - 1, tx % 4 === 0 ? { skin: "props/boulder" } : undefined); // v15.13.3: some lip rocks use Build's boulder
   }
   addProp(world, "fence", cx - 2, gy, { skin: "skowhegan-bridge", label: "KENNEBEC BRIDGE" });
   addProp(world, "fence", cx + 2, gy);
@@ -480,9 +480,14 @@ function createSkowhegan(seed: number, homeSides: number[]): World {
   addNpc(world, "marcel", "Marcel Thibodeau", cx - 4, cy - 15, 1);
   addProp(world, "car-truck", cx + 3, cy - 10);
   addProp(world, "car-sedan", cx - 6, cy - 15);
-  addProp(world, "scrap", cx + 8, cy - 16, { resource: "scrap", amount: 5 });
+  addProp(world, "scrap", cx + 8, cy - 16, { resource: "scrap", amount: 5, skin: "props/rusty-barrel" });
   addProp(world, "scrap", cx - 9, cy - 20, { resource: "scrap", amount: 5 });
-  addProp(world, "crates", cx + 6, cy - 23);
+  addProp(world, "crates", cx + 6, cy - 23, { skin: "props/supply-crate" });
+  // v15.13.3: the raiders' hold-out: sandbag line (hop it like a fence), a dead fire, a rain barrel
+  addProp(world, "fence", cx + 1, cy - 14, { skin: "props/sandbags" });
+  addProp(world, "fence", cx + 3, cy - 14, { skin: "props/sandbags" });
+  addProp(world, "campfire", cx - 2, cy - 12, { skin: "props/burnt-campfire" });
+  addProp(world, "crates", cx - 7, cy - 14, { amount: 0, skin: "props/rain-barrel" });
   // raiders hold the town: higher tier than the home woods
   addEnemy(world, cx + 2, cy - 12, false, true);
   addEnemy(world, cx - 12, cy - 8, false, true);
@@ -748,9 +753,11 @@ function placeVillage(world: World): void {
   addProp(world, "shack", a.tx + 2, a.ty - 3);
   addProp(world, "shack", a.tx - 5, a.ty + 1);
   addProp(world, "campfire", a.tx + 1, a.ty + 2);
-  addProp(world, "logs", a.tx + 6, a.ty + 3, { resource: "wood", amount: 4 });
-  addProp(world, "scrap", a.tx + 5, a.ty - 2, { resource: "scrap", amount: 4 });
-  addProp(world, "rock", a.tx - 6, a.ty + 4, { resource: "stone", amount: 3, loose: true });
+  addProp(world, "logs", a.tx + 6, a.ty + 3, { resource: "wood", amount: 4, skin: "props/fallen-log" });
+  addProp(world, "scrap", a.tx + 5, a.ty - 2, { resource: "scrap", amount: 4, skin: "props/rusty-barrel" });
+  addProp(world, "rock", a.tx - 6, a.ty + 4, { resource: "stone", amount: 3, loose: true, skin: "props/boulder" });
+  addProp(world, "crates", a.tx - 1, a.ty - 1, { amount: 0, skin: "props/rain-barrel" }); // v15.13.3 Build props
+  addProp(world, "crates", a.tx + 4, a.ty + 1, { skin: "props/supply-crate" });
 
   const m = PLACES.millcross;
   addProp(world, "shack", m.tx - 4, m.ty - 3);

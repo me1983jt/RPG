@@ -94,3 +94,18 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 - Rejected: v2/props/notice-board.png (v15.12.3) is a cook pot, not a notice board.
 - Character panel: the old "Vigor" stat (key vigor) is shown as "Health".
 - Test: scripts/v15132-shots.mjs 6 PASS; v15-test ALL PASS; v1513-shots PASS. ART_V 2077.
+
+## v15.13.3 (Nov 2) — Build-Redo-3 gun poses, painted weapon icons, Build props
+- New sheets (new files only; no existing sprite changed): v2/player-rifle-aim (1x6), v2/player-rifle-fire (4x6: aim, kick, recoil, settle),
+  v2/player-pistol-aim (1x6). 132x186 cells, rows NE E SE SW W NW, feet y=181; listed in ART_SCALED (132 px cells) and optional.json.
+  paintPlayerBody -> newPose(): carbine family (carbines, lever guns, scoped) and scatter (shotguns) hold rifle-aim and fire rifle-fire;
+  revolver holds pistol-aim and fires from it with fx-muzzle at the measured barrel tip (POSE_TIP15). Melee and Sarah unchanged.
+  Drawn at the walk's figure height (newPoseScale = figSpan(walk)/figSpan(pose)). Armor overlays (boots/gloves/trousers, old chest/head)
+  are cut for the walk grid and float off these poses, so they are hidden only while a gun pose is shown.
+- Item icons: items/v15133/<name>.png (Build Redo-1/2, painted) via ICON15 in itemIcon(); old icons stay on disk. rifle-bolt: 1 px speck cleared.
+  carbine* -> rifle-bolt, levergun/winchester -> carbine-lever, scoped -> rifle-scoped, shotgun -> shotgun-pump, scatter -> shotgun-double,
+  knives -> knife-hunting, hatchet -> hatchet, hatchet-std/good + hudson -> axe-felling. pistol-semi has no item yet.
+- Props: v2/props/{boulder,rusty-barrel,supply-crate,burnt-campfire,sandbags,rain-barrel,fallen-log} as prop skins drawn at hero scale
+  (art height x FIG_ADULT/66). Placed (new worlds only): Ashwell (fallen-log, rusty-barrel, boulder, rain-barrel, supply-crate),
+  Skowhegan (some gorge boulders, rusty-barrel, supply-crate, sandbag line as hop-over fence, burnt campfire, rain barrel).
+- Test: scripts/v15133-shots.mjs 9 PASS (hooks holdAim15, bagSet15, props15). ART_V 2078.
