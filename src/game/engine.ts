@@ -1177,7 +1177,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ensureProgress(player);
 		player.tags = tagsForRole(role);
-		// v1513: Maine Seven (folded into the old stats), up to two traits, three tagged skills
+		// v1513: The Seven (folded into the old stats), up to two traits, three tagged skills
 		player.m7 = loadM7(appearance?.m7);
 		player.traits2 = loadTraits2(appearance?.traits2);
 		{ const b = m7Bonus(player.m7); for (const k of ["strength", "vigor", "endurance", "intellect", "perception", "luck"]) player[k] = Math.max(1, player[k] + b[k]); pendingAgil15 = b.agility; }
@@ -3669,7 +3669,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { ...f, carryLb: f.carryLb + m.carry, hpBonus: f.hpBonus + m.hp, staminaBonus: f.staminaBonus + m.stamina, critPct: Math.max(0, f.critPct + m.crit), accuracyPct: f.accuracyPct + m.aim,
 			barterPct: Math.min(30, f.barterPct + m.barter), talkBonus: f.talkBonus + m.talk, sickResist: Math.max(0, Math.min(.7, f.sickResist + m.sick)) };
 	}
-	/** v1513: Maine Seven, two-sided traits and Maine perks */
+	/** v1513: The Seven, two-sided traits and Maine perks */
 	function fx15(p = player) {
 		return fx1513(loadM7(p?.m7), p?.traits2 ?? [], p?.perks ?? []);
 	}

@@ -1,4 +1,4 @@
-// v15.13.0: the "Maine Seven" core stats, two-sided traits, three tagged skills and Maine perks (every 3 levels).
+// v15.13.0: "The Seven" core stats (Might, Vigilance, Vigor, Influence, Cunning, Nimble, Fortune), two-sided traits, three tagged skills and Maine perks (every 3 levels).
 // Our own names, numbers and text. Pure data and rules here; engine.ts wires them in (search "v1513").
 
 export type M7Id = "back" | "eye" | "wind" | "neighborly" | "knowhow" | "quick" | "fortune";
@@ -7,12 +7,13 @@ export type M7 = Record<M7Id, number>;
 export const M7_MIN = 1, M7_MAX = 10, M7_START = 5, M7_POOL = 5;
 
 export const M7_STATS: { id: M7Id; name: string; short: string; does: string }[] = [
-  { id: "back", name: "Back", short: "BK", does: "Strong back: carry +5 lb a point, harder swings, a little more health." },
-  { id: "eye", name: "Eye", short: "EY", does: "Spotting game and trouble: gun aim, sight, who moves first in a fight." },
-  { id: "wind", name: "Wind", short: "WD", does: "Lungs for the long carry: health +2 a point, stamina, shrug off sickness." },
-  { id: "neighborly", name: "Neighborly", short: "NB", does: "Folks like you: talk checks, store prices, companions." },
-  { id: "knowhow", name: "Know-how", short: "KH", does: "Shop and woods learning: skill points every level." },
-  { id: "quick", name: "Quick", short: "QK", does: "Light on your feet: action points in a fight, crits, stamina." },
+  // v15.13.1: display names renamed; internal ids (and save keys) unchanged
+  { id: "back", name: "Might", short: "MT", does: "Raw strength: carry +5 lb a point, harder swings, a little more health." },
+  { id: "eye", name: "Vigilance", short: "VG", does: "Spotting game and trouble: gun aim, sight, who moves first in a fight." },
+  { id: "wind", name: "Vigor", short: "VR", does: "Lungs for the long carry: health +2 a point, stamina, shrug off sickness." },
+  { id: "neighborly", name: "Influence", short: "IN", does: "Folks listen to you: talk checks, store prices, companions." },
+  { id: "knowhow", name: "Cunning", short: "CN", does: "Shop and woods smarts: skill points every level." },
+  { id: "quick", name: "Nimble", short: "NB", does: "Light on your feet: action points in a fight, crits, stamina." },
   { id: "fortune", name: "Fortune", short: "FT", does: "The odd lucky break: crits and better finds." },
 ];
 
@@ -20,7 +21,7 @@ export function freshM7(): M7 {
   return { back: M7_START, eye: M7_START, wind: M7_START, neighborly: M7_START, knowhow: M7_START, quick: M7_START, fortune: M7_START };
 }
 
-/** Old saves (pre-v15.13) have no Maine Seven: every stat 5, which changes nothing. */
+/** Old saves (pre-v15.13) have no The Seven: every stat 5, which changes nothing. */
 export function loadM7(raw: unknown): M7 {
   const out = freshM7();
   if (raw && typeof raw === "object") for (const s of M7_STATS) {
@@ -41,7 +42,7 @@ export function m7Bonus(m: M7) {
 export type Trait2Id = "milltown" | "downeast" | "wicked" | "heavyhands" | "uptocamp" | "ayuh" | "dooryard" | "mudseason";
 export const TRAITS2: { id: Trait2Id; name: string; up: string; down: string }[] = [
   { id: "milltown", name: "Mill Town Tough", up: "+15 max health.", down: "-15 max stamina." },
-  { id: "downeast", name: "Downeast Thrifty", up: "Store prices 10% better.", down: "Start with no iron, and -1 Fortune luck on finds." },
+  { id: "downeast", name: "Downeast Thrifty", up: "Store prices 10% better.", down: "Start with no iron, and worse luck on finds." },
   { id: "wicked", name: "Wicked Quick", up: "+1 action point in a fight.", down: "-8 max health." },
   { id: "heavyhands", name: "Heavy Hands", up: "+2 melee damage.", down: "-5% crit chance." },
   { id: "uptocamp", name: "Up to Camp", up: "+10 Trail and Sneak.", down: "-10 Speech and Barter." },
@@ -82,7 +83,7 @@ export function perk2Need(p: Perk2): string {
 
 export const TAG_BONUS = 15;
 
-/** Everything the Maine Seven, traits and perks add, in one place. */
+/** Everything the The Seven, traits and perks add, in one place. */
 export function fx1513(m: M7, traits: string[], perks: string[]) {
   const t = (id: Trait2Id) => traits.includes(id), p = (id: Perk2Id) => perks.includes(id);
   const skill: Record<string, number> = {};

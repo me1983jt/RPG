@@ -24,7 +24,7 @@ export async function boot(url, { role = "Hunter", vw = 1280, vh = 800, clear = 
     await page.fill("#wanderer-name", "Justin");
     await page.getByRole("button", { name: new RegExp(role) }).click();
     await page.getByRole("button", { name: "Next" }).click();
-    for (const n of ["Eye", "Eye", "Eye", "Eye", "Eye"]) await page.getByRole("button", { name: `Raise ${n}` }).click(); // v15.13 Maine Seven
+    for (const n of ["Vigilance", "Vigilance", "Vigilance", "Vigilance", "Vigilance"]) await page.getByRole("button", { name: `Raise ${n}` }).click(); // v15.13 Maine Seven
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: /Begin as/ }).click();
     await page.waitForTimeout(3000);

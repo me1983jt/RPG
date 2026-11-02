@@ -158,7 +158,7 @@ export function RPG() {
   const [step, setStep] = useState<"trade" | "points" | "trait">("trade");
   const [trait, setTrait] = useState<TraitId | null>(null);
   const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
-  // v15.13: Maine Seven, two traits, three tags
+  // v15.13: The Seven, two traits, three tags
   const [m7, setM7] = useState(freshM7);
   const [traits2, setTraits2] = useState<string[]>([]);
   const [tags, setTags] = useState<string[] | null>(null);
@@ -799,7 +799,7 @@ export function RPG() {
                 <p className="mt-1 text-xs text-muted">{hud.karmaWord}. {hud.repLine}</p>
                 {(hud as any).v1513 ? (
                   <div className="mt-2 plank border border-primary/60 bg-bg px-2 py-2 text-xs" data-testid="m7-panel">
-                    <p className="font-semibold text-primary">The Maine Seven</p>
+                    <p className="font-semibold text-primary">The Seven</p>
                     <div className="mt-1 grid grid-cols-7 gap-1 text-center">
                       {M7_STATS.map((st) => (
                         <div key={st.id} className="plank border border-border bg-surface px-0.5 py-1" title={st.does}>
@@ -1125,7 +1125,7 @@ export function RPG() {
               After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. Name yourself, pick a trade, and set your clothes.
             </p>
             <p className="mt-3 text-xs uppercase tracking-widest text-primary short:mt-2">
-              {step === "trade" ? "1 · Trade" : step === "points" ? "2 · The Maine Seven" : "3 · Traits and tagged skills"}
+              {step === "trade" ? "1 · Trade" : step === "points" ? "2 · The Seven" : "3 · Traits and tagged skills"}
             </p>
             <div className="mt-2 plank border border-border bg-bg px-3 py-2 text-sm">
               <p className="font-display text-lg leading-none">{kit.title}</p>

@@ -75,3 +75,7 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 - Perks: one per 3 levels from 12 Maine perks (level + Maine Seven needs); old skill-based perks on old saves keep working.
 - Save: data.m7, data.traits2. Old saves load as all 5 / no traits (no change). Town hand-off keeps the new perk ids.
 - Test: scripts/v1513-shots.mjs (12 PASS), v15-test ALL PASS (v4-lib begin() updated for the new creation). Shots: shots/v1513/.
+
+## v15.13.1 (Nov 2) — stat display names
+- The Seven renamed (display only): Might (MT), Vigilance (VG), Vigor (VR), Influence (IN), Cunning (CN), Nimble (NB), Fortune (FT).
+  Internal ids / save keys unchanged: back, eye, wind, neighborly, knowhow, quick, fortune (data.m7). Header "The Seven".

@@ -31,7 +31,7 @@ export type StartLook = {
   hard?: boolean;
   /** v15.10: play as Justin (default) or Sarah */
   hero?: "justin" | "sarah";
-  /** v15.13: Maine Seven, traits, tagged skills from character creation */
+  /** v15.13: The Seven, traits, tagged skills from character creation */
   m7?: Record<string, number>;
   traits2?: string[];
   tags?: string[];

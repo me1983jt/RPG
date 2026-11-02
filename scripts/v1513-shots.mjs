@@ -1,6 +1,6 @@
 // v15.13.0: Maine Seven creation, traits, tags, Maine perks, save/load and old-save defaults (phone landscape).
 import { chromium } from "playwright";
-const dir = process.argv[2] || "/workspace/maine-rpg/shots/v1513";
+const dir = process.argv[2] || "/workspace/maine-rpg/shots/v15131";
 const url = process.argv[3] || "http://127.0.0.1:8112/";
 const b = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
 const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -13,10 +13,10 @@ let fail = 0; const ok = (v, m) => { console.log((v ? "PASS " : "FAIL ") + m); i
 await page.fill("#wanderer-name", "Justin");
 await page.getByRole("button", { name: /Hunter/ }).click();
 await page.getByRole("button", { name: "Next" }).click(); await page.waitForTimeout(300);
-for (const n of ["Neighborly", "Neighborly", "Neighborly"]) await page.getByRole("button", { name: `Lower ${n}` }).click();
-for (const n of ["Eye", "Eye", "Eye", "Quick", "Quick", "Quick", "Wind", "Back"]) await page.getByRole("button", { name: `Raise ${n}` }).click();
+for (const n of ["Influence", "Influence", "Influence"]) await page.getByRole("button", { name: `Lower ${n}` }).click();
+for (const n of ["Vigilance", "Vigilance", "Vigilance", "Nimble", "Nimble", "Nimble", "Vigor", "Might"]) await page.getByRole("button", { name: `Raise ${n}` }).click();
 ok((await page.getByTestId("m7-left").textContent()).startsWith("0 points"), "pool spent");
-ok(await page.getByRole("button", { name: "Raise Eye" }).isDisabled(), "raise disabled at 0 left");
+ok(await page.getByRole("button", { name: "Raise Vigilance" }).isDisabled(), "raise disabled at 0 left");
 await page.screenshot({ path: `${dir}/create-stats.png` });
 await page.getByRole("button", { name: "Next" }).click(); await page.waitForTimeout(300);
 for (const t of ["wicked", "dooryard", "milltown"]) await page.locator(`[data-trait2="${t}"]`).click();
@@ -41,7 +41,7 @@ await page.waitForTimeout(500);
 for (const k of ["quest", "health", "mini"]) { const x = page.locator(`[data-hud-min="${k}"]`).first(); if (await x.count() && /^(Show|Expand)/.test(await x.getAttribute("aria-label") || "")) await x.click(); }
 const statsOpen = await page.locator('[data-testid="m7-panel"]').isVisible().catch(() => false);
 if (!statsOpen) await page.locator('[data-fobar-btn="Char"]').click(); await page.waitForTimeout(700);
-ok(await page.getByTestId("m7-panel").isVisible(), "Maine Seven in the character panel");
+ok(await page.getByTestId("m7-panel").isVisible(), "The Seven in the character panel");
 await page.screenshot({ path: `${dir}/char-m7.png` });
 const pick = page.getByRole("button", { name: /First Light/ });
 if (await pick.count()) { await pick.scrollIntoViewIfNeeded(); await page.screenshot({ path: `${dir}/perk-pick.png` }); await pick.click(); await page.waitForTimeout(400); }
@@ -72,7 +72,7 @@ await page.evaluate(() => window.__controlsTest.choose?.("close"));
 if (!(await page.getByTestId("m7-panel").isVisible().catch(() => false))) await page.locator('[data-fobar-btn="Char"]').click(); await page.waitForTimeout(700);
 const t2 = await page.getByTestId("m7-panel").textContent().catch(() => "");
 const old = await page.evaluate(() => window.__stripped);
-ok(old > 0 && /Traits: none/.test(t2) && /Back5Eye5/.test(t2.replace(/\s/g, "")), "old save -> all 5, no traits");
+ok(old > 0 && /Traits: none/.test(t2) && /Might5Vigilance5/.test(t2.replace(/\s/g, "")), "old save -> all 5, no traits");
 await page.screenshot({ path: `${dir}/old-save.png` });
 ok(!errs.length, `no errors ${errs.slice(0, 4).join(" | ")}`);
 await b.close(); process.exit(fail ? 1 : 0);

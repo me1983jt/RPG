@@ -66,7 +66,7 @@ export interface SkillStats {
   grit?: number;
   /** v15.9: trade-skill (learn-by-use) mechanics level, folded into the 0-120 Mechanics score */
   tradeMech?: number;
-  /** v15.13: Maine Seven, two-sided traits and Maine perks add to skills */
+  /** v15.13: The Seven, two-sided traits and Maine perks add to skills */
   extra?: Record<string, number>;
 }
 
