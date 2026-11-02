@@ -990,7 +990,7 @@ export function RPG() {
                 ) : (
                 <section data-hud="health" data-fobar="1" className="fobar pointer-events-auto flex min-w-0 flex-1 items-stretch gap-1 self-end p-1">
                   {/* v15.11.0: one Fallout-style bottom interface bar: log, HP/AP, two weapon slots, buttons */}
-                  <div data-fobar="log" className="fobar-screen min-w-0 flex-1 overflow-hidden px-1.5 py-1 text-[11px] leading-tight">
+                  <div data-fobar="log" className="fobar-screen min-w-[8rem] flex-1 overflow-hidden px-1.5 py-1 text-[11px] leading-tight">
                     {(hud.log.slice(-3)).map((line, i) => <p key={hud.logIds?.[Math.max(0, hud.log.length - 3) + i] ?? `${line}-${i}`} className="truncate">{"\u203a "}{line}</p>)}
                     {!hud.log.length ? <p className="opacity-60">{"\u203a "}{hud.name} · {hud.roleTitle}</p> : null}
                   </div>
@@ -1023,14 +1023,13 @@ export function RPG() {
                     <span className="line-clamp-2 text-[9px] leading-tight text-fg">{hud.weaponBName || "Empty hands"}</span>
                   </button>
                   {tb?.on ? (
-                    <div data-tb15="bar" className="flex w-[5.5rem] shrink-0 flex-col gap-1">
-                      <span data-tb15="turn" className={`truncate text-center text-[10px] font-bold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? `Your turn · R${tb.round}` : `${tb.cur}`}</span>
-                      {tb.mag ? <button type="button" data-tb15="reload" disabled={!tb.mine} className="fobar-btn min-h-8 flex-1 text-[10px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbReload")}>Reload {tb.cost?.reload}AP</button> : null}
-                      <button type="button" data-tb15="end" disabled={!tb.mine} className="fobar-btn fobar-red min-h-8 flex-1 text-[11px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEnd")}>End Turn</button>
-                      <button type="button" data-tb15="endcombat" disabled={!tb.mine || !tb.canEnd} className="fobar-btn min-h-8 flex-1 text-[10px] disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEndCombat")}>End Combat</button>
+                    <div data-tb15="bar" className="grid w-[8.5rem] shrink-0 grid-cols-2 gap-1">
+                      {tb.mag ? <button type="button" data-tb15="reload" disabled={!tb.mine} className="fobar-btn h-10 text-[10px] leading-tight disabled:opacity-40" onClick={() => apiRef.current?.v141("tbReload")}>Reload {tb.cost?.reload}AP</button> : <span data-tb15="turn" className={`flex h-10 items-center justify-center text-center text-[10px] font-bold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? "Your turn" : tb.cur}</span>}
+                      <button type="button" data-tb15="endcombat" disabled={!tb.mine || !tb.canEnd} className="fobar-btn h-10 text-[10px] leading-tight disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEndCombat")}>End Combat</button>
+                      <button type="button" data-tb15="end" disabled={!tb.mine} className="fobar-btn fobar-red col-span-2 h-10 text-[12px] font-bold disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEnd")}>End Turn</button>
                     </div>
                   ) : null}
-                  <div data-hud="menu" className="grid w-[13.5rem] shrink-0 grid-cols-4 gap-1 short:w-[12rem]">
+                  <div data-hud="menu" className={`grid shrink-0 gap-1 self-end ${tb?.on ? "w-[16.5rem] grid-cols-6" : "w-[24rem] grid-cols-8 short:w-[22rem]"}`}>
                     {([
                       ["Talk", <MessageCircle key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("interact")],
                       ["Char", <ScrollText key="i" className="size-4" aria-hidden />, hud.statsOpen, () => apiRef.current?.toggleStats()],
@@ -1040,8 +1039,8 @@ export function RPG() {
                       ["Journal", <BookOpen key="i" className="size-4" aria-hidden />, journalOpen && !hud.statsOpen && !hud.packOpen, () => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen)); }],
                       ["Options", <Settings key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("pause")],
                       [hud.v141?.crouch ? "Stand" : "Crouch", <Footprints key="i" className="size-4" aria-hidden />, !!hud.v141?.crouch, () => apiRef.current?.v141("crouch")],
-                    ] as const).map(([l, icon, on, fn]) => (
-                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex min-h-[2.6rem] flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>{icon}{l}</button>
+                    ] as const).filter(([l]) => !tb?.on || (l !== "Auto" && l !== "Crouch" && l !== "Stand")).map(([l, icon, on, fn]) => (
+                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex h-11 min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>{icon}{l}</button>
                     ))}
                   </div>
                 </section>

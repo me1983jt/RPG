@@ -12346,6 +12346,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const foes = world.enemies.filter((f) => tbHostile(f) && tb.order.some((o) => o.id === f.id)).sort((a, b) => hexDist15(ch, hexOf15(a.x, a.y)) - hexDist15(ch, hexOf15(b.x, b.y)));
 		const foe = foes[0];
 		if (!foe) return false;
+		tb.cTurns = (tb.cTurns || 0) + 1;
 		const d = hexDist15(ch, hexOf15(foe.x, foe.y));
 		if (d <= 1) {
 			if (tb.eAp < 3) return false;
@@ -12355,6 +12356,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const dmg = 4 + Math.floor((party.maxHp || 20) / 18);
 			foe.hp -= dmg; foe.hurt = .12; sfx("hit"); floater(foe.x, foe.y - 28, String(dmg)); burst(foe.x, foe.y, "#c4543a", 5);
 			if (foe.hp <= 0) markDead(foe, Math.max(2, Math.round(foe.xp * .6)));
+			pushLog(`${party.name} hits the ${foe.name ?? bodyTitle(foe.kind)} for ${dmg}.`);
 			return true;
 		}
 		if (tb.eAp < 1) return false;
@@ -13209,7 +13211,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		town144Spot: () => townSpot(ISO_TOWNS[0]),
 		tb15: () => ({ ...tbHud(), hex: player ? hexOf15(player.x, player.y) : null, foes: (world?.enemies ?? []).filter((e) => !e.dead && tb?.order.some((o) => o.id === e.id)).map((e) => ({ id: e.id, hp: e.hp, hex: hexOf15(e.x, e.y), blind: !!e.blind141, arm: e.crippleArm || 0, leg: e.crippleLeg || 0, x: e.x, y: e.y })), px: player?.x, py: player?.y }),
 		tb15Tap: (wx, wy) => { if (tb) tbTap(-9999, -9999, { x: wx, y: wy }); },
-		tb15Party: () => party ? { name: party.name, hp: party.hp } : null,
+		tb15Party: () => party ? { name: party.name, hp: party.hp, acts: tb?.cTurns || 0 } : null,
+		// v15.11.1 test: put a companion beside you (real recruits come from talk)
+		tb15AddParty: () => { if (!player) return null; party = { role: "hunter", name: "Test companion", hp: 30, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4 }; return party.name; },
+		tb15PartyHex: () => party ? hexOf15(party.x, party.y) : null,
 		tb15Hex: (q, r) => hexXY15({ q, r }),
 		tb15Popup: (id) => { const e = tbFoe(id); if (e && tb) tbPopup(e); return tb?.popup ?? null; },
 		tb15Kill: () => { for (const e of world.enemies) if (tbHostile(e) && Math.hypot(e.x - player.x, e.y - player.y) < 600) { e.hp = 0; e.dead = true; markDead(e, 0); } tbOverCheck(); sync(true); return !!tb; },
