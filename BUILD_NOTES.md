@@ -139,3 +139,9 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   Check: scripts/towns15134-check.mjs (all 5 towns, 0 404s on a static server); towns15106-test ALL PASS; v15-test ALL PASS.
 - Measured (844x390, Chrome, dev server): title/creation screen 60 -> 12 fps; background tab 51-68 -> 0 frames in 3 s;
   in-play render time unchanged within noise (4x CPU throttle: 15-22 fps both before and after).
+
+## RPG v0.3 (Nov 2) — versionCode 26110213
+- Towns pulled from GitHub me1983jt/quest-rpg-towns @ b5ac556 ("Story update v1.10.5 + strict ammo rule"): all five towns + shared-rules.
+  The repo matched the local /workspace/quest-* folders file-for-file, so the town files are the same as in v0.2.
+- townStory.ts STORY_KEYS: added story.cameo.gus.warned, story.cameo.mira.state, story.cameo.mira.route, story.cameo.mira.hideoutRevealed.
+- Start-screen version line 0.3. No sprite, save-key or orientation change. Smoke: scripts/_v03smoke.mjs, shots/v03/.

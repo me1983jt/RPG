@@ -7,7 +7,7 @@ export const STORY_M7_KEY: Record<(typeof M7_KEYS)[number], string> = { back: "b
 /** Display names the towns also accept (lowercased) on the way in. */
 const M7_NAMES: Record<string, string> = { back: "might", eye: "vigilance", wind: "vigor", neighborly: "influence", knowhow: "cunning", quick: "nimble", fortune: "fortune" };
 /** Every story.* save key Quest's town games write (tiein.js T.outgoing). */
-export const STORY_KEYS = ["story.clock", "story.topics", "story.stamina", "story.hunger", "story.rep", "story.karma", "story.m7", "story.traits", "story.perks", "story.party", "story.player", "story.kills", "story.wear"] as const;
+export const STORY_KEYS = ["story.clock", "story.topics", "story.stamina", "story.hunger", "story.rep", "story.karma", "story.m7", "story.traits", "story.perks", "story.party", "story.player", "story.kills", "story.wear", "story.cameo.gus.warned", "story.cameo.mira.state", "story.cameo.mira.route", "story.cameo.mira.hideoutRevealed"] as const;
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 

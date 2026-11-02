@@ -6,7 +6,7 @@ const fromTown = {
   "story.clock": { day: 4, phase: "dusk", time: 1110 }, "story.topics": ["mill", "bridge"], "story.stamina": 62, "story.hunger": 1,
   "story.rep": { pittsfield: 7, harmony: -2 }, "story.karma": 12, "story.m7": { back: 7, eye: 8, wind: 5, neighborly: 2, knowhow: 6, quick: 4, fortune: 3 },
   "story.traits": ["wicked", "dooryard"], "story.perks": ["firstlight"], "story.party": [{ id: "loki", ko: false }, { id: "goose", ko: true }],
-  "story.player": "sarah", "story.kills": { pittsfield: 1 }, "story.wear": 83, "story.future": { x: [1, 2] }, "pittsfield.mill": "done",
+  "story.player": "sarah", "story.kills": { pittsfield: 1 }, "story.wear": 83, "story.cameo.gus.warned": true, "story.cameo.mira.state": "met", "story.cameo.mira.route": "north", "story.cameo.mira.hideoutRevealed": false, "story.future": { x: [1, 2] }, "pittsfield.mill": "done",
 };
 
 test("leaveTown keeps every story.* field (unknown ones too) and enterTown writes them back", () => {
