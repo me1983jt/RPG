@@ -707,6 +707,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			v13: player ? v13Hud() : null,
 			v14: hud14(),
 			wmap: wmHud(),
+			wmLite: (() => { try { if (!world || !player) return null; const m = v14.map, l = locOfMap(mapId); return { fog: m?.fog ?? [], here: l ? { q: l.q, r: l.r } : m ? { q: m.q, r: m.r } : null, locked: WM_LOCS.filter((x) => locLocked(x, l1.tf)).map((x) => x.id) }; } catch { return null; } })(), // v15.12.0 Maine map tab
 			safe15: !!(p && phase === "play" && safeAt(p.x, p.y)),
 			tb15: tbHud(),
 			town: town ? { id: town.id, src: town.src, n: town.n } : null,

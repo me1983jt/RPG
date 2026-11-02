@@ -223,6 +223,9 @@ export function RPG() {
   const short = useShortScreen();
   const playing = hud.phase !== "menu";
   const tb = (hud as any).tb15 as Tb15 | undefined;
+  const barArt = useArt("/game/hud/bar-frame.png"), iconArt = useArt("/game/hud/btn-icons.png"), panelArt = useArt("/game/ui/char-panel.png");
+  const headArt = useArt("/game/ui/head-frame.png"), tradeArt = useArt("/game/ui/trade-panel.png"), mapArt = useArt("/game/ui/worldmap-maine.jpg"), endArt = useArt("/game/ui/ending-harmony.jpg");
+  const [mapTab, setMapTab] = useState<"area" | "maine">("area");
   const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
   const base = roleStats(role);
   const kit = ROLES.find((item) => item.id === role) ?? ROLES.find((item) => item.id === "fighter")!;
@@ -392,17 +395,20 @@ export function RPG() {
             <section className="pointer-events-auto absolute left-1/2 top-2 bottom-36 z-50 flex max-w-[94vw] -translate-x-1/2 flex-col plank border border-border bg-surface p-3 short:top-1 short:bottom-[3.6rem] short:p-2" aria-label="World map">
               <div className="flex items-baseline justify-between gap-2">
                 <p className="font-display text-xl short:text-base">Map</p>
+                {mapArt ? <span className="flex gap-1">{(["area", "maine"] as const).map((t) => <button key={t} type="button" data-map-tab={t} className={`fobar-btn min-h-9 px-2 text-xs ${mapTab === t ? "on" : ""}`} onClick={() => setMapTab(t)}>{t === "area" ? "Here" : "Maine"}</button>)}</span> : null}
                 <button type="button" className="min-h-10 px-2 text-sm text-primary" onClick={() => setMapOpen(false)}>
                   Close
                 </button>
               </div>
-              <canvas ref={mapRef} width={468} height={468} data-testid="world-map" style={{ aspectRatio: "1 / 1" }} className="mx-auto mt-1 min-h-0 max-w-full flex-1 plank border border-border bg-bg" />
+              <canvas ref={mapRef} width={468} height={468} data-testid="world-map" style={{ aspectRatio: "1 / 1" }} className={`mx-auto mt-1 min-h-0 max-w-full flex-1 plank border border-border bg-bg ${mapArt && mapTab === "maine" ? "hidden" : ""}`} />
+              {mapArt && mapTab === "maine" ? <div className="mt-1 min-h-0 flex-1"><MaineMap wm={(hud as any).wmLite ?? null} /></div> : null}
               <p className="mt-1 text-xs text-muted short:hidden">Only ground you've seen is drawn. White dot: you. Gold: quest marks.</p>
             </section>
           ) : null}
           {hud.v13?.main.ending && hud.v13.main.slide < 99 ? (
             <div className="pointer-events-auto absolute inset-0 z-[70] flex items-center justify-center bg-black/85 p-6" data-testid="ending-screen">
-              <div className="max-w-lg plank border-2 border-primary bg-surface p-5 text-center">
+              <div className="max-h-full max-w-lg overflow-y-auto plank border-2 border-primary bg-surface p-5 text-center short:max-w-2xl short:p-3">
+                {endArt ? <img data-testid="ending-art" src={`/game/ui/ending-${ENDING_ART[hud.v13.main.slide % 4]}.jpg`} alt="" className="mb-3 aspect-video w-full max-h-[30vh] object-cover border border-[#3a2a18]" /> : null}
                 <p className="text-xs uppercase tracking-widest text-primary">The Long Winter · Ending</p>
                 <p className="mt-1 font-display text-2xl">{hud.v13.main.ending.title}</p>
                 <p className="mt-3 text-base leading-relaxed" data-testid="ending-slide">{hud.v13.main.ending.slides[Math.min(hud.v13.main.slide, hud.v13.main.ending.slides.length - 1)]}</p>
@@ -612,7 +618,7 @@ export function RPG() {
               ? createPortal(
                   // over the HUD, and scrolls if the choices don't fit a short landscape phone
                   <div className="pointer-events-none fixed inset-0 z-[58] flex items-center justify-center p-2">
-                    <section className="pointer-events-auto max-h-full w-full max-w-xl overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 shadow-2xl sm:p-4">
+                    <section data-ui-dialogue={tradeArt && hud.dialogue.choices.some((c) => /\b(buy|sell|trade|iron)\b/i.test(c.label)) ? "trade" : headArt ? "head" : "plain"} className="ui-dialogue pointer-events-auto max-h-full w-full max-w-xl overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 shadow-2xl sm:p-4">
                       <p className="font-display text-lg leading-tight text-primary">{hud.dialogue.speaker}</p>
                       <p className="mt-1.5 text-sm leading-snug sm:text-base sm:leading-relaxed">{hud.dialogue.text}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -667,6 +673,7 @@ export function RPG() {
             ) : null}
 
             {journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
+              <DeviceFrame active="journal" onTab={(t) => { setJournalOpen(false); if (t === "journal") setJournalOpen(true); else if (t === "map") setMapOpen(true); else apiRef.current?.toggleStats(); }}>
               <section className="pointer-events-auto mx-auto max-h-[min(56vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]" aria-label="Quest journal">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Journal</p>
@@ -769,10 +776,11 @@ export function RPG() {
                 })}
                 </> : null}
               </section>
+              </DeviceFrame>
             ) : null}
 
             {hud.statsOpen ? (
-              <section className="pointer-events-auto mx-auto max-h-[min(36vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]">
+              <section data-ui-panel={panelArt ? "char" : undefined} className="pointer-events-auto mx-auto max-h-[min(36vh,32rem)] w-full max-w-lg overflow-y-auto overscroll-contain plank border border-border bg-surface p-3 short:max-h-[62vh]">
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="font-display text-xl">Stats</p>
                   <p className="text-sm text-primary">{hud.points} stat · {hud.skillPoints} skill</p>
@@ -988,7 +996,7 @@ export function RPG() {
                     <MinBtn k="health" label="health panel" />
                   </section>
                 ) : (
-                <section data-hud="health" data-fobar="1" className="fobar pointer-events-auto flex min-w-0 flex-1 items-stretch gap-1 self-end p-1">
+                <section data-hud="health" data-fobar="1" className={`fobar ${barArt ? "fobar-art" : ""} pointer-events-auto flex min-w-0 flex-1 items-stretch gap-1 self-end p-1`}>
                   {/* v15.11.0: one Fallout-style bottom interface bar: log, HP/AP, two weapon slots, buttons */}
                   <div data-fobar="log" className="fobar-screen min-w-[8rem] flex-1 overflow-hidden px-1.5 py-1 text-[11px] leading-tight">
                     {(hud.log.slice(-3)).map((line, i) => <p key={hud.logIds?.[Math.max(0, hud.log.length - 3) + i] ?? `${line}-${i}`} className="truncate">{"\u203a "}{line}</p>)}
@@ -1040,7 +1048,7 @@ export function RPG() {
                       ["Options", <Settings key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("pause")],
                       [hud.v141?.crouch ? "Stand" : "Crouch", <Footprints key="i" className="size-4" aria-hidden />, !!hud.v141?.crouch, () => apiRef.current?.v141("crouch")],
                     ] as const).filter(([l]) => !tb?.on || (l !== "Auto" && l !== "Crouch" && l !== "Stand")).map(([l, icon, on, fn]) => (
-                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex h-11 min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>{icon}{l}</button>
+                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex h-11 min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}><BarIcon l={l} art={iconArt}>{icon}</BarIcon>{l}</button>
                     ))}
                   </div>
                 </section>
@@ -1604,6 +1612,64 @@ function AimPopup({ tb, api }: { tb: Tb15; api: { current: any } }) {
           <button type="button" className="fobar-btn min-h-10 w-full px-2 text-xs" onClick={() => api.current?.v141("tbClose")}>Cancel</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** v15.12.0: Grok Build art loads; until (or unless) it does, the code-drawn look stays. */
+const artCache: Record<string, boolean | undefined> = {};
+function useArt(url: string) {
+  const [ok, setOk] = useState(() => artCache[url] === true);
+  useEffect(() => {
+    if (artCache[url] !== undefined) { setOk(!!artCache[url]); return; }
+    const im = new Image();
+    im.onload = () => { artCache[url] = true; setOk(true); };
+    im.onerror = () => { artCache[url] = false; setOk(false); };
+    im.src = url;
+  }, [url]);
+  return ok;
+}
+const ICON_ORDER = ["Talk", "Char", "Pack", "Map", "Auto", "Journal", "Options", "Crouch"];
+function BarIcon({ l, art, children }: { l: string; art: boolean; children: ReactNode }) {
+  const i = ICON_ORDER.indexOf(l === "Stand" ? "Crouch" : l);
+  if (!art || i < 0) return <>{children}</>;
+  return <span aria-hidden className="block size-5" style={{ backgroundImage: "url(/game/hud/btn-icons.png)", backgroundSize: "160px 20px", backgroundPosition: `${-i * 20}px 0` }} />;
+}
+const ENDING_ART = ["harmony", "skowhegan", "pittsfield", "greenville"];
+/** v15.12.0: the trail radio (Build's device frame) around the Journal, with Journal / Map / Status tabs on its right side. */
+function DeviceFrame({ children, onTab, active }: { children: ReactNode; onTab: (t: "journal" | "map" | "status") => void; active: string }) {
+  const art = useArt("/game/ui/device-frame.png");
+  if (!art) return <>{children}</>;
+  return (
+    <div data-ui="device" className="pointer-events-auto relative mx-auto w-full max-w-[min(94vw,calc((100vh-6rem)*1.97))]" style={{ aspectRatio: "1441 / 731" }}>
+      <img src="/game/ui/device-frame.png" alt="" className="pointer-events-none absolute select-none" style={{ width: "111.03%", height: "123.12%", left: "-5.55%", top: "-12.31%", maxWidth: "none" }} />
+      <div className="absolute overflow-hidden" style={{ left: "6.94%", top: "12.31%", width: "62.53%", height: "68.54%" }}>
+        <div className="device-screen h-full overflow-y-auto overscroll-contain">{children}</div>
+        <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "url(/game/ui/device-scanlines.png)", backgroundSize: "100% 100%" }} />
+      </div>
+      <div className="absolute flex flex-col gap-1.5" style={{ left: "75%", top: "30%", width: "18%" }}>
+        {(["journal", "map", "status"] as const).map((t) => (
+          <button key={t} type="button" data-device-tab={t} className={`fobar-btn min-h-10 text-xs font-bold capitalize ${active === t ? "on" : ""}`} onClick={() => onTab(t)}>{t}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+/** v15.12.0: Build's Maine map with town markers on the travel hexes, fog on hexes you haven't seen, and you. */
+function MaineMap({ wm }: { wm: { fog?: string[]; here?: { q: number; r: number } | null; locked?: string[] } | null }) {
+  const fog = new Set(wm?.fog ?? []);
+  const pos = (q: number, r: number) => ({ x: ((q + (r % 2 ? 0.5 : 0) + 0.5) / (WM_COLS + 0.5)) * 100, y: ((r + 0.5) / WM_ROWS) * 100 });
+  const cells: { q: number; r: number }[] = [];
+  for (let r = 0; r < WM_ROWS; r++) for (let q = 0; q < WM_COLS; q++) cells.push({ q, r });
+  return (
+    <div data-testid="maine-map" className="relative mx-auto aspect-square h-full max-h-full max-w-full overflow-hidden border-2 border-[#3a2a18]" style={{ backgroundImage: "url(/game/ui/worldmap-maine.jpg)", backgroundSize: "cover" }}>
+      {fog.size ? cells.filter((c) => !fog.has(`${c.q},${c.r}`)).map((c) => { const p = pos(c.q, c.r); return <span key={`${c.q},${c.r}`} className="pointer-events-none absolute" style={{ left: `${p.x}%`, top: `${p.y}%`, width: `${100 / WM_COLS + 1}%`, height: `${100 / WM_ROWS + 1}%`, transform: "translate(-50%,-50%)", backgroundImage: "url(/game/ui/map-fog.png)", backgroundSize: "64px 64px" }} />; }) : null}
+      {WM_LOCS.filter((l) => !(wm?.locked ?? []).includes(l.id) && (!fog.size || fog.has(`${l.q},${l.r}`))).map((l) => { const p = pos(l.q, l.r); return (
+        <span key={l.id} className="absolute flex -translate-x-1/2 -translate-y-full flex-col items-center" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
+          <img src={`/game/ui/map-marker-${l.id === "raiders" ? "camp" : "town"}.png`} alt="" className="size-6" />
+          <span className="whitespace-nowrap bg-black/60 px-1 text-[9px] leading-tight text-[#f0e0b8]">{l.name.split(" · ")[0]}</span>
+        </span>); })}
+      {wm?.here ? (() => { const p = pos(wm.here.q, wm.here.r); return <img data-testid="maine-map-you" src="/game/ui/map-marker-player.png" alt="You" className="absolute size-7 -translate-x-1/2 -translate-y-full" style={{ left: `${p.x}%`, top: `${p.y}%` }} />; })() : null}
     </div>
   );
 }

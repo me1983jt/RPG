@@ -228,3 +228,21 @@
 .fobar-light.on { background: radial-gradient(circle at 35% 35%, #f8f0a0, #b8d040 45%, #5a7a10); box-shadow: 0 0 4px rgba(200,230,80,0.8); }
 @media (orientation: landscape) and (max-height: 400px) { [data-fobar="1"] { zoom: 1; } }
 @media (orientation: landscape) and (max-height: 400px) { [data-fobar="1"] [data-hud="menu"] { zoom: 1; } }
+
+/* v15.12.0: Grok Build HUD art over the code-drawn look (classes only apply once the art has loaded) */
+.fobar-art { border: 0; background: url("/game/hud/bar-frame.png") center / 100% 100% no-repeat, #3a3828; }
+.fobar-art .fobar-screen { border: 0; box-shadow: none; background: url("/game/hud/bar-screen.png") center / 100% 100% no-repeat, #0f130b; }
+.fobar-art .fobar-btn { border: 0; box-shadow: none; background: url("/game/hud/btn-up.png") center / 100% 100% no-repeat, #5a4a2c; }
+.fobar-art .fobar-btn:active, .fobar-art .fobar-btn.on { background: url("/game/hud/btn-down.png") center / 100% 100% no-repeat, #3a3020; }
+.fobar-art .fobar-red { background: url("/game/hud/btn-red-up.png") center / 100% 100% no-repeat, #7a3420; }
+.fobar-art .fobar-red:active { background: url("/game/hud/btn-red-down.png") center / 100% 100% no-repeat, #5a2214; }
+.fobar-art .fobar-light { border: 0; box-shadow: none; background: url("/game/hud/ap-light-off.png") center / 100% 100% no-repeat; width: 11px; height: 11px; }
+.fobar-art .fobar-light.on { background: url("/game/hud/ap-light-on.png") center / 100% 100% no-repeat; }
+.fobar-art [data-fobar="slot-a"] { border: 0; background: url("/game/hud/slot-main.png") center / 100% 100% no-repeat, linear-gradient(180deg, #4a4834, #2c2a1e) !important; }
+.fobar-art [data-fobar="slot-b"] { border: 0; background: url("/game/hud/slot-alt.png") center / 100% 100% no-repeat, linear-gradient(180deg, #4a4834, #2c2a1e) !important; }
+.fobar-art .fobar-slot::before { display: none; }
+.device-screen { color: #b8e09a; }
+.device-screen > section { max-height: none !important; max-width: none !important; background: #0c120a !important; border: 0 !important; box-shadow: none !important; }
+[data-ui-panel="char"] { background: url("/game/ui/char-panel.png") center / 100% 100% no-repeat, #1e1a12 !important; border-color: #3a2a18 !important; }
+[data-ui-dialogue="head"] { background: url("/game/ui/head-frame.png") center / 100% 100% no-repeat, #1e1a12 !important; border-color: #3a2a18 !important; padding: 1rem 1.25rem !important; }
+[data-ui-dialogue="trade"] { background: url("/game/ui/trade-panel.png") center / 100% 100% no-repeat, #1e1a12 !important; border-color: #3a2a18 !important; padding: 1rem 1.25rem !important; }
