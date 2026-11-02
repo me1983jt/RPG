@@ -47,6 +47,7 @@ import { useHud, useModeResult } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt as locAtRaw, locLocked, mooseheadOpen, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
 import { HOLLOWED, HOLLOW_KINDS, pickHollowKind, hollowName, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
+import { applyStory, keepStory, storyOut } from "@/game/townStory";
 import { M7_STATS, PERKS2, TRAITS2, fx1513, freshM7, loadM7, loadTraits2, m7Bonus, perk2Need, perk2Ok, perk2Slots } from "@/game/v1513";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
@@ -5455,7 +5456,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				{ id: "loki", name: "Loki", withYou: !!escortBodies?.length },
 				{ id: "goose", name: "Goose", withYou: q10.dog === 3 },
 			]).map((x) => x.id === "goose" ? { ...x, withYou: !!x.withYou && !gooseDown(), laidUp: gooseDown(), ...(gooseDown() ? { where: "farm" } : {}) } : x), // v15.10.6: Goose laid up at the farm (handoff fields only)
-			questFlags: { ...(l1.tf ?? {}), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.gooseLaidUp": gooseDown(), "story.player": asSarah() ? "sarah" : "justin", "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
+			questFlags: { ...(l1.tf ?? {}), ...storyOut(l1.ts, p, asSarah() ? "sarah" : "justin"), "story.stage": v14.st ?? 0, "story.gooseFound": q10.dog >= 3, "story.gooseLaidUp": gooseDown(), "story.player": asSarah() ? "sarah" : "justin", "story.day": curDay() + 1, ...townStoryFlags(), ...Object.fromEntries(Object.keys(w13.seen ?? {}).filter((k) => w13.seen[k]).map((k) => [`story.seen.${k}`, true])) },
 			// v15.9: agility/grit live in w13.core; a real 0 stays 0
 			stats: Object.fromEntries(["strength", "vigor", "endurance", "intellect", "perception", "luck", "agility", "grit"].map((k) => { const v = Number(k === "agility" || k === "grit" ? w13.core?.[k] : p?.[k]); return [k, Number.isFinite(v) ? v : 1]; })),
 			day: curDay() + 1, time: clockLabel(clock).replace(/^Day \d+ · /, ""),
@@ -5518,6 +5519,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (st.questFlags && typeof st.questFlags === "object") {
 			l1.tf = l1.tf ?? {};
 			for (const [k, v] of Object.entries(st.questFlags)) if (!k.startsWith("story.") && ["string", "number", "boolean"].includes(typeof v)) l1.tf[k] = keepFlag(k, l1.tf[k], v);
+			// v15.13.3: keep every story.* field the town wrote (unknown ones as is) and apply the RPG-owned ones (m7, traits, perks, karma, rep)
+			l1.ts = keepStory(l1.ts ?? {}, st.questFlags); applyStory(player, st.questFlags);
 		}
 		const moved = townMapFlags(l1.tf);
 		if (moved.length) pushLog("Word from town changes your plans. Check the journal.");
