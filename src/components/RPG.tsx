@@ -26,6 +26,8 @@ import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
 import { useHud, useModeResult } from "@/game/store";
 import { RECIPES } from "@/game/types";
+import { M7_MAX, M7_MIN, M7_STATS, TRAITS2, TRAIT2_MAX, freshM7, m7Left, type M7Id } from "@/game/v1513";
+import { SKILLS as SKILL_LIST, tagsForRole } from "@/game/progress";
 import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import { COAT_PICKS, HAT_PICKS, HAIRS, dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import type { PerkId, SkillId } from "@/game/progress";
@@ -156,6 +158,10 @@ export function RPG() {
   const [step, setStep] = useState<"trade" | "points" | "trait">("trade");
   const [trait, setTrait] = useState<TraitId | null>(null);
   const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
+  // v15.13: Maine Seven, two traits, three tags
+  const [m7, setM7] = useState(freshM7);
+  const [traits2, setTraits2] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[] | null>(null);
   const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
@@ -226,7 +232,12 @@ export function RPG() {
   const barArt = useArt("/game/hud/bar-frame.png"), iconArt = useArt("/game/hud/btn-icons.png"), panelArt = useArt("/game/ui/char-panel.png");
   const headArt = useArt("/game/ui/head-frame.png"), tradeArt = useArt("/game/ui/trade-panel.png"), mapArt = useArt("/game/ui/worldmap-maine.jpg"), endArt = useArt("/game/ui/ending-harmony.jpg");
   const [mapTab, setMapTab] = useState<"area" | "maine">("area");
-  const pointsLeft = 3 - (bonus.strength + bonus.vigor + bonus.endurance + bonus.intellect + bonus.perception + bonus.luck);
+  const pointsLeft = m7Left(m7);
+  useEffect(() => setTags(null), [role]);
+  const tagList = tags ?? (tagsForRole(role) as string[]);
+  const bumpM7 = (k: M7Id, d: number) => setM7((m) => { const v = m[k] + d; if (v < M7_MIN || v > M7_MAX || (d > 0 && m7Left(m) < 1)) return m; return { ...m, [k]: v }; });
+  const flipTrait = (id: string) => setTraits2((t) => t.includes(id) ? t.filter((x) => x !== id) : t.length >= TRAIT2_MAX ? t : [...t, id]);
+  const flipTag = (id: string) => setTags(() => tagList.includes(id) ? tagList.filter((x) => x !== id) : tagList.length >= 3 ? tagList : [...tagList, id]);
   const base = roleStats(role);
   const kit = ROLES.find((item) => item.id === role) ?? ROLES.find((item) => item.id === "fighter")!;
 
@@ -341,8 +352,8 @@ export function RPG() {
   }, []);
 
   function startNew(): void {
-    if (!trait || pointsLeft !== 0) return;
-    apiRef.current?.begin(name, role, bonus, trait, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode, hero });
+    if (pointsLeft !== 0 || tagList.length !== 3) return;
+    apiRef.current?.begin(name, role, bonus, (trait ?? "") as TraitId, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode, hero, m7, traits2, tags: tagList });
   }
 
   return (
@@ -786,6 +797,22 @@ export function RPG() {
                   <p className="text-sm text-primary">{hud.points} stat · {hud.skillPoints} skill</p>
                 </div>
                 <p className="mt-1 text-xs text-muted">{hud.karmaWord}. {hud.repLine}</p>
+                {(hud as any).v1513 ? (
+                  <div className="mt-2 plank border border-primary/60 bg-bg px-2 py-2 text-xs" data-testid="m7-panel">
+                    <p className="font-semibold text-primary">The Maine Seven</p>
+                    <div className="mt-1 grid grid-cols-7 gap-1 text-center">
+                      {M7_STATS.map((st) => (
+                        <div key={st.id} className="plank border border-border bg-surface px-0.5 py-1" title={st.does}>
+                          <span className="block text-[10px] uppercase text-muted">{st.name}</span>
+                          <span className="block font-display text-lg leading-none">{(hud as any).v1513.m7[st.id]}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-muted">AP in a fight {(hud as any).v1513.apMax} · Sequence {(hud as any).v1513.fx.seq >= 0 ? "+" : ""}{(hud as any).v1513.fx.seq} · Armor {(hud as any).v1513.fx.armor ? `+${(hud as any).v1513.fx.armor}` : "+0"} · Melee {(hud as any).v1513.fx.melee ? `+${(hud as any).v1513.fx.melee}` : "+0"}</p>
+                    <p className="mt-1"><span className="font-semibold text-primary">Traits: </span>{(hud as any).v1513.traits.length ? (hud as any).v1513.traits.map((t: { name: string; up: string; down: string }) => `${t.name} (${t.up} ${t.down})`).join(" · ") : "none"}</p>
+                    <p className="mt-1"><span className="font-semibold text-primary">Maine perks: </span>{(hud as any).v1513.perks.length ? (hud as any).v1513.perks.map((p: { name: string }) => p.name).join(" · ") : "none yet (one every 3 levels)"}</p>
+                  </div>
+                ) : null}
                 {hud.v13 ? (
                   <div className="mt-2 plank border border-border bg-bg px-2 py-2 text-xs" data-testid="core-stats">
                     <p className="font-semibold text-primary">{hud.v13.backstory ? `${hud.v13.backstory[0].toUpperCase()}${hud.v13.backstory.slice(1)} · ` : ""}What your stats do</p>
@@ -1098,7 +1125,7 @@ export function RPG() {
               After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. Name yourself, pick a trade, and set your clothes.
             </p>
             <p className="mt-3 text-xs uppercase tracking-widest text-primary short:mt-2">
-              {step === "trade" ? "1 · Trade" : step === "points" ? "2 · Points" : "3 · Trait"}
+              {step === "trade" ? "1 · Trade" : step === "points" ? "2 · The Maine Seven" : "3 · Traits and tagged skills"}
             </p>
             <div className="mt-2 plank border border-border bg-bg px-3 py-2 text-sm">
               <p className="font-display text-lg leading-none">{kit.title}</p>
@@ -1106,7 +1133,7 @@ export function RPG() {
                 {GEAR[kit.weapon]?.name} · {GEAR[kit.coat]?.name}
               </p>
               <p className="mt-1">
-                Str {base.strength + bonus.strength} · Vig {base.vigor + bonus.vigor} · End {base.endurance + bonus.endurance} · Int {base.intellect + bonus.intellect} · Per {base.perception + bonus.perception} · Luck {base.luck + bonus.luck}
+                {M7_STATS.map((st) => `${st.short} ${m7[st.id]}`).join(" · ")}
               </p>
             </div>
             {step === "trade" ? (
@@ -1245,29 +1272,16 @@ export function RPG() {
             ) : null}
             {step === "points" ? (
               <>
-                <p className="mt-3 text-sm text-muted">{pointsLeft} to place. They sit on top of the trade.</p>
-                <div className="mt-2 grid grid-cols-2 gap-2 short:grid-cols-3">
-                  {(
-                    [
-                      ["strength", "Strength", "Harder hits"],
-                      ["vigor", "Vigor", "More life"],
-                      ["endurance", "Endurance", "More stamina"],
-                      ["intellect", "Intelligence", "Surer locks, better prices"],
-                      ["perception", "Perception", "See farther. Guns reach farther"],
-                      ["luck", "Luck", "Better finds. Harder hits, sometimes"],
-                    ] as const
-                  ).map(([key, label, hint]) => (
-                    <div key={key} className="plank border border-border bg-bg px-2 py-2">
-                      <p className="text-sm font-semibold">{label}</p>
-                      <p className="text-xs text-muted">{hint}</p>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <button type="button" className="plank border border-border px-3 py-1" onClick={() => bump(key, -1)} disabled={bonus[key] < 1}>
-                          −
-                        </button>
-                        <span className="text-lg">{base[key] + bonus[key]}</span>
-                        <button type="button" className="plank border border-border px-3 py-1" onClick={() => bump(key, 1)} disabled={pointsLeft < 1}>
-                          +
-                        </button>
+                <p className="mt-3 text-sm text-muted" data-testid="m7-left">{pointsLeft} point{pointsLeft === 1 ? "" : "s"} left. Each stat runs {M7_MIN} to {M7_MAX}; lower one to raise another.</p>
+                <div className="mt-2 grid grid-cols-2 gap-1.5 short:grid-cols-4" data-testid="m7-grid">
+                  {M7_STATS.map((st) => (
+                    <div key={st.id} className="plank border border-border bg-bg px-2 py-1.5" data-m7={st.id}>
+                      <p className="text-sm font-semibold">{st.name}</p>
+                      <p className="text-[11px] leading-tight text-muted">{st.does}</p>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <button type="button" aria-label={`Lower ${st.name}`} className="plank shrink-0 border border-border px-2 py-0.5" onClick={() => bumpM7(st.id, -1)} disabled={m7[st.id] <= M7_MIN}>−</button>
+                        <span className="text-lg">{m7[st.id]}</span>
+                        <button type="button" aria-label={`Raise ${st.name}`} className="plank shrink-0 border border-border px-2 py-0.5" onClick={() => bumpM7(st.id, 1)} disabled={pointsLeft < 1 || m7[st.id] >= M7_MAX}>+</button>
                       </div>
                     </div>
                   ))}
@@ -1275,20 +1289,28 @@ export function RPG() {
               </>
             ) : null}
             {step === "trait" ? (
-              <div className="mt-3 grid grid-cols-2 gap-2 short:grid-cols-4 short:gap-1">
-                {TRAITS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-pressed={trait === item.id}
-                    className={`plank border px-3 py-3 text-left short:px-2 short:py-2 ${trait === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                    onClick={() => setTrait(item.id)}
-                  >
-                    <span className="font-display text-lg short:text-base">{item.title}</span>
-                    <span className="mt-1 block text-sm text-muted short:text-xs">{item.blurb}</span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <p className="mt-3 text-sm text-muted">Pick up to {TRAIT2_MAX} traits ({traits2.length} picked). Each has a good side and a bad side.</p>
+                <div className="mt-1 grid grid-cols-2 gap-1.5 short:grid-cols-4" data-testid="trait-grid">
+                  {TRAITS2.map((t) => (
+                    <button key={t.id} type="button" aria-pressed={traits2.includes(t.id)} data-trait2={t.id}
+                      className={`plank border px-2 py-1.5 text-left ${traits2.includes(t.id) ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => flipTrait(t.id)}>
+                      <span className="block text-sm font-semibold">{t.name}</span>
+                      <span className="block text-[11px] leading-tight text-green-300">+ {t.up}</span>
+                      <span className="block text-[11px] leading-tight text-red-300">− {t.down}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-sm text-muted">Tag 3 skills ({tagList.length}/3): +15 now, and points put in them count double.</p>
+                <div className="mt-1 grid grid-cols-3 gap-1 short:grid-cols-6" data-testid="tag-grid">
+                  {SKILL_LIST.map((sk) => (
+                    <button key={sk.id} type="button" aria-pressed={tagList.includes(sk.id)} data-tag={sk.id}
+                      className={`plank border px-2 py-1 text-left text-xs ${tagList.includes(sk.id) ? "border-primary bg-primary/20 font-semibold" : "border-border bg-bg"}`} onClick={() => flipTag(sk.id)}>
+                      {sk.name}{tagList.includes(sk.id) ? " ★" : ""}
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : null}
             <div className="mt-4 flex flex-col gap-2">
               {confirmNew ? (
@@ -1331,7 +1353,7 @@ export function RPG() {
                       <button
                         type="button"
                         className="flex-1 plank bg-primary px-4 py-3 font-semibold text-bg disabled:opacity-40"
-                        disabled={!trait}
+                        disabled={tagList.length !== 3 || pointsLeft !== 0}
                         onClick={() => {
                           if (hud.hasSave) setConfirmNew(true);
                           else startNew();

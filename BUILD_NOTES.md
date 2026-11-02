@@ -65,3 +65,13 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   and any town iframe; first touch requests full screen + landscape lock in browsers. Town iframe allows fullscreen.
 - Very short landscape phones (<= 400 px tall) shrink the HUD so nothing falls off the bottom (checked 740x360, 915x412, 1280x800).
 - Quest note: towns are covered by the main shell's lock; their own pages should also assume landscape in their next pass.
+
+## v15.13.0 (Nov 2) — Maine Seven, two-sided traits, tagged skills, Maine perks
+- New game: 3 steps. Trade -> The Maine Seven (Back, Eye, Wind, Neighborly, Know-how, Quick, Fortune; start 5, 5-point pool, 1..10,
+  lower one to raise another) -> up to 2 traits (each + and -) and 3 tagged skills (+15, invested points count double).
+- Rules in src/game/v1513.ts (fx1513). Engine hooks search "fx15(": fx13 (carry, health, stamina, crit, gun aim, prices, talk, sickness),
+  refreshGear (armor, melee), tbApMax (AP), tbStart (Sequence), tbChance (aim + Woodsman in trees), crits, loot luck, skill points/level, heals.
+  The Maine Seven also fold into the old six stats + agility at creation (round((v-5)/2)), so skill scores move with them.
+- Perks: one per 3 levels from 12 Maine perks (level + Maine Seven needs); old skill-based perks on old saves keep working.
+- Save: data.m7, data.traits2. Old saves load as all 5 / no traits (no change). Town hand-off keeps the new perk ids.
+- Test: scripts/v1513-shots.mjs (12 PASS), v15-test ALL PASS (v4-lib begin() updated for the new creation). Shots: shots/v1513/.

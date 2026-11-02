@@ -47,6 +47,7 @@ import { useHud, useModeResult } from "@/game/store";
 import { WM_LOCS, hexCenter, hexHours, hexKey, hexNeighbors, hexPath, locAt as locAtRaw, locLocked, mooseheadOpen, locOfMap } from "@/game/worldmap";
 import { TOWN_PROTOCOL, TOWN_SRC, INJ_MAP, cleanInventory } from "@/game/town";
 import { HOLLOWED, HOLLOW_KINDS, pickHollowKind, hollowName, LOOT_LORE, LOOT_RUNS, NOISE, noiseReach, SNEAK_MULT, CROUCH_SPEED, CROUCH_SIGHT, PROD, prodOf, BAGS, sortStacks, quickStack, lootRunAt, restockLeft, freshV141, loadV141 } from "@/game/v141";
+import { M7_STATS, PERKS2, TRAITS2, fx1513, freshM7, loadM7, loadTraits2, m7Bonus, perk2Need, perk2Ok, perk2Slots } from "@/game/v1513";
 import { ART14, BENCH_UP, CRAFT14, MAT_NAME, PIECES, PIECE_BROKEN, PIECE_HP, PIECE_UP, STAGE_TEXT, anchorOf, freshV14, isGate14, isWall14, loadV14, repairCost as v14RepairCost } from "@/game/v14";
 import { EQUIP_SLOTS, GRID_COLS, SLOT_FIELD, canFit, equipSlotOf, fitsAt, gridRows, itemSize, layoutGrid, slotAccepts, wornCount } from "@/game/inventory";
 import { clockLabel, DAY_LENGTH_SEC, morningClock, nightShade } from "@/game/time";
@@ -767,7 +768,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			skills: p ? skillView(p) : [],
 			perkReady: p ? (p.perks?.length ?? 0) < perkSlots(p.level) : false,
 			perkChoices: p ? perkView(p) : [],
-			perkNames: p ? (p.perks ?? []).map((id) => PERKS.find((perk) => perk.id === id)?.name ?? id).join(", ") : "",
+			perkNames: p ? (p.perks ?? []).map((id) => PERKS2.find((perk) => perk.id === id)?.name ?? PERKS.find((perk) => perk.id === id)?.name ?? id).join(", ") : "",
+			v1513: p ? { m7: loadM7(p.m7), traits: (p.traits2 ?? []).map((id) => TRAITS2.find((t) => t.id === id)).filter(Boolean), fx: fx15(p), apMax: (() => { try { return tbApMax(); } catch { return 0; } })(), perks: (p.perks ?? []).map((id) => PERKS2.find((x) => x.id === id)).filter(Boolean) } : null,
 			karmaWord: karmaWord(p?.karma ?? 0),
 			repLine: p ? repLine(p) : "",
 			canRetag: p ? investedTotal(p) === 0 : false,
@@ -925,8 +927,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (p === player && buffOn("strong")) p.atk += 2;
 		if (p.perks?.includes("wool")) p.def += 2;
 		apMax = p.perks?.includes("quick") ? 10 : 8;
+		if (p === player) { const m15 = fx15(p); p.def += m15.armor; if (!isGun(w?.family)) p.atk += m15.melee; apMax = Math.max(4, apMax + m15.ap); }
 		const extra = p.trait === "hide" ? 14 : p.trait === "step" ? -8 : 0;
 		const nextHp = Math.max(24, kit.hp + Math.max(0, p.level - 1) * 6 + Math.max(0, p.vigor - 1) * 8 + extra) + (p === player ? fx13().hpBonus : 0);
+		if (p === player && nextHp < 1) p.maxHp = 1;
 		if (nextHp > p.maxHp) p.hp += nextHp - p.maxHp;
 		p.maxHp = nextHp;
 		p.hp = Math.min(p.hp, p.maxHp);
@@ -1141,6 +1145,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (seed === 5402695) seed = 5402696;
 		return seed;
 	}
+	let pendingAgil15 = 0;
 	function bootNew(name, role, bonus, trait, look, appearance) {
 		worldSeed = 5402695; // v15.9.7: one fixed, hand-made map (central Maine); no random worlds
 		exitSides = MAINE_SIDES.slice();
@@ -1172,6 +1177,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		ensureProgress(player);
 		player.tags = tagsForRole(role);
+		// v1513: Maine Seven (folded into the old stats), up to two traits, three tagged skills
+		player.m7 = loadM7(appearance?.m7);
+		player.traits2 = loadTraits2(appearance?.traits2);
+		{ const b = m7Bonus(player.m7); for (const k of ["strength", "vigor", "endurance", "intellect", "perception", "luck"]) player[k] = Math.max(1, player[k] + b[k]); pendingAgil15 = b.agility; }
+		if (Array.isArray(appearance?.tags) && appearance.tags.length === 3 && appearance.tags.every((t) => SKILLS.some((x) => x.id === t))) player.tags = [...new Set(appearance.tags)].length === 3 ? [...appearance.tags] : player.tags;
+		if (player.traits2.includes("downeast")) player.scrap = 0;
 		player.invested = {};
 		player.skillPoints = 0;
 		player.perks = [];
@@ -1197,6 +1208,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		v3 = freshV3();
 		w13 = freshW13();
 		w13.hero = pendingHero;
+		if (pendingAgil15) { w13.core.agility = Math.max(1, (w13.core.agility ?? 1) + pendingAgil15); pendingAgil15 = 0; }
+		refreshGear(player); player.hp = player.maxHp; player.stamina = player.maxStamina;
 		v14 = freshV14();
 		if (typeof window !== "undefined" && window.__v14Skip) v14.st = 5;
 		l1 = freshV141(); storeKey = "";
@@ -1382,6 +1395,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (data.invested) player.invested = data.invested;
 		if (data.skillPoints != null) player.skillPoints = data.skillPoints;
 		player.perks = Array.isArray(data.perks) ? data.perks : [];
+		player.m7 = loadM7(data.m7); player.traits2 = loadTraits2(data.traits2); // v1513: old saves = all 5, no traits
 		player.karma = data.karma ?? 0;
 		player.rep = {
 			lowelltown: 0,
@@ -1554,6 +1568,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.invested = player.invested;
 		data.skillPoints = player.skillPoints;
 		data.perks = player.perks;
+		data.m7 = loadM7(player.m7); data.traits2 = player.traits2 ?? []; // v1513
 		data.karma = player.karma;
 		data.slotB = player.slotB ?? ""; // v15.11.0: second weapon slot
 		data.rep = player.rep;
@@ -1596,7 +1611,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			perception: p.perception,
 			luck: p.luck,
 			trait: p.trait || "",
-			agility: w13?.core?.agility ?? 1, grit: w13?.core?.grit ?? 1, tradeMech: 0
+			agility: w13?.core?.agility ?? 1, grit: w13?.core?.grit ?? 1, tradeMech: 0, extra: fx15(p).skill
 		};
 	}
 	function ensureProgress(p) {
@@ -1631,6 +1646,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function perkView(p) {
 		ensureProgress(p);
 		const score = (id) => skillScore(id, statsOf(p), p.invested, p.tags, p.perks);
+		if (p === player) { const m = loadM7(p.m7); return PERKS2.filter((perk) => !p.perks.includes(perk.id)).map((perk) => ({ id: perk.id, name: perk.name, blurb: `${perk.blurb} (Needs ${perk2Need(perk)})`, ok: perk2Ok(perk, p.level, m) })); }
 		return PERKS.filter((perk) => !p.perks.includes(perk.id)).map((perk) => ({
 			id: perk.id,
 			name: perk.name,
@@ -1657,7 +1673,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			player.level += 1;
 			player.points += 1;
 			ensureProgress(player);
-			player.skillPoints += skillPointsOnLevel(player.intellect);
+			player.skillPoints += Math.max(1, skillPointsOnLevel(player.intellect) + fx15().skillPts);
 			refreshGear(player);
 			leveled = true;
 		}
@@ -3649,7 +3665,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return { strength: p?.strength ?? 1, endurance: p?.endurance ?? 1, agility: w13.core.agility ?? 1, perception: p?.perception ?? 1, wits: p?.intellect ?? 0, grit: w13.core.grit ?? 1 };
 	}
 	function fx13() {
-		return coreEffects(core13());
+		const f = coreEffects(core13()), m = fx15();
+		return { ...f, carryLb: f.carryLb + m.carry, hpBonus: f.hpBonus + m.hp, staminaBonus: f.staminaBonus + m.stamina, critPct: Math.max(0, f.critPct + m.crit), accuracyPct: f.accuracyPct + m.aim,
+			barterPct: Math.min(30, f.barterPct + m.barter), talkBonus: f.talkBonus + m.talk, sickResist: Math.max(0, Math.min(.7, f.sickResist + m.sick)) };
+	}
+	/** v1513: Maine Seven, two-sided traits and Maine perks */
+	function fx15(p = player) {
+		return fx1513(loadM7(p?.m7), p?.traits2 ?? [], p?.perks ?? []);
 	}
 	function perk13(skill, n) {
 		return lv(skill) >= n;
@@ -4063,7 +4085,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		void more;
 		if (def.id === "cider" || def.id === "donut") { player.stamina = Math.min(player.maxStamina, player.stamina + 15); if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal); pushLog(def.id === "cider" ? "Hot cider. Warm all the way down. +15 stamina." : "Still warm from Sarah's kettle. +15 stamina."); }
 		if (f.sleep) n.sleep = Math.min(100, n.sleep + f.sleep);
-		if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + def.heal);
+		if (def.heal > 0) player.hp = Math.min(player.maxHp, player.hp + Math.round(def.heal * fx15().heal));
 		const r = RECIPES13.find((x) => x.makes === def.id);
 		if (r?.buff) {
 			const hrs = r.hours * (1 + .05 * lv("cooking")) * (r.buff === "warm" && perk13("cooking", 6) ? 1.5 : 1);
@@ -5534,7 +5556,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (str(st.name) && st.name.trim()) p.name = cleanName(st.name);
 		if (str(st.look) && st.look) p.look = st.look;
 		if (str(st.hair) && st.hair) p.hair = st.hair;
-		if (Array.isArray(st.perks) && st.perks.every(str)) p.perks = st.perks.filter((x) => PERKS.some((d) => d.id === x));
+		if (Array.isArray(st.perks) && st.perks.every(str)) p.perks = st.perks.filter((x) => PERKS.some((d) => d.id === x) || PERKS2.some((d) => d.id === x));
 		if (str(st.trait)) p.trait = traitOf(st.trait)?.id ?? p.trait;
 		if (num(st.level) && st.level >= 1) p.level = Math.floor(st.level);
 		if (num(st.xp) && st.xp >= 0) p.xp = st.xp;
@@ -7699,7 +7721,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (!pickAction()) return;
 		lootedChests.add(inside.id);
 		player.scrap = Math.min(999, player.scrap + 5);
-		const found = rollDrop(false, player.luck);
+		const found = rollDrop(false, player.luck + fx15().luck);
 		if (found) giveItem(found);
 		floater(player.x, player.y - 12, "+5 iron");
 		pushLog(found && GEAR[found] ? `The chest opens. ${GEAR[found].name}.` : "The chest opens. Iron, and little else.");
@@ -7856,7 +7878,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (isGun(familyHit) && hasPerk("steady")) dmg += 1;
 		if (isGun(familyHit)) { dmg = Math.round(dmg * (1 + .04 * lv("marksmanship"))); train("marksmanship", 2); }
 		// v13 crits: agility and wits, marksmanship perks; companions with high loyalty add a share
-		{ const crit = fx13().critPct + (isGun(familyHit) && perk13("marksmanship", 6) ? 5 : 0); if (Math.random() * 100 < crit) { dmg = Math.round(dmg * (isGun(familyHit) && perk13("marksmanship", 9) ? 2 : 1.6)); floater(player.x, player.y - 60, "Crit!"); } }
+		{ const crit = fx13().critPct + (isGun(familyHit) ? fx15().gunCrit : 0) + (isGun(familyHit) && perk13("marksmanship", 6) ? 5 : 0); if (Math.random() * 100 < crit) { dmg = Math.round(dmg * (isGun(familyHit) && perk13("marksmanship", 9) ? 2 : 1.6)); floater(player.x, player.y - 60, "Crit!"); } }
 		if (party && helpsMore(party.role)) dmg = Math.round(dmg * (1.1 + .04 * lv("leadership") + (perk13("leadership", 6) ? .15 : 0)));
 		return Math.max(1, dmg);
 	}
@@ -8001,7 +8023,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			scrap = 8;
 		} else if (enemy.kind === "bandit") {
 			scrap = enemy.elite ? 4 : 2;
-			const found = rollDrop(enemy.elite, player.luck + (mapId === 2 ? 3 : 0));
+			const found = rollDrop(enemy.elite, player.luck + fx15().luck + (mapId === 2 ? 3 : 0));
 			if (found) addStack(items, found, 1);
 			if (mapId === 2 && Math.random() < .35) addStack(items, Math.random() < .5 ? "medicine" : "gas", 1);
 			if (Math.random() < .4) addStack(items, "cloth", 1);
@@ -12150,7 +12172,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const hexDist15 = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2;
 	const tbHostile = (e) => !e.dead && e.aggro && e.temper !== "timid" && !e.lineup141;
 	const agil15 = () => Number(w13.core?.agility) || 1;
-	const tbApMax = () => 5 + Math.floor(agil15() / 2);
+	const tbApMax = () => Math.max(3, 5 + Math.floor(agil15() / 2) + fx15().ap);
 	function tbFoe(id) { return world?.enemies.find((e) => e.id === id && !e.dead) ?? null; }
 	function hexFree15(h, self) {
 		const c = hexXY15(h);
@@ -12174,7 +12196,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		turnBased = true; apMax = tbApMax(); ap = apMax; apWalk = 0; intent = null; holdWalk = false; work = null;
 		snap15(player);
 		// v15.11.0: Sequence = Perception x2 + Agility (plus a d6 so ties break)
-		const order = [{ id: "p", init: perc() * 2 + agil15() + roll() }];
+		const order = [{ id: "p", init: perc() * 2 + agil15() + fx15().seq + roll() }];
 		if (party && !inside && Math.hypot(party.x - player.x, party.y - player.y) < 420) { snap15(party); order.push({ id: "c", init: 5 + roll() }); }
 		for (const e of foes) { snap15(e); order.push({ id: e.id, init: (e.kind === "wolf" || e.kind === "coyote" ? 6 : 4) + roll() }); }
 		order.sort((a, b) => b.init - a.init);
@@ -12244,13 +12266,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return out;
 	}
 	const moveCost15 = () => TB_COST.move * (injured("legs") ? 2 : 1);
+	/** v1513: in the trees = 4+ trees within 3 tiles (Woodsman perk) */
+	function inWoods15() {
+		if (!player || !world || inside) return false;
+		const t = tileOf(player.x, player.y); let n = 0;
+		for (const q of world.props) if (isTree193(q) && Math.abs(q.tx - t.tx) <= 3 && Math.abs(q.ty - t.ty) <= 3 && ++n >= 4) return true;
+		return false;
+	}
 	function tbChance(e, part) {
 		const fam = GEAR[player.weaponId]?.family, gun = isGun(fam);
 		const d = hexDist15(hexOf15(player.x, player.y), hexOf15(e.x, e.y));
 		if (!gun && d > 1) return 0;
 		if (gun && Math.hypot(e.x - player.x, e.y - player.y) > swingOf().range + 30) return 0;
 		const mod = AIM15.find((a) => a[0] === part)?.[2] ?? 0;
-		let c = TB_BASE_HIT + skillOf(gun ? "rifle" : "melee") * .45 + perc() * 3 + (player.luck || 0) + mod - (gun ? Math.max(0, d - 2) * 4 : 0);
+		let c = TB_BASE_HIT + skillOf(gun ? "rifle" : "melee") * .45 + perc() * 3 + (player.luck || 0) + mod - (gun ? Math.max(0, d - 2) * 4 : 0) + (gun ? fx15().aim : 0) + (inWoods15() ? fx15().woods : 0);
 		if (injured("blind")) c *= INJ_FX.blindAim;
 		if (injured("arms")) c *= INJ_FX.armAim;
 		return Math.max(5, Math.min(95, Math.round(c)));
@@ -12886,9 +12915,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!player || phase === "menu") return;
 			ensureProgress(player);
 			if (player.perks.length >= perkSlots(player.level)) return;
-			const perk = PERKS.find((item) => item.id === id);
+			const p2 = PERKS2.find((item) => item.id === id);
+			const perk = p2 ?? PERKS.find((item) => item.id === id);
 			if (!perk || player.perks.includes(id)) return;
-			if (!perkOk(perk, (skill) => skillOf(skill))) return;
+			if (p2 ? !perk2Ok(p2, player.level, loadM7(player.m7)) : !perkOk(perk, (skill) => skillOf(skill))) return;
 			player.perks = [...player.perks, id];
 			refreshGear(player);
 			if (ap > apMax) ap = apMax;
@@ -13030,7 +13060,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			} else if (def.heal > 0) {
 				stack.qty -= 1;
 				if (stack.qty <= 0) player.bag = player.bag.filter((s) => s.qty > 0);
-				player.hp = Math.min(player.maxHp, player.hp + Math.round(def.heal * (1 + skillOf("doctor") / 200) * (hasPerk("stitch") ? 1.25 : 1) * (1 + .08 * lv("medicine"))));
+				player.hp = Math.min(player.maxHp, player.hp + Math.round(def.heal * fx15().heal * (1 + skillOf("doctor") / 200) * (hasPerk("stitch") ? 1.25 : 1) * (1 + .08 * lv("medicine"))));
 				if (def.family === "bandage") train("medicine", 5);
 				sfx("click");
 				pushLog(`${def.name} used.`);
@@ -13085,6 +13115,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takeLoot
 	};
 	window.__controlsTest = {
+		v1513Xp: (n) => { grantXp(n); saveGame(); sync(true); return player?.level; },
+		v1513Save: () => { saveGame(); return true; },
 		/** size198: put a calm animal next to the hero so the size check sees it drawn. */
 		sizeSpawn: (kind) => { const dx = { moose: -170, deer: 150, wolf: 260 }[kind] ?? 0; const e = q10Spawn(kind, null, kind, { x: player.x + dx, y: player.y - dx * .4 }, [999, 0, 0], "size198", false); if (e) { e.temper = "wary"; e.aggro = false; } return e ? e.id : null; },
 		/** size198: rendered visible heights (px at zoom 1) of everything drawn so far, against SIZE_IN. */

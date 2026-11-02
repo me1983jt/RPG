@@ -66,6 +66,8 @@ export interface SkillStats {
   grit?: number;
   /** v15.9: trade-skill (learn-by-use) mechanics level, folded into the 0-120 Mechanics score */
   tradeMech?: number;
+  /** v15.13: Maine Seven, two-sided traits and Maine perks add to skills */
+  extra?: Record<string, number>;
 }
 
 export function clampScore(n: number, lo = -100, hi = 100): number {
@@ -105,7 +107,7 @@ export function skillScore(
   if (def.tradeLvBonus) base += (stats.tradeMech ?? 0) * def.tradeLvBonus;
   const put = invested?.[id] ?? 0;
   const tagged = tags?.includes(id);
-  let extra = 0;
+  let extra = (stats.extra?.[id] ?? 0) + (tagged ? 15 : 0); // v15.13: tagged skills start 15 higher
   for (const p of perks ?? []) extra += STATS_RULES.perks.find((x: any) => x.id === p)?.bonus?.[id] ?? 0;
   return clampScore(base + put * (tagged ? 2 : 1) + extra, 0, def.max ?? 120);
 }
