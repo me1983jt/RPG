@@ -81,6 +81,7 @@ export const GEAR: Record<string, GearDef> = {
   "bag-hide": { id: "bag-hide", name: "Hide rucksack", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Use it to swap your pack up: two more rows than the start." },
   "bag-frame": { id: "bag-frame", name: "Trapper's frame bag", kind: "supply", family: "supply", quality: "good", atk: 0, def: 0, heal: 0, note: "Use it to swap your pack up: three more rows than the start." },
   junk: { id: "junk", name: "Scrap parts", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "Bolts, springs and sheet tin off a wreck. Workbench stock." },
+  toolkit: { id: "toolkit", name: "Mechanic's toolkit", kind: "supply", family: "supply", quality: "standard", atk: 0, def: 0, heal: 0, note: "Wrenches, a ratchet and a coffee can of bolts. Fixes what the woods break." },
   wire: { id: "wire", name: "Twist of wire", kind: "supply", family: "supply", quality: "poor", atk: 0, def: 0, heal: 0, note: "For a latch." },
   lockpick: { id: "lockpick", name: "Bent pick", kind: "supply", family: "lockpick", quality: "poor", atk: 0, def: 0, heal: 0, note: "A poor pick. It may slip." },
   "lockpick-std": { id: "lockpick-std", name: "Lockpick", kind: "supply", family: "lockpick", quality: "standard", atk: 0, def: 0, heal: 0, note: "A proper pick." },

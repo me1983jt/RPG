@@ -11,7 +11,7 @@ const CAM_ISO_Y = (() => { try { const v = parseFloat(new URLSearchParams(global
 setIsoY(CAM_ISO_Y);
 import { dyeBodySheet, type HairId, type StartLook } from "@/game/look";
 import { GEAR, CRAFT, armorSlot, rollDrop, roleKit, roleStats, classId, traitOf, defaultLook, type LookId, type RoleId, type TraitId } from "@/game/gear";
-import { audioState, setMusic, sfx, unlockAudio } from "@/game/audio";
+import { audioState, pauseAudio, setMusic, sfx, unlockAudio } from "@/game/audio";
 import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { BEAST_FIT, BEAST_IN, FOLK_IN, PX_PER_IN, SIZE_IN, TREE_VARY, sizedPx, townH } from "@/game/sizes";
@@ -767,7 +767,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			region: world?.name ?? "Moose River",
 			skillPoints: p?.skillPoints ?? 0,
 			skills: p ? skillView(p) : [],
-			perkReady: p ? (p.perks?.length ?? 0) < perkSlots(p.level) : false,
+			perkReady: p ? picked15134(p) < perkSlots(p.level) : false,
 			perkChoices: p ? perkView(p) : [],
 			perkNames: p ? (p.perks ?? []).map((id) => PERKS2.find((perk) => perk.id === id)?.name ?? PERKS.find((perk) => perk.id === id)?.name ?? id).join(", ") : "",
 			v1513: p ? { m7: loadM7(p.m7), traits: (p.traits2 ?? []).map((id) => TRAITS2.find((t) => t.id === id)).filter(Boolean), fx: fx15(p), apMax: (() => { try { return tbApMax(); } catch { return 0; } })(), perks: (p.perks ?? []).map((id) => PERKS2.find((x) => x.id === id)).filter(Boolean) } : null,
@@ -1157,6 +1157,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		world = createWorld(worldSeed, 0, exitSides);
 		player = freshPlayer(cleanName(name), world.startX, world.startY);
 		giveRole(player, role);
+		if (appearance?.weapon && GEAR[appearance.weapon]) player.weaponId = appearance.weapon;
+		player.age = Math.max(16, Math.min(80, Number(appearance?.age) || 30));
+		player.sex = appearance?.sex === "female" ? "female" : "male";
 		player.strength += bonus.strength;
 		player.vigor += bonus.vigor;
 		player.endurance += bonus.endurance;
@@ -1237,6 +1240,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		mountId = -1;
 		opening = null;
 		if (v14.st === 0) v14Start();
+		start15134(appearance);
 		if (v14.st === 0) setLog("You come to in the cab of a wrecked pickup on the Harmony road. Cold. Your head hurts. The fire ring by the ditch is dead.");
 		else setLog("You come to on the road outside Harmony village.");
 		const tagged = SKILLS.filter((s) => player.tags.includes(s.id)).map((s) => s.name).join(", ");
@@ -1398,6 +1402,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (data.skillPoints != null) player.skillPoints = data.skillPoints;
 		player.perks = Array.isArray(data.perks) ? data.perks : [];
 		player.m7 = loadM7(data.m7); player.traits2 = loadTraits2(data.traits2); // v1513: old saves = all 5, no traits
+		{ const h = data.hero15134 && typeof data.hero15134 === "object" ? data.hero15134 : {}; for (const k of ["premade", "age", "sex", "body", "tint", "asides"]) if (h[k] != null) player[k] = h[k]; } // v15.13.4
 		player.karma = data.karma ?? 0;
 		player.rep = {
 			lowelltown: 0,
@@ -1571,6 +1576,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		data.skillPoints = player.skillPoints;
 		data.perks = player.perks;
 		data.m7 = loadM7(player.m7); data.traits2 = player.traits2 ?? []; // v1513
+		data.hero15134 = { premade: player.premade ?? "", age: player.age ?? 30, sex: player.sex ?? "male", body: player.body ?? "", tint: player.tint ?? "", asides: player.asides ?? {} }; // v15.13.4
 		data.karma = player.karma;
 		data.slotB = player.slotB ?? ""; // v15.11.0: second weapon slot
 		data.rep = player.rep;
@@ -1585,7 +1591,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			homeY: party.homeY,
 			x: party.x,
 			y: party.y,
-			dir: party.dir || 0
+			dir: party.dir || 0,
+			...(party.rc15134 ? { rc15134: party.rc15134, m7: party.m7, tags: party.tags, traits2: party.traits2 } : {})
 		} : null;
 		data.partyReturn = partyReturn;
 		if (inside) {
@@ -1648,7 +1655,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function perkView(p) {
 		ensureProgress(p);
 		const score = (id) => skillScore(id, statsOf(p), p.invested, p.tags, p.perks);
-		if (p === player) { const m = loadM7(p.m7); return PERKS2.filter((perk) => !p.perks.includes(perk.id)).map((perk) => ({ id: perk.id, name: perk.name, blurb: `${perk.blurb} (Needs ${perk2Need(perk)})`, ok: perk2Ok(perk, p.level, m) })); }
+		if (p === player) { const m = loadM7(p.m7); return PERKS2.filter((perk) => perk.lv < 99 && !p.perks.includes(perk.id)).map((perk) => ({ id: perk.id, name: perk.name, blurb: `${perk.blurb} (Needs ${perk2Need(perk)})`, ok: perk2Ok(perk, p.level, m) })); }
 		return PERKS.filter((perk) => !p.perks.includes(perk.id)).map((perk) => ({
 			id: perk.id,
 			name: perk.name,
@@ -1681,7 +1688,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		}
 		if (leveled) {
 			sfx("level");
-			const perk = (player.perks?.length ?? 0) < perkSlots(player.level);
+			const perk = picked15134(player) < perkSlots(player.level);
 			pushLog(perk ? "Hard miles. A stat point, skill points, and a perk are waiting." : "Hard miles. A stat point and skill points are waiting.");
 			floater(player.x, player.y - 20, "Tougher");
 			statsOpen = true;
@@ -1899,6 +1906,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			pushLog("Mira says the choppers bunch on the north gravel. Come at them from the south spruce.");
 		} else if (id === "cyndal-lookout") pushLog("Cyndal takes the loft window. She'll shout when the next wave comes, then help Sarah with the hurt inside.");
 		else if (id === "loki-safe") pushLog("Loki nods. Door barred, lanterns lit, shells on the porch. He stays inside.");
+		else if (id.startsWith("rc15134-")) { rcChoice15134(id.slice(8)); return; }
 		else if (id.startsWith("join-")) recruitTalk();
 		else if (id === "bench-up") upgradeDefense();
 		else if (id === "bench-bomb") benchBuy("bomb", 0, 6, "A pipe bomb. Short fuse.");
@@ -4072,6 +4080,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	/** Eating, drinking and v13 cures from the pack. Returns true when it used the item. */
 	function v13Use(def, stack) {
 		const f = FOOD_VALUE[def.id];
+		// v15.13.4: Field Fix (Justin's signature perk): the toolkit repairs the most worn piece you wear, anywhere
+		if (def.id === "toolkit") {
+			if (!(player.perks ?? []).includes("fieldfix")) { pushLog("You turn the wrenches over. Without a bench, this is a job for somebody who's done it in the field."); return true; }
+			const worn = [player.weaponId, player.coatId, player.headId, player.legsId, player.handsId, player.feetId, player.backId].filter((id) => id && GEAR[id]).sort((a, b) => duraOf(a) - duraOf(b));
+			const id = worn[0];
+			if (!id || duraOf(id) >= DURA_MAX) { pushLog("Everything you have on is in good shape."); return true; }
+			const c = Math.max(1, Math.ceil(repairCost(id) / 2));
+			if (player.scrap < c) { pushLog(`A field fix on the ${GEAR[id].name.toLowerCase()} takes ${c} iron.`); return true; }
+			player.scrap -= c; w13.dura[id] = Math.min(DURA_MAX, duraOf(id) + 60); train("mechanics", 3);
+			pushLog(`Field fix: you shim and tighten the ${GEAR[id].name.toLowerCase()} right there on the trail. (${c} iron)`); refreshGear(player);
+			return true;
+		}
 		if (def.family === "medkit") {
 			const order = def.id === "docbag" ? INJURIES : INJURIES.filter((i) => w13.ail[i]).slice(0, 1);
 			let n = 0; for (const id of order) if (w13.ail[id]) { delete w13.ail[id]; n++; }
@@ -4247,6 +4267,115 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (hv) { player.x = hv.x; player.y = hv.y; player.respawnX = hv.x; player.respawnY = hv.y; townDisarm(); giveItem("matches"); giveItem("water"); }
 		if (hv) { v14.st = 5; pushLog("You come to on the road outside Harmony village."); }
 	}
+	/** v15.13.4: premade / custom start: starter gear (after the road-start pack strip), signature perk, start town, first job, background. */
+	/** perks picked on level-up (the signature perks are free) */
+	function picked15134(p) { return (p?.perks ?? []).filter((id) => id !== "fieldfix" && id !== "farmfriend").length; }
+	// v15.13.4: lines only the premade heroes think or say (Justin: mechanic talk; Sarah: plant knowledge). One per new face.
+	const ASIDE15134 = {
+		justin: [
+			"Justin eyes the hinge on their door: \"That pin's sheared. Ten minutes with a punch and it'd swing true.\"",
+			"\"Hear that knock in your generator? Rod bearing. Run it like that and it'll throw one.\"",
+			"Justin, half to himself: \"Points are pitted. File 'em, gap 'em at twenty thou, she'll fire.\"",
+			"\"Somebody ran that chain dry. Little bar oil and it'll cut like new.\"",
+			"\"You don't need a new carb. You need somebody to clean the jets on the one you've got.\"",
+		],
+		sarah: [
+			"Sarah nods at the yard: \"That's yarrow by your step. Crush it on a cut and it'll stop bleeding.\"",
+			"\"Plantain grows where people walk. Chew a leaf for a bee sting. Works every time.\"",
+			"Sarah, quietly: \"Don't touch the white berries by your fence. Baneberry. It'll stop a heart.\"",
+			"\"Spruce tips in May, steeped strong. Kept my whole road clear of the cough last winter.\"",
+			"\"Those are chaga knobs on your birch. Worth more than iron to the right trader.\"",
+		],
+	};
+	function aside15134(npc) {
+		const who = player?.premade; const lines = ASIDE15134[who];
+		if (!lines) return;
+		player.asides = player.asides ?? {};
+		const key = String(npc?.role ?? npc?.name ?? "");
+		if (!key || player.asides[key]) return;
+		player.asides[key] = 1;
+		const n = Object.keys(player.asides).length - 1;
+		pushLog(lines[n % lines.length]);
+	}
+	// v15.13.4: Justin and Sarah as recruitable companions. Only one of them can be in the party (the party has one slot);
+	// the other stands at their spot (Justin: Pittsfield, Sarah: Harmony) and hands out an existing town job. Recruiting the other swaps them.
+	const RC15134 = {
+		justin: { name: "Justin", town: "pittsfield", m7: { back: 7, eye: 5, wind: 7, neighborly: 4, knowhow: 4, quick: 7, fortune: 6 }, tags: ["rifle", "mechanics", "sneak"], traits2: ["armyvet"], hp: 52,
+			hello: "Justin looks up from a seized handcar axle, grease to the elbows. \"You're new. If you're headed anywhere with teeth, I could use the walk. Or the job's still open: get this line running to Skowhegan.\"",
+			job: { id: "pittsfield-handcar", target: "skow", label: "Get the handcar line running" } },
+		sarah: { name: "Sarah", town: "harmony", m7: { back: 4, eye: 7, wind: 5, neighborly: 8, knowhow: 7, quick: 4, fortune: 5 }, tags: ["trail", "speech", "barter"], traits2: ["greenthumb"], hp: 42,
+			hello: "Sarah sets down a basket of yarrow and looks you over. \"You look like you could use somebody who knows which berries won't kill you. Or there's work: Harmony needs medicine out of Skowhegan.\"",
+			job: { id: "skowhegan-meds", target: "skowhegan", label: "Medicine from Skowhegan" } },
+	};
+	let rcCheck15134 = 0;
+	function rcTick15134() {
+		if (!world || !player || mapId !== 0 || inside || mode11 || phase === "menu") return;
+		if ((rcCheck15134 = (rcCheck15134 + 1) % 30) !== 1) return;
+		for (const id of ["justin", "sarah"]) {
+			const has = world.npcs.some((n) => n.rc15134 === id);
+			const out = player.premade === id || (party && party.rc15134 === id) || (partyReturn && partyReturn.rc15134 === id);
+			if (out && has) world.npcs = world.npcs.filter((n) => n.rc15134 !== id);
+			if (out || has) continue;
+			const tn = ISO_TOWNS.find((t) => t.id === RC15134[id].town), sp = tn ? townSpot(tn) : null;
+			if (!sp) continue;
+			let at = null;
+			for (let r = 200; r < 420 && !at; r += 40) for (let ang = 30; ang < 390; ang += 25) { const x = sp.x + Math.cos(ang * Math.PI / 180) * r, y = sp.y + Math.sin(ang * Math.PI / 180) * r; if (!pointBlocked(world, x, y, RADIUS)) { at = { x, y }; break; } }
+			if (!at) continue;
+			const c = RC15134[id];
+			world.npcs.push({ id: id === "justin" ? 998801 : 998802, role: id, name: c.name, x: at.x, y: at.y, homeX: at.x, homeY: at.y, dir: 0, frame: 0, anim: 0, path: null, pause: 99, hp: c.hp, maxHp: c.hp, rc15134: id });
+		}
+	}
+	function rcTalk15134(npc) {
+		const c = RC15134[npc.rc15134];
+		talkNpc = npc;
+		const other = party?.rc15134 && party.rc15134 !== npc.rc15134 ? party : null;
+		const choices = [];
+		if (!party || other) choices.push({ label: other ? `Come with me. (${other.name} heads back to their spot.)` : "Come with me.", id: "rc15134-join" });
+		else choices.push({ label: `(${party.name} is with you. Send them home first.)`, id: "close" });
+		if (!(l1.tq ?? []).some((q) => q.id === c.job.id)) choices.push({ label: `Any work? (${c.job.label})`, id: "rc15134-job" });
+		choices.push({ label: "Later.", id: "close" });
+		dialogue = { speaker: c.name, text: c.hello, choices };
+		phase = "dialogue"; intent = null; sfx("talk"); sync(true);
+	}
+	function rcChoice15134(what) {
+		const npc = talkNpc; if (!npc?.rc15134) return;
+		const c = RC15134[npc.rc15134];
+		dialogue = null; phase = "play";
+		if (what === "job") { townQuest({ type: "startQuest", ...c.job }); return; }
+		if (party && !party.rc15134) { pushLog(`${party.name} is already with you. Send them home first.`); sync(true); return; }
+		if (party) { const was = party.name; party = null; pushLog(`${was} heads back to their spot. Find them there when you want them again.`); }
+		party = { role: npc.role, name: c.name, hp: c.hp, maxHp: c.hp, homeMap: 0, homeId: npc.id, homeX: npc.homeX, homeY: npc.homeY, x: npc.x, y: npc.y, dir: npc.dir, frame: 0, anim: 0, cooldown: .4,
+			rc15134: npc.rc15134, m7: { ...c.m7 }, tags: [...c.tags], traits2: [...c.traits2] };
+		world.npcs = world.npcs.filter((n) => n.id !== npc.id);
+		pushLog(`${c.name} falls in beside you. Only one of Justin and Sarah walks with you at a time.`);
+		saveGame(); sync(true);
+	}
+	function start15134(a) {
+		if (!a || !player) return;
+		if (Array.isArray(a.bag)) for (const it of a.bag) if (GEAR[it?.id]) giveItem(it.id, Math.max(1, it.qty | 0));
+		if (a.perk && PERKS2.some((x) => x.id === a.perk)) player.perks = [...new Set([...(player.perks ?? []), a.perk])];
+		if (a.background && BG15134[a.background]) { const b = BG15134[a.background]; for (const [k, n] of Object.entries(b.stats)) player[k] = (player[k] ?? 0) + n; for (const [it, n] of b.gear) if (GEAR[it]) giveItem(it, n); w13.bg = a.background; diary(`Before all this you were a ${b.name.toLowerCase()}.`); }
+		player.premade = a.premade === "justin" || a.premade === "sarah" ? a.premade : "";
+		if (a.tint) player.tint = String(a.tint).slice(0, 9);
+		player.body = a.body === "generic_female" ? "generic_female" : a.body === "generic_male" ? "generic_male" : "";
+		const tn = a.startTown === "pittsfield" ? ISO_TOWNS.find((t) => t.id === "pittsfield") : null;
+		if (tn && mapId === 0 && !(typeof window !== "undefined" && window.__v14Camp)) {
+			const sp = townSpot(tn);
+			if (sp) for (let r = 160; r < 420; r += 40) { let done = false; for (let ang = 0; ang < 360; ang += 20) { const x = sp.x + Math.cos(ang * Math.PI / 180) * r, y = sp.y + Math.sin(ang * Math.PI / 180) * r; if (!pointBlocked(world, x, y, RADIUS)) { player.x = x; player.y = y; player.respawnX = x; player.respawnY = y; done = true; break; } } if (done) break; }
+			pushLog("You come to on the tracks outside Pittsfield.");
+		}
+		refreshGear(player);
+		if (a.firstJob === "justin") { townQuest({ type: "startQuest", id: "pittsfield-handcar", target: "skow", label: "Get the handcar line running" }); diary("First job: the old Maine Central handcar out of Pittsfield needs a mechanic. Get it running to Skowhegan."); }
+		else if (a.firstJob === "sarah") { townQuest({ type: "startQuest", id: "skowhegan-meds", target: "skowhegan", label: "Medicine from Skowhegan" }); diary("First job: Harmony is short on medicine. Skowhegan's Water Street might have some, and what it lacks, the woods can make up."); }
+	}
+	const BG15134 = {
+		logger: { name: "Logger", stats: { strength: 1 }, gear: [["hatchet", 1]] },
+		lobsterman: { name: "Lobsterman", stats: { endurance: 1 }, gear: [["smokedfish", 2]] },
+		mechanic: { name: "Mechanic", stats: { intellect: 1 }, gear: [["toolkit", 1]] },
+		farmer: { name: "Farmer", stats: { vigor: 1 }, gear: [["apple", 3]] },
+		hunter: { name: "Hunter", stats: { perception: 1 }, gear: [["shells", 6]] },
+		townie: { name: "Townie", stats: { luck: 1 }, gear: [["cider", 2]] },
+	};
 	/** v15.9.5: a clear spot on the road ring outside Harmony village, at least 260px from every town marker on this map. */
 	function harmonyEntry() {
 		if (!world || mapId !== 0) return null;
@@ -6268,6 +6397,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (inCombat141()) { if (performance.now() - (talkNag141 || 0) > 2500) { talkNag141 = performance.now(); pushLog(`${npc.name ?? "They"} can't talk now. Deal with the fight first.`); } intent = null; return; }
 		ensureProgress(player);
 		parkBike(true);
+		if (npc?.rc15134) { aside15134(npc); rcTalk15134(npc); return; }
+		aside15134(npc);
 		talkNpc = npc;
 		statsOpen = false;
 		packOpen = false;
@@ -6360,6 +6491,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function placeReturn(body) {
 		if (!world || !body) return;
 		goneNpcs.delete(body.homeId);
+		if (body.rc15134) return; // v15.13.4: Justin / Sarah walk back on their own (rcTick15134 puts them at their spot)
 		if (world.npcs.some((n) => n.id === body.homeId)) return;
 		world.npcs.push({
 			id: body.homeId,
@@ -7493,6 +7625,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	};
 	/** Items sharing a placeholder icon (public/game/items/<name>.png); anything not listed uses its own id. */
 	const ITEM_ICON = {
+		toolkit: "junk",
 		docbag: "kit",
 		medkit: "kit",
 		berries: "apple", mushrooms: "apple", chowder: "smokedfish", venisonsteak: "meat", pie: "apple", coffee: "cider", tonic: "dandelion", trout: "smokedfish",
@@ -8898,6 +9031,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return true;
 	}
 	function step(dt) {
+		rcTick15134();
 		{ const _t = performance.now(); tickLog(dt); pAdd("u:tickLog", _t); }
 		{ const _t = performance.now(); q11ModeTick(dt); pAdd("u:q11ModeTick", _t); }
 		{ const _t = performance.now(); v3Tick(dt); pAdd("u:v3Tick", _t); }
@@ -11917,8 +12051,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		ctx.restore();
 	}
 	function frame(now) {
-		if (!running) return;
-		if (fpsCap === 30 && now - last < 1000 / 30 - 4) { requestAnimationFrame(frame); return; }
+		if (!running || bgPaused) return;
+		// v15.13.4: hard cap on 90/120 Hz screens too (60 means 60), and the title / character sheet (which covers the map) idles at ~12 fps
+		const capNow = phase === "menu" ? 12 : fpsCap;
+		if (now - last < 1000 / capNow - 4) { requestAnimationFrame(frame); return; }
 		fpsTimes.push(now); while (fpsTimes.length && now - fpsTimes[0] > 1000) fpsTimes.shift();
 		fpsNow = fpsTimes.length;
 		if (capAuto1510 && fpsCap === 60 && now > 8000) { slow1510 = fpsNow < 40 ? slow1510 + 1 : Math.max(0, slow1510 - 2); if (slow1510 > 240) { fpsCap = 30; capAuto1510 = false; sync(true); } }
@@ -12124,11 +12260,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (player && world && phase !== "menu") saveGame();
 		} catch {}
 	};
+	// v15.13.4: background = no frames, no sim, no audio (battery). Back in front: one fresh frame loop, no catch-up jump.
+	let bgPaused = false;
 	const onVis = () => {
 		if (document.hidden) {
 			keys.clear();
 			saveNow();
-		} else unlockAudio();
+			bgPaused = true;
+			pauseAudio(true);
+		} else {
+			unlockAudio();
+			pauseAudio(false);
+			if (bgPaused) { bgPaused = false; last = performance.now(); acc = 0; if (running) requestAnimationFrame(frame); }
+		}
 	};
 	document.addEventListener("visibilitychange", onVis);
 	window.addEventListener("pagehide", saveNow);
@@ -12983,7 +13127,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		takePerk(id) {
 			if (!player || phase === "menu") return;
 			ensureProgress(player);
-			if (player.perks.length >= perkSlots(player.level)) return;
+			if (picked15134(player) >= perkSlots(player.level)) return;
 			const p2 = PERKS2.find((item) => item.id === id);
 			const perk = p2 ?? PERKS.find((item) => item.id === id);
 			if (!perk || player.perks.includes(id)) return;
@@ -13315,6 +13459,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		tb15Tap: (wx, wy) => { if (tb) tbTap(-9999, -9999, { x: wx, y: wy }); },
 		tb15Party: () => party ? { name: party.name, hp: party.hp, acts: tb?.cTurns || 0 } : null,
 		// v15.11.1 test: put a companion beside you (real recruits come from talk)
+		// v15.13.4 test: talk to Justin / Sarah (recruit) and report who is where
+		rc15134: (id, what = "join") => { rcCheck15134 = 0; rcTick15134(); const n = world?.npcs.find((x) => x.rc15134 === id); if (n) { openTalk(n); if (what) rcChoice15134(what); } rcCheck15134 = 0; rcTick15134(); return { party: party?.name ?? null, standing: (world?.npcs ?? []).filter((x) => x.rc15134).map((x) => x.rc15134), quests: (l1.tq ?? []).map((q) => q.id) }; },
 		tb15AddParty: () => { if (!player) return null; party = { role: "hunter", name: "Test companion", hp: 30, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4 }; return party.name; },
 		tb15PartyHex: () => party ? hexOf15(party.x, party.y) : null,
 		tb15Hex: (q, r) => hexXY15({ q, r }),

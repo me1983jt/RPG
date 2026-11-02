@@ -1,0 +1,18 @@
+import { chromium } from "playwright";
+const b = await chromium.launch({ executablePath: "/usr/bin/google-chrome" });
+const page = await (await b.newContext({ viewport: { width: 844, height: 390 } })).newPage();
+const errs=[]; page.on("pageerror", e=>errs.push(String(e)));
+await page.addInitScript(() => { window.__v13Quiet = true; window.__safeOff = true; window.__tbOff = true; });
+await page.goto("http://127.0.0.1:8112/", { waitUntil: "networkidle" });
+await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: "networkidle" }); await page.waitForTimeout(2500);
+await page.getByTestId("create-own").click();
+for (let i = 0; i < 5; i++) await page.getByRole("button", { name: "Raise Might" }).click();
+for (const t of ["rifle", "trail", "doctor"]) await page.locator(`[data-tag="${t}"]`).click();
+await page.getByTestId("cc-done").click(); await page.waitForTimeout(4000);
+const T=(...a)=>page.evaluate((a)=>window.__controlsTest.rc15134(...a),a);
+console.log("start", JSON.stringify(await T("sarah", "")));
+console.log("job sarah", JSON.stringify(await T("sarah", "job")));
+console.log("join sarah", JSON.stringify(await T("sarah")));
+console.log("swap justin", JSON.stringify(await T("justin")));
+console.log(errs);
+await b.close();

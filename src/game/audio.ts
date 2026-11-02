@@ -140,3 +140,11 @@ export function sfx(name: "hit" | "hurt" | "build" | "talk" | "level" | "gather"
       break;
   }
 }
+
+/** v15.13.4: app went to the background: stop the music element and suspend the tone context (battery); resume on return. */
+export function pauseAudio(hidden: boolean): void {
+  try {
+    if (hidden) { musicEl?.pause(); if (ctx && ctx.state === "running") void ctx.suspend(); }
+    else { if (musicEl) void musicEl.play().catch(() => {}); if (ctx && ctx.state === "suspended") void ctx.resume(); }
+  } catch { /* audio not available */ }
+}

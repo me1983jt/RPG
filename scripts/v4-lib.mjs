@@ -21,12 +21,15 @@ export async function boot(url, { role = "Hunter", vw = 1280, vh = 800, clear = 
   if (clear) { await page.evaluate(() => localStorage.clear()); await page.reload({ waitUntil: "networkidle" }); }
   await page.waitForTimeout(2500);
   const begin = async () => {
-    await page.fill("#wanderer-name", "Justin");
-    await page.getByRole("button", { name: new RegExp(role) }).click();
-    await page.getByRole("button", { name: "Next" }).click();
-    for (const n of ["Vigilance", "Vigilance", "Vigilance", "Vigilance", "Vigilance"]) await page.getByRole("button", { name: `Raise ${n}` }).click(); // v15.13 Maine Seven
-    await page.getByRole("button", { name: "Next" }).click();
-    await page.getByRole("button", { name: /Begin as/ }).click();
+    // v15.13.4: Fallout-style creation. "Hunter" (the old default) = Justin's card (hunter kit, carbine); anything else = Make your own.
+    if (/Hunter/.test(role)) { await page.getByTestId("take-justin").click(); }
+    else {
+      await page.getByTestId("create-own").click();
+      await page.fill("#wanderer-name", "Justin");
+      for (const n of ["Vigilance", "Vigilance", "Vigilance", "Vigilance", "Vigilance"]) await page.getByRole("button", { name: `Raise ${n}` }).click();
+      for (const t of ["rifle", "melee", "doctor"]) await page.locator(`[data-tag="${t}"]`).click();
+      await page.getByTestId("cc-done").click();
+    }
     await page.waitForTimeout(3000);
   };
   return { browser, page, errs, T, begin };

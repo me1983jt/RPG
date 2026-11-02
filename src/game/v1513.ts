@@ -39,8 +39,11 @@ export function m7Bonus(m: M7) {
   return { strength: d(m.back), vigor: d(m.wind), endurance: d(m.wind), intellect: d(m.knowhow), perception: d(m.eye), luck: d(m.fortune), agility: d(m.quick) };
 }
 
-export type Trait2Id = "milltown" | "downeast" | "wicked" | "heavyhands" | "uptocamp" | "ayuh" | "dooryard" | "mudseason";
+export type Trait2Id = "armyvet" | "greenthumb" | "milltown" | "downeast" | "wicked" | "heavyhands" | "uptocamp" | "ayuh" | "dooryard" | "mudseason";
 export const TRAITS2: { id: Trait2Id; name: string; up: string; down: string }[] = [
+  // v15.13.4: the premade heroes' traits (anyone can take them)
+  { id: "armyvet", name: "Army Vet", up: "+10% gun aim and +1 action point.", down: "Healing items and rest work 15% slower." },
+  { id: "greenthumb", name: "Green Thumb", up: "Herbs, teas and food heal 30% more; +10 Foraging.", down: "-2 melee damage, -5 Melee." },
   { id: "milltown", name: "Mill Town Tough", up: "+15 max health.", down: "-15 max stamina." },
   { id: "downeast", name: "Downeast Thrifty", up: "Store prices 10% better.", down: "Start with no iron, and worse luck on finds." },
   { id: "wicked", name: "Wicked Quick", up: "+1 action point in a fight.", down: "-8 max health." },
@@ -55,9 +58,12 @@ export function loadTraits2(raw: unknown): Trait2Id[] {
   return Array.isArray(raw) ? [...new Set(raw.filter((x) => TRAITS2.some((t) => t.id === x)))].slice(0, TRAIT2_MAX) as Trait2Id[] : [];
 }
 
-export type Perk2Id = "moosehide" | "woodsman" | "beansupper" | "packmule" | "firstlight" | "wickedgood" | "townmeeting" | "iceout" | "lumberjack" | "blackfly" | "lobsterluck" | "oldcamphand";
+export type Perk2Id = "fieldfix" | "farmfriend" | "moosehide" | "woodsman" | "beansupper" | "packmule" | "firstlight" | "wickedgood" | "townmeeting" | "iceout" | "lumberjack" | "blackfly" | "lobsterluck" | "oldcamphand";
 export interface Perk2 { id: Perk2Id; name: string; blurb: string; lv: number; need?: Partial<M7> }
 export const PERKS2: Perk2[] = [
+  // v15.13.4: signature perks, given at the start to Justin and Sarah only (level 99 = never offered on level-up)
+  { id: "fieldfix", name: "Field Fix", blurb: "Use the toolkit from the pack to repair worn gear away from the bench.", lv: 99 },
+  { id: "farmfriend", name: "Farm Friend", blurb: "Farmers and traders give you 8% better prices.", lv: 99 },
   { id: "moosehide", name: "Moose Hide", blurb: "+3 armor. Your skin's gone thick as a bull moose's.", lv: 3, need: { wind: 5 } },
   { id: "woodsman", name: "Woodsman", blurb: "+15% to hit when you fight in the trees.", lv: 3, need: { eye: 6 } },
   { id: "beansupper", name: "Bean Supper", blurb: "Food, bandages and medicine heal 25% more.", lv: 3, need: { wind: 4 } },
@@ -92,24 +98,25 @@ export function fx1513(m: M7, traits: string[], perks: string[]) {
   if (t("uptocamp")) { add("trail", 10); add("sneak", 10); add("speech", -10); add("barter", -10); }
   if (t("dooryard")) { add("rifle", 10); add("doctor", -10); }
   if (t("mudseason")) add("melee", -5);
+  if (t("greenthumb")) { add("trail", 10); add("melee", -5); }
   if (p("townmeeting")) add("speech", 15);
   return {
     skill,
     hp: (m.wind - 5) * 2 + (m.back - 5) + (t("milltown") ? 15 : 0) + (t("wicked") ? -8 : 0) + (p("blackfly") ? 10 : 0),
     stamina: (m.wind - 5) * 5 + (m.quick - 5) * 3 + (t("milltown") ? -15 : 0),
-    ap: Math.floor((m.quick - 5) / 2) + (t("wicked") ? 1 : 0) + (p("iceout") ? 1 : 0),
+    ap: Math.floor((m.quick - 5) / 2) + (t("wicked") ? 1 : 0) + (t("armyvet") ? 1 : 0) + (p("iceout") ? 1 : 0),
     carry: (m.back - 5) * 5 + (t("mudseason") ? 25 : 0) + (p("packmule") ? 30 : 0),
     crit: (m.fortune - 5) * 1 + (m.quick - 5) * 0.5 + (t("heavyhands") ? -5 : 0) + (p("lobsterluck") ? 3 : 0),
     gunCrit: p("wickedgood") ? 8 : 0,
-    aim: (m.eye - 5) * 2,
+    aim: (m.eye - 5) * 2 + (t("armyvet") ? 10 : 0),
     woods: p("woodsman") ? 15 : 0,
     seq: (m.eye - 5) + (m.quick - 5) + (t("dooryard") ? 3 : 0) + (t("mudseason") ? -2 : 0) + (p("firstlight") ? 4 : 0),
-    melee: (t("heavyhands") ? 2 : 0) + (p("lumberjack") ? 3 : 0) + Math.max(0, Math.floor((m.back - 5) / 2)),
+    melee: (t("heavyhands") ? 2 : 0) + (t("greenthumb") ? -2 : 0) + (p("lumberjack") ? 3 : 0) + Math.max(0, Math.floor((m.back - 5) / 2)),
     armor: (t("ayuh") ? 2 : 0) + (p("moosehide") ? 3 : 0),
-    barter: (m.neighborly - 5) + (t("downeast") ? 10 : 0) + (p("townmeeting") ? 5 : 0),
+    barter: (m.neighborly - 5) + (t("downeast") ? 10 : 0) + (p("farmfriend") ? 8 : 0) + (p("townmeeting") ? 5 : 0),
     talk: (m.neighborly - 5) * 2,
     sick: (m.wind - 5) * 0.02 + (p("blackfly") ? 0.2 : 0),
-    heal: p("beansupper") ? 1.25 : 1,
+    heal: (p("beansupper") ? 1.25 : 1) * (t("greenthumb") ? 1.3 : 1) * (t("armyvet") ? 0.85 : 1),
     luck: (m.fortune - 5) / 2 + (t("downeast") ? -1 : 0) + (p("lobsterluck") ? 2 : 0),
     skillPts: Math.floor((m.knowhow - 5) / 2) + (t("ayuh") ? -1 : 0) + (p("oldcamphand") ? 2 : 0),
   };

@@ -1,4 +1,4 @@
-import { WM_COLS, WM_HEX, WM_H, WM_LOCS, WM_ROWS, WM_W, hexAt, hexCenter } from "@/game/worldmap";
+import { WM_COLS, WM_LOCS, WM_ROWS } from "@/game/worldmap";
 /** v15.8: world-map location id -> Quest RPG town icon (public/game/v4/icons/<name>_icon_v4.png). */
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
@@ -24,76 +24,15 @@ import {
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
 import { Inventory } from "@/components/Inventory";
+import { CharCreate } from "@/components/CharCreate";
 import { useHud, useModeResult } from "@/game/store";
 import { RECIPES } from "@/game/types";
-import { M7_MAX, M7_MIN, M7_STATS, TRAITS2, TRAIT2_MAX, freshM7, m7Left, type M7Id } from "@/game/v1513";
-import { SKILLS as SKILL_LIST, tagsForRole } from "@/game/progress";
-import { GEAR, CRAFT, LOOKS, ROLES, TRAITS, defaultLook, roleStats, type LookId, type RoleId, type TraitId } from "@/game/gear";
-import { COAT_PICKS, HAT_PICKS, HAIRS, dyeBodySheet, type HairId, type StartLook } from "@/game/look";
+import { M7_STATS } from "@/game/v1513";
+import { CRAFT, type LookId, type RoleId, type TraitId } from "@/game/gear";
 import type { PerkId, SkillId } from "@/game/progress";
 
 const RECIPE_ICON = [House, Columns3, Hammer, Flame] as const;
 
-function LookPreview({ look, hair, coat, hat, trousers, boots }: StartLook & { look: LookId }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    let dead = false;
-    const load = (src: string) =>
-      new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(src));
-        img.src = src;
-      });
-    void (async () => {
-      try {
-        const hero = await load("/game/hero.png?v=2076");
-        const ids = [trousers ? "trousers" : "", boots ? "boots" : "", coat, hat].filter(Boolean);
-        const parts: HTMLImageElement[] = [];
-        for (const id of ids) {
-          try {
-            parts.push(await load(`/game/overlay/${id}.png?v=2076`));
-          } catch {
-            /* missing sheet stays off the preview */
-          }
-        }
-        if (dead || !ref.current) return;
-        const cw = 88;
-        const ch = 124;
-        const tmp = document.createElement("canvas");
-        tmp.width = cw;
-        tmp.height = ch;
-        const tg = tmp.getContext("2d", { willReadFrequently: true });
-        const g = ref.current.getContext("2d");
-        if (!tg || !g) return;
-        tg.drawImage(hero, 0, 0, cw, ch, 0, 0, cw, ch);
-        const dyed = tg.getImageData(0, 0, cw, ch);
-        dyeBodySheet(dyed, 1, look, hair, 1);
-        tg.putImageData(dyed, 0, 0);
-        for (const part of parts) tg.drawImage(part, 0, 0, cw, ch, 0, 0, cw, ch);
-        // v14.1: crop to the figure so the preview fills its box instead of a small hero lost at the bottom of an empty cell
-        const px = tg.getImageData(0, 0, cw, ch).data;
-        let x0 = cw, y0 = ch, x1 = 0, y1 = 0;
-        for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (px[(y * cw + x) * 4 + 3] > 20) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-        if (x1 < x0) { x0 = 0; y0 = 0; x1 = cw - 1; y1 = ch - 1; }
-        const side = Math.max(x1 - x0, (y1 - y0) * 0.72) + 8, mx = (x0 + x1) / 2, sw = Math.round(side), sh = Math.round(side / 0.72);
-        const sx = Math.round(mx - sw / 2), sy = Math.round(y1 + 4 - sh);
-        const k = 4;
-        ref.current.width = sw * k;
-        ref.current.height = sh * k;
-        g.imageSmoothingEnabled = false;
-        g.clearRect(0, 0, sw * k, sh * k);
-        g.drawImage(tmp, sx, sy, sw, sh, 0, 0, sw * k, sh * k);
-      } catch {
-        /* preview is optional */
-      }
-    })();
-    return () => {
-      dead = true;
-    };
-  }, [look, hair, coat, hat, trousers, boots]);
-  return <canvas ref={ref} aria-label="Character preview" className="h-36 w-auto short:h-24" />;
-}
 
 function Stick141({ onMove }: { onMove: (x: number, y: number) => void }) {
   const [k, setK] = useState({ x: 0, y: 0 });
@@ -141,28 +80,10 @@ export function RPG() {
   const pinching = useRef(false);
   const hud = useHud();
   const modeResult = useModeResult((s) => s.result);
-  const [name, setName] = useState("Packer");
-  const [role, setRole] = useState<RoleId>("fighter");
-  const [look, setLook] = useState<LookId>("wool");
-  const [hair, setHair] = useState<HairId>("black");
-  const [coat, setCoat] = useState<StartLook["coat"]>("");
-  const [hat, setHat] = useState<StartLook["hat"]>("");
-  const [trousers, setTrousers] = useState(true);
-  const [boots, setBoots] = useState(true);
-  const [backstory, setBackstory] = useState<"veteran" | "mechanic" | "farmer" | "hunter">("hunter");
-  const [hardMode, setHardMode] = useState(false);
   // v15.10: who you play. Sarah gets her quests from Justin at the farm.
-  const [hero, setHero] = useState<"justin" | "sarah">("justin");
   const [jNotes, setJNotes] = useState<string | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
-  const [step, setStep] = useState<"trade" | "points" | "trait">("trade");
-  const [trait, setTrait] = useState<TraitId | null>(null);
-  const [bonus, setBonus] = useState({ strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 });
   // v15.13: The Seven, two traits, three tags
-  const [m7, setM7] = useState(freshM7);
-  const [traits2, setTraits2] = useState<string[]>([]);
-  const [tags, setTags] = useState<string[] | null>(null);
-  const [packTab, setPackTab] = useState<"items" | "craft">("items");
   const [journalOpen, setJournalOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   // v14.1 Chromebook / keyboard: M map, J journal (the engine takes WASD, arrows, I, B, C, X, Space, Esc)
@@ -232,14 +153,6 @@ export function RPG() {
   const barArt = useArt("/game/hud/bar-frame.png"), iconArt = useArt("/game/hud/btn-icons.png"), panelArt = useArt("/game/ui/char-panel.png");
   const headArt = useArt("/game/ui/head-frame.png"), tradeArt = useArt("/game/ui/trade-panel.png"), mapArt = useArt("/game/ui/worldmap-maine.jpg"), endArt = useArt("/game/ui/ending-harmony.jpg");
   const [mapTab, setMapTab] = useState<"area" | "maine">("area");
-  const pointsLeft = m7Left(m7);
-  useEffect(() => setTags(null), [role]);
-  const tagList = tags ?? (tagsForRole(role) as string[]);
-  const bumpM7 = (k: M7Id, d: number) => setM7((m) => { const v = m[k] + d; if (v < M7_MIN || v > M7_MAX || (d > 0 && m7Left(m) < 1)) return m; return { ...m, [k]: v }; });
-  const flipTrait = (id: string) => setTraits2((t) => t.includes(id) ? t.filter((x) => x !== id) : t.length >= TRAIT2_MAX ? t : [...t, id]);
-  const flipTag = (id: string) => setTags(() => tagList.includes(id) ? tagList.filter((x) => x !== id) : tagList.length >= 3 ? tagList : [...tagList, id]);
-  const base = roleStats(role);
-  const kit = ROLES.find((item) => item.id === role) ?? ROLES.find((item) => item.id === "fighter")!;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -257,8 +170,6 @@ export function RPG() {
     if (confirmExit) return setConfirmExit(false);
     if (hud.phase === "menu") {
       if (confirmNew) return setConfirmNew(false);
-      if (step === "trait") return setStep("points");
-      if (step === "points") return setStep("trade");
       return setConfirmExit(true);
     }
     if (journalOpen && hud.phase === "play" && !hud.dialogue) return setJournalOpen(false);
@@ -318,15 +229,6 @@ export function RPG() {
     worldPointer(e, type);
   }
 
-  function bump(stat: "strength" | "vigor" | "endurance" | "intellect" | "perception" | "luck", dir: 1 | -1): void {
-    setBonus((current) => {
-      const next = current[stat] + dir;
-      const spent = current.strength + current.vigor + current.endurance + current.intellect + current.perception + current.luck;
-      if (dir > 0 && spent >= 3) return current;
-      if (next < 0) return current;
-      return { ...current, [stat]: next };
-    });
-  }
 
   // v14.1 URL test harness: ?test=worldmap&enc=caravan | guns starts a game and sets the scene
   useEffect(() => {
@@ -351,10 +253,6 @@ export function RPG() {
     return () => window.clearInterval(id);
   }, []);
 
-  function startNew(): void {
-    if (pointsLeft !== 0 || tagList.length !== 3) return;
-    apiRef.current?.begin(name, role, bonus, (trait ?? "") as TraitId, look, { hair, coat, hat, trousers, boots, backstory, hard: hardMode, hero, m7, traits2, tags: tagList });
-  }
 
   return (
     <div className="fixed inset-0 h-dvh w-full overflow-hidden bg-bg text-fg touch-none">
@@ -1106,302 +1004,19 @@ export function RPG() {
         <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] left-[max(0.5rem,env(safe-area-inset-left))] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] left-[max(0.5rem,env(safe-area-inset-left))] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
-        <div className="menu-hero absolute inset-0 overflow-y-auto p-4 short:p-2 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] short:pt-[max(0.25rem,env(safe-area-inset-top))] short:pb-[max(0.25rem,env(safe-area-inset-bottom))]">
-          <div className="mx-auto flex min-h-full w-full max-w-lg items-center py-4 short:max-w-5xl short:py-1">
-          <div data-menu="card" className="w-full plank border border-border bg-surface/95 p-6 short:p-3 menu-cols">
-            <p className="text-xs uppercase tracking-widest text-primary">Northwestern Maine</p>
-            <h1 className="mt-1 font-display text-5xl leading-none short:text-3xl">Maine RPG</h1>
-            {hud.hasSave && step === "trade" ? (
-              <button
-                type="button"
-                data-testid="continue-btn"
-                className="mt-2 w-full plank border border-primary bg-primary/20 px-4 py-3 text-lg font-semibold short:py-2"
-                onClick={() => apiRef.current?.continueGame()}
-              >
-                Continue
-              </button>
-            ) : null}
-            <p className="mt-3 leading-relaxed text-muted short:mt-1 short:line-clamp-2 short:text-sm">
-              After the fall, the Moose River country went back to wool coats, lever guns, and cookfires. Name yourself, pick a trade, and set your clothes.
-            </p>
-            <p className="mt-3 text-xs uppercase tracking-widest text-primary short:mt-2">
-              {step === "trade" ? "1 · Trade" : step === "points" ? "2 · The Seven" : "3 · Traits and tagged skills"}
-            </p>
-            <div className="mt-2 plank border border-border bg-bg px-3 py-2 text-sm">
-              <p className="font-display text-lg leading-none">{kit.title}</p>
-              <p className="mt-1 text-muted">
-                {GEAR[kit.weapon]?.name} · {GEAR[kit.coat]?.name}
-              </p>
-              <p className="mt-1">
-                {M7_STATS.map((st) => `${st.short} ${m7[st.id]}`).join(" · ")}
-              </p>
-            </div>
-            {step === "trade" ? (
-              <>
-                <p className="mt-4 text-sm text-muted short:mt-2">Who are you?</p>
-                <div className="mt-1 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Character" data-testid="hero-pick">
-                  {([["justin", "Justin", "Your own farm. Sarah gives the jobs. Goose is yours once he's found."], ["sarah", "Sarah", "Justin gives the jobs. Her baby raccoon tags along."]] as const).map(([id, label, blurb]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="radio"
-                      aria-checked={hero === id}
-                      data-testid={`hero-${id}`}
-                      className={`plank border px-3 py-2 text-left ${hero === id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                      onClick={() => {
-                        setHero(id);
-                        if (name === "Packer" || name === "Justin" || name === "Sarah") setName(label);
-                      }}
-                    >
-                      <span className="block font-display text-lg leading-none">Play as {label}</span>
-                      <span className="mt-1 block text-xs text-muted short:hidden">{blurb}</span>
-                    </button>
-                  ))}
-                </div>
-                <label className="mt-4 block text-sm text-muted short:mt-2" htmlFor="wanderer-name">
-                  Name
-                </label>
-                <input
-                  id="wanderer-name"
-                  value={name}
-                  maxLength={18}
-                  onChange={(e) => setName(e.target.value)}
-                  suppressHydrationWarning
-                  className="mt-1 w-full plank border border-border bg-bg px-3 py-3 text-fg outline-none focus:border-primary short:py-2"
-                />
-                <div className="mt-4 grid grid-cols-2 gap-2 short:mt-2 short:grid-cols-4 short:gap-1">
-                  {ROLES.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      aria-pressed={role === item.id}
-                      className={`plank border px-3 py-3 text-left short:px-2 short:py-2 ${role === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                      onClick={() => {
-                        setRole(item.id);
-                        setLook(defaultLook(item.id));
-                      }}
-                    >
-                      <span className="font-display text-lg short:text-base">{item.title}</span>
-                      <span className="mt-1 block text-sm text-muted short:line-clamp-3 short:text-xs">{item.blurb}</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-3 text-sm text-muted short:mt-2">Backstory</p>
-                <div className="mt-1 grid grid-cols-4 gap-1" data-testid="backstory-pick">
-                  {([["veteran", "Veteran", "Rifle, grit, first aid"], ["mechanic", "Mechanic", "Engines, gas, intellect"], ["farmer", "Farmer", "Crops, cooking, endurance"], ["hunter", "Woods guide", "Tracks, traps, agility"]] as const).map(([id, l, h]) => (
-                    <button key={id} type="button" data-testid={`backstory-${id}`} aria-pressed={backstory === id} className={`plank border px-1.5 py-1.5 text-left ${backstory === id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setBackstory(id)}>
-                      <span className="block text-xs font-semibold">{l}</span>
-                      <span className="block text-[10px] leading-tight text-muted">{h}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 flex items-end gap-3 short:mt-2">
-                  <div className="plank border border-border bg-bg p-1">
-                    <LookPreview look={look} hair={hair} coat={coat} hat={hat} trousers={trousers} boots={boots} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-muted">Cloth</p>
-                    <div className="mt-1 grid grid-cols-2 gap-1">
-                      {LOOKS.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          aria-pressed={look === item.id}
-                          className={`plank border px-2 py-1.5 text-left ${look === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                          onClick={() => setLook(item.id)}
-                        >
-                          <span
-                            className="mb-1 block h-2 w-full border border-border"
-                            style={{ background: item.id === "wool" ? "#8c6242" : item.id === "spruce" ? "#46684a" : item.id === "linen" ? "#cec0a0" : "#42444a" }}
-                          />
-                          <span className="block text-sm font-semibold">{item.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm text-muted short:mt-2">Hair</p>
-                <div className="mt-1 grid grid-cols-4 gap-1">
-                  {HAIRS.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      aria-pressed={hair === item.id}
-                      className={`plank border px-2 py-1.5 text-left ${hair === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`}
-                      onClick={() => setHair(item.id)}
-                    >
-                      <span className="mb-1 block h-2 w-full border border-border" style={{ background: item.color }} />
-                      <span className="block text-xs font-semibold">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 short:mt-2">
-                  <div>
-                    <p className="text-sm text-muted">Coat</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {COAT_PICKS.map((item) => (
-                        <button key={item.label} type="button" aria-pressed={coat === item.id} className={`plank border px-2 py-1 text-xs font-semibold ${coat === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setCoat(item.id)}>
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted">Hat</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {HAT_PICKS.map((item) => (
-                        <button key={item.label} type="button" aria-pressed={hat === item.id} className={`plank border px-2 py-1 text-xs font-semibold ${hat === item.id ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setHat(item.id)}>
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <button type="button" aria-pressed={trousers} className={`plank border px-3 py-1.5 text-sm ${trousers ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setTrousers((v) => !v)}>
-                    Trousers
-                  </button>
-                  <button type="button" aria-pressed={hardMode} data-testid="hard-mode" className={`plank border px-3 py-1.5 text-sm ${hardMode ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setHardMode((v) => !v)}>
-                    Hard needs
-                  </button>
-                  <button type="button" aria-pressed={boots} className={`plank border px-3 py-1.5 text-sm ${boots ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => setBoots((v) => !v)}>
-                    Boots
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {step === "points" ? (
-              <>
-                <p className="mt-3 text-sm text-muted" data-testid="m7-left">{pointsLeft} point{pointsLeft === 1 ? "" : "s"} left. Each stat runs {M7_MIN} to {M7_MAX}; lower one to raise another.</p>
-                <div className="mt-2 grid grid-cols-2 gap-1.5 short:grid-cols-4" data-testid="m7-grid">
-                  {M7_STATS.map((st) => (
-                    <div key={st.id} className="plank border border-border bg-bg px-2 py-1.5" data-m7={st.id}>
-                      <p className="text-sm font-semibold">{st.name}</p>
-                      <p className="text-[11px] leading-tight text-muted">{st.does}</p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <button type="button" aria-label={`Lower ${st.name}`} className="plank shrink-0 border border-border px-2 py-0.5" onClick={() => bumpM7(st.id, -1)} disabled={m7[st.id] <= M7_MIN}>−</button>
-                        <span className="text-lg">{m7[st.id]}</span>
-                        <button type="button" aria-label={`Raise ${st.name}`} className="plank shrink-0 border border-border px-2 py-0.5" onClick={() => bumpM7(st.id, 1)} disabled={pointsLeft < 1 || m7[st.id] >= M7_MAX}>+</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-            {step === "trait" ? (
-              <>
-                <p className="mt-3 text-sm text-muted">Pick up to {TRAIT2_MAX} traits ({traits2.length} picked). Each has a good side and a bad side.</p>
-                <div className="mt-1 grid grid-cols-2 gap-1.5 short:grid-cols-4" data-testid="trait-grid">
-                  {TRAITS2.map((t) => (
-                    <button key={t.id} type="button" aria-pressed={traits2.includes(t.id)} data-trait2={t.id}
-                      className={`plank border px-2 py-1.5 text-left ${traits2.includes(t.id) ? "border-primary bg-surface-2" : "border-border bg-bg"}`} onClick={() => flipTrait(t.id)}>
-                      <span className="block text-sm font-semibold">{t.name}</span>
-                      <span className="block text-[11px] leading-tight text-green-300">+ {t.up}</span>
-                      <span className="block text-[11px] leading-tight text-red-300">− {t.down}</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-sm text-muted">Tag 3 skills ({tagList.length}/3): +15 now, and points put in them count double.</p>
-                <div className="mt-1 grid grid-cols-3 gap-1 short:grid-cols-6" data-testid="tag-grid">
-                  {SKILL_LIST.map((sk) => (
-                    <button key={sk.id} type="button" aria-pressed={tagList.includes(sk.id)} data-tag={sk.id}
-                      className={`plank border px-2 py-1 text-left text-xs ${tagList.includes(sk.id) ? "border-primary bg-primary/20 font-semibold" : "border-border bg-bg"}`} onClick={() => flipTag(sk.id)}>
-                      {sk.name}{tagList.includes(sk.id) ? " ★" : ""}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : null}
-            <div className="mt-4 flex flex-col gap-2">
-              {confirmNew ? (
-                <>
-                  <p className="text-sm text-muted">A saved packer is already on this device. Starting over replaces them.</p>
-                  <button type="button" className="plank bg-accent px-4 py-3 font-semibold text-fg" onClick={startNew}>
-                    Replace save
-                  </button>
-                  <button type="button" className="plank border border-border px-4 py-3" onClick={() => setConfirmNew(false)}>
-                    Back
-                  </button>
-                </>
-              ) : (
-                <>
-                  {step === "trade" ? (
-                    <button type="button" className="plank bg-primary px-4 py-3 font-semibold text-bg" onClick={() => setStep("points")}>
-                      Next
-                    </button>
-                  ) : null}
-                  {step === "points" ? (
-                    <div className="flex gap-2">
-                      <button type="button" className="plank border border-border px-4 py-3" onClick={() => setStep("trade")}>
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        className="flex-1 plank bg-primary px-4 py-3 font-semibold text-bg disabled:opacity-40"
-                        disabled={pointsLeft !== 0}
-                        onClick={() => setStep("trait")}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  ) : null}
-                  {step === "trait" ? (
-                    <div className="flex gap-2">
-                      <button type="button" className="plank border border-border px-4 py-3" onClick={() => setStep("points")}>
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        className="flex-1 plank bg-primary px-4 py-3 font-semibold text-bg disabled:opacity-40"
-                        disabled={tagList.length !== 3 || pointsLeft !== 0}
-                        onClick={() => {
-                          if (hud.hasSave) setConfirmNew(true);
-                          else startNew();
-                        }}
-                      >
-                        Begin as {kit.title}
-                      </button>
-                    </div>
-                  ) : null}
-                  {step === "trade" ? (
-                    <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Save slot" data-testid="save-slots">
-                      {(hud.slots ?? []).map((sl) => (
-                        <button
-                          key={sl.slot}
-                          type="button"
-                          role="radio"
-                          aria-checked={hud.slot === sl.slot}
-                          data-testid={`slot-${sl.slot}`}
-                          className={`min-h-14 plank border px-2 py-2 text-left text-xs ${hud.slot === sl.slot ? "border-primary bg-primary/20" : "border-border bg-surface-2"}`}
-                          onClick={() => apiRef.current?.setSlot(sl.slot)}
-                        >
-                          <span className="block font-semibold">Slot {sl.slot}</span>
-                          <span className="block truncate text-muted">{sl.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {hud.auto && step === "trade" ? (
-                    <button
-                      type="button"
-                      data-testid="slot-auto"
-                      className="min-h-12 plank border border-dashed border-accent bg-surface-2 px-3 py-2 text-left text-xs"
-                      onClick={() => apiRef.current?.loadAutosave()}
-                    >
-                      <span className="block font-semibold">Autosave · Slot {hud.auto.slot}{hud.auto.where ? ` · ${hud.auto.where}` : ""}</span>
-                      <span className="block truncate text-muted">{hud.auto.label} · tap to load</span>
-                    </button>
-                  ) : null}
-                </>
-              )}
-            </div>
-            <p className="mt-4 text-base font-semibold leading-relaxed text-fg short:hidden">
-              Hold on the ground to run. Click a chopper to chase and keep swinging until they drop. Click the ground to break off. A carbine shoots from farther away. An axe in your hand takes three swings, then the tree falls. A pickaxe in your hand cracks a rock for iron.
-            </p>
-            {!hud.ready ? <p className="mt-2 text-xs text-muted">Painting the spruce…</p> : null}
-          </div>
-          </div>
-        </div>
+        <CharCreate
+          hasSave={!!hud.hasSave}
+          ready={!!hud.ready}
+          onContinue={() => apiRef.current?.continueGame()}
+          slots={hud.slots ?? []}
+          slot={hud.slot ?? 1}
+          onSlot={(n) => apiRef.current?.setSlot(n)}
+          auto={hud.auto ?? null}
+          onAuto={() => apiRef.current?.loadAutosave()}
+          onBegin={(r) => apiRef.current?.begin(r.name, r.role, { strength: 0, vigor: 0, endurance: 0, intellect: 0, perception: 0, luck: 0 }, "" as TraitId, r.look,
+            { hair: "black", coat: "", hat: "", trousers: true, boots: true, backstory: "", hard: false, hero: r.hero, m7: r.m7, traits2: r.traits2, tags: r.tags,
+              age: r.age, sex: r.sex, bag: r.bag, premade: r.premade, perk: r.perk, firstJob: r.firstJob, startTown: r.startTown, background: r.background, body: r.body, tint: r.tint } as any)}
+        />
       ) : null}
 
       {hud.phase === "menu" && modeResult ? (

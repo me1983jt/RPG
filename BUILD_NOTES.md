@@ -109,3 +109,27 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   (art height x FIG_ADULT/66). Placed (new worlds only): Ashwell (fallen-log, rusty-barrel, boulder, rain-barrel, supply-crate),
   Skowhegan (some gorge boulders, rusty-barrel, supply-crate, sandbag line as hop-over fence, burnt campfire, rain barrel).
 - Test: scripts/v15133-shots.mjs 9 PASS (hooks holdAim15, bagSet15, props15). ART_V 2078.
+
+## v15.13.4 (Nov 2) — old-school character creation, Justin/Sarah premades, phone speed, smaller APK
+- New game opens on three cards: Justin, Sarah, Make your own (portrait slot, short Harmony bio, Maine Seven, tags, trait, perk, gear;
+  Take / Modify / Create). Old trade/class list, backstory, cloth/hair/coat/hat pickers are gone (src/components/CharCreate.tsx).
+- One character sheet: name, age, sex; the Maine Seven with -/+ and Points Left; derived stats (Hit Points, Armor, Action Points,
+  Carry Weight, Melee Damage, Sequence, Healing Rate, Critical Chance); skills with % (tag exactly 3, +15); up to 2 traits;
+  a description panel for whatever you tap; Done / Cancel. Worn-paper sheet on a red plaid board.
+- Skills shown as Rifles (rifle), Repair (mechanics), Foraging (trail); ids and saves unchanged.
+- Justin: hunter kit + 14 shells + Mechanic's toolkit (new item "toolkit") + wire; MT7 VR7 NB7 FT6; tags Rifles/Repair/Sneak;
+  trait Army Vet (+10 aim, +1 AP / heals 15% slower); perk Field Fix (use the toolkit from the pack: repairs worn gear anywhere for
+  half the bench iron). Starts outside Pittsfield; first job "pittsfield-handcar" marker. Mechanic asides when he meets someone.
+- Sarah: medic kit + dandelion tea, spruce tonic, berries, medicine, syrup, maple tins, a pelt; VG7 IN8 CN7; tags Foraging/Speech/
+  Barter; trait Green Thumb (heals +30%, +10 Foraging / -2 melee dmg, -5 Melee); perk Farm Friend (+8 barter). Starts at Harmony;
+  first job "skowhegan-meds". Plant-lore asides.
+- Make your own: background (Logger, Lobsterman, Mechanic, Farmer, Hunter, Townie: +1 stat and a small item), start town
+  (Harmony/Pittsfield), sex -> body slot generic_male/generic_female (no sheets yet: falls back to the Justin/Sarah hero sheet),
+  coat color (the 4 existing coat dyes), Random. Signature perks are level 99 (never offered) and don't use a perk slot.
+- Justin / Sarah as companions: whichever one you are not playing stands near their town (Justin: Pittsfield, Sarah: Harmony) with a
+  recruit talk and their existing town job. Only one of them can be in the party; recruiting the other sends the first back.
+  Save: data.hero15134 {premade, age, sex, body, tint, asides}; party.rc15134. story.m7 / story.traits / story.player unchanged.
+- Phone speed / battery: hard frame cap now applies at 60 too (90/120 Hz phones were drawing 90-120 fps); title/creation screen idles
+  at ~12 fps; background (visibilitychange) stops the frame loop and suspends music + sound, and resumes without a catch-up jump.
+- APK size: scripts/copy-town.mjs drops Harmony's ~77 MB of unused concept PNGs in img/scenes (its loader only asks for <id>.jpg);
+  v2/backup removed. Tests: scripts/v15134-shots.mjs, scripts/rc15134-test.mjs, scripts/perf15134.mjs; v4-lib begin() uses the new sheet.

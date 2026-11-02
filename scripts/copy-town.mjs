@@ -38,3 +38,18 @@ for (const t of towns) {
   if (existsSync(rules)) { mkdirSync(join(out, "shared"), { recursive: true }); copyFileSync(rules, join(out, "shared/stats_rules.js")); }
   console.log(`town ${t.id}: ${used} -> public/towns/${t.id}/index.html`);
 }
+
+// v15.13.4: APK size. Harmony ships ~80 MB of unused concept PNGs in img/scenes: its scene loader only asks for
+// img/scenes/<id>.jpg (scenes_art.js B()). In a town whose loader is .jpg-only, drop scene files that are not .jpg and
+// are not named anywhere in the town's code. Other towns are left as they are.
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+for (const t of towns) {
+  const out = join(root, "public/towns", t.id), scenes = join(out, "img/scenes"), art = join(out, "js/scenes_art.js");
+  if (!existsSync(scenes) || !existsSync(art) || !/img\/scenes\/'\s*\+\s*id\s*\+\s*'\.jpg'/.test(readFileSync(art, "utf8"))) continue;
+  let text = "";
+  const walk = (d) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.(js|html|css|json|mjs)$/.test(f.name)) text += readFileSync(p, "utf8"); } };
+  walk(out);
+  let n = 0, bytes = 0;
+  for (const f of readdirSync(scenes)) if (!f.endsWith(".jpg") && !text.includes(f)) { bytes += statSync(join(scenes, f)).size; rmSync(join(scenes, f)); n++; }
+  if (n) console.log(`town ${t.id}: pruned ${n} unused scene files (${(bytes / 1048576).toFixed(1)} MB)`);
+}
