@@ -1,0 +1,18 @@
+art-inbox/generic-heroes
+Cells 132x186. Feet on y=181. About 104 px tall. Rows NE, E, SE, SW, W, NW.
+Walk is 8 frames, same count as v2/hero-walk.png. Idle, rifle aim, rifle fire, and pistol aim are 4 frames, same count as v2/hero-idle.png and v2/player-aim-rifle.png.
+Male walk and idle are the hero body with a gray shirt so armor can sit on the same frames. No existing file was edited.
+
+generic-female-idle.png  528x1116  173507 bytes
+generic-female-pistol-aim.png  528x1116  178333 bytes
+generic-female-portrait.png  256x256  167213 bytes
+generic-female-rifle-aim.png  528x1116  194571 bytes
+generic-female-rifle-fire.png  528x1116  194929 bytes
+generic-female-walk.png  1056x1116  335356 bytes
+generic-male-idle.png  528x1116  168093 bytes
+generic-male-pistol-aim.png  528x1116  195892 bytes
+generic-male-portrait.png  256x256  154914 bytes
+generic-male-rifle-aim.png  528x1116  212505 bytes
+generic-male-rifle-fire.png  528x1116  209951 bytes
+generic-male-walk.png  1056x1116  332550 bytes
+justin-portrait.png  256x256  75036 bytes
