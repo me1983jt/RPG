@@ -9734,7 +9734,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
 		// v15.9.3: Performance mode draws at 0.75x the device pixel ratio (capped at 1.5) and the browser scales it up
-		const dpr = perfMode ? Math.max(.75, Math.min(weak1510 ? 1.2 : 1.5, (window.devicePixelRatio || 1) * (weak1510 ? .6 : .75))) : Math.min(2, window.devicePixelRatio || 1);
+		// v0.2: the backing store is always ~0.7x device pixels (CSS scales it up); Performance mode may go lower still
+		const dpr02 = Math.max(.6, Math.min(2, window.devicePixelRatio || 1) * .7);
+		const dpr = perfMode ? Math.min(dpr02, Math.max(.75, Math.min(weak1510 ? 1.2 : 1.5, (window.devicePixelRatio || 1) * (weak1510 ? .6 : .75)))) : dpr02;
+		if (canvas.style.imageRendering !== "pixelated") canvas.style.imageRendering = "pixelated";
 		viewW = Math.max(1, rect.width);
 		viewH = Math.max(1, rect.height);
 		// v15.9.3: only touch the backing store when the size really changes (assigning width every frame
@@ -10833,6 +10836,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const LIT_BUILDINGS = { farmhouse: [225, -87, .8], shack: [165, -80, .65], workshop: [135, -27, .65], stall: [165, -54, .7], barn: [180, -118, .55], "post-porch": [135, -33, .75], "post-loft": [135, -82, .6] }; // v15.4: x1.5 with the buildings
 	const FIRES = { campfire: 230, firepot: 170, "firepot-up": 180, "firepot-3": 190 };
 	let nightCv = null;
+	let lightSpr02 = null;
 	/** Darkness layer with holes cut around light sources, then a warm additive glow on top. */
 	function paintNight(dark, camXd, camYd) {
 		if (!world || !player || !ctx) return;
@@ -10884,14 +10888,18 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		lg.fillStyle = `rgba(6, 9, 24, ${dark})`;
 		lg.fillRect(0, 0, w, h);
 		lg.globalCompositeOperation = "destination-out";
+		// v0.2: one cached soft-circle sprite stamped per light (scaled + globalAlpha) instead of a new gradient per light per frame
+		if (!lightSpr02) {
+			lightSpr02 = document.createElement("canvas"); lightSpr02.width = lightSpr02.height = 128;
+			const sg = lightSpr02.getContext("2d"), g = sg.createRadialGradient(64, 64, 16, 64, 64, 64);
+			g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)"); sg.fillStyle = g; sg.fillRect(0, 0, 128, 128);
+		}
 		for (const L of lights) {
 			const x = L.x * scale, y = L.y * scale, r = Math.max(3, L.r * scale);
-			const g = lg.createRadialGradient(x, y, r * .25, x, y, r);
-			g.addColorStop(0, `rgba(0,0,0,${L.a})`);
-			g.addColorStop(1, "rgba(0,0,0,0)");
-			lg.fillStyle = g;
-			lg.fillRect(x - r, y - r, r * 2, r * 2);
+			lg.globalAlpha = L.a;
+			lg.drawImage(lightSpr02, x - r, y - r, r * 2, r * 2);
 		}
+		lg.globalAlpha = 1;
 		ctx.save();
 		ctx.imageSmoothingEnabled = true;
 		ctx.drawImage(nightCv, 0, 0, viewW, viewH);
@@ -12033,7 +12041,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	// v15.9.4: FPS counter (pause menu, off by default) and a 30 / 60 fps cap (default 60)
 	let showFps = (() => { try { return localStorage.getItem("maine-rpg-fps") === "on"; } catch { return false; } })();
-	let fpsCap = (() => { try { const v = localStorage.getItem("maine-rpg-cap"); return v ? (v === "30" ? 30 : 60) : (weak1510 ? 30 : 60); } catch { return weak1510 ? 30 : 60; } })();
+	// v0.2: main loop defaults to 30 fps on every device (new key so old saved "60" caps do not override it); Options can still pick 60
+	let fpsCap = (() => { try { const v = localStorage.getItem("maine-rpg-cap2"); return v === "60" ? 60 : 30; } catch { return 30; } })();
 	// v15.10.10: on a phone with no saved cap, drop to 30 fps after ~4 s of running under 40 fps (steadier frames, cooler phone)
 	let capAuto1510 = (() => { try { return phone193 && !localStorage.getItem("maine-rpg-cap"); } catch { return false; } })();
 	let slow1510 = 0;
@@ -13321,7 +13330,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setAim,
 		setTurnBased,
 		setShowFps(on) { showFps = !!on; try { localStorage.setItem("maine-rpg-fps", showFps ? "on" : "off"); } catch {} sync(true); },
-		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; capAuto1510 = false; try { localStorage.setItem("maine-rpg-cap", String(fpsCap)); } catch {} sync(true); },
+		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; capAuto1510 = false; try { localStorage.setItem("maine-rpg-cap2", String(fpsCap)); } catch {} sync(true); },
 		setPerfMode(on) { perfMode = !!on; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
 		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
