@@ -53,3 +53,40 @@ for (const t of towns) {
   for (const f of readdirSync(scenes)) if (!f.endsWith(".jpg") && !text.includes(f)) { bytes += statSync(join(scenes, f)).size; rmSync(join(scenes, f)); n++; }
   if (n) console.log(`town ${t.id}: pruned ${n} unused scene files (${(bytes / 1048576).toFixed(1)} MB)`);
 }
+
+// v15.13.4: APK size. The five town games ship the same art (npc walk sheets, anim_v2, shared scenes): ~37 MB of byte-identical
+// copies in the APK. Each image that is identical in 2+ towns is stored once in public/towns/_shared/<hash>.<ext>; the towns' own
+// copies are removed and a tiny loader shim (first <script> of each town's index.html) maps the old relative path to the shared
+// file when the game sets an <img>/Image src. Only .png/.jpg/.webp that no .html/.css names (CSS url() can't be remapped).
+// The Quest sources are never touched; this runs on the copies in public/towns.
+import { createHash } from "node:crypto";
+import { renameSync, writeFileSync } from "node:fs";
+{
+  const base = join(root, "public/towns"), shared = join(base, "_shared");
+  rmSync(shared, { recursive: true, force: true }); mkdirSync(shared, { recursive: true });
+  const byHash = new Map(), styleText = new Map();
+  for (const t of towns) {
+    const out = join(base, t.id); if (!existsSync(out)) continue;
+    let st = "";
+    const walk = (d) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.(css|html)$/.test(f.name)) st += readFileSync(p, "utf8"); else if (/\.(png|jpe?g|webp)$/i.test(f.name) && statSync(p).size > 8192) { const h = createHash("sha1").update(readFileSync(p)).digest("hex").slice(0, 16); if (!byHash.has(h)) byHash.set(h, []); byHash.get(h).push({ town: t.id, rel: p.slice(out.length + 1), abs: p }); } } };
+    walk(out); styleText.set(t.id, st);
+  }
+  const maps = new Map(); let saved = 0, n = 0;
+  for (const [h, list] of byHash) {
+    const towns2 = new Set(list.map((x) => x.town));
+    if (towns2.size < 2 || list.some((x) => styleText.get(x.town).includes(x.rel))) continue;
+    const ext = list[0].rel.split(".").pop().toLowerCase();
+    renameSync(list[0].abs, join(shared, `${h}.${ext}`));
+    for (const x of list.slice(1)) { saved += statSync(x.abs).size; rmSync(x.abs); }
+    for (const x of list) { if (!maps.has(x.town)) maps.set(x.town, {}); maps.get(x.town)[x.rel] = `${h}.${ext}`; }
+    n++;
+  }
+  for (const [id, m] of maps) {
+    const idx = join(base, id, "index.html"); if (!existsSync(idx)) continue;
+    const shim = `<script>/* v15.13.4 shared town art (copy-town.mjs) */(function(){var M=${JSON.stringify(m)};function f(u){if(typeof u!=="string")return u;var q=u.indexOf("?"),p=q<0?u:u.slice(0,q),s=q<0?"":u.slice(q);p=p.replace(/^\\.\\//,"");var h=M[p];return h?"../_shared/"+h+s:u}var P=HTMLImageElement.prototype,d=Object.getOwnPropertyDescriptor(P,"src");Object.defineProperty(P,"src",{configurable:true,enumerable:d.enumerable,get:d.get,set:function(v){d.set.call(this,f(v))}});var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(k,v){return sa.call(this,k,(this instanceof HTMLImageElement&&String(k).toLowerCase()==="src")?f(v):v)};})();</script>`;
+    let html = readFileSync(idx, "utf8").replace(/<script>\/\* v15\.13\.4 shared town art[\s\S]*?<\/script>/, "");
+    html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m0) => m0 + shim) : shim + html;
+    writeFileSync(idx, html);
+  }
+  console.log(`towns: ${n} shared images stored once in _shared (${(saved / 1048576).toFixed(1)} MB of copies removed)`);
+}

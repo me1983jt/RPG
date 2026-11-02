@@ -133,3 +133,9 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   at ~12 fps; background (visibilitychange) stops the frame loop and suspends music + sound, and resumes without a catch-up jump.
 - APK size: scripts/copy-town.mjs drops Harmony's ~77 MB of unused concept PNGs in img/scenes (its loader only asks for <id>.jpg);
   v2/backup removed. Tests: scripts/v15134-shots.mjs, scripts/rc15134-test.mjs, scripts/perf15134.mjs; v4-lib begin() uses the new sheet.
+- Follow-up (same release): the five town games carried ~37 MB of byte-identical art in the APK. copy-town.mjs now stores each
+  image shared by 2+ towns once in public/towns/_shared/<hash>.<ext> and puts a small shim first in each town's index.html that
+  maps the old relative img path to it (Image/img src only; anything named in .css/.html is left in place). Quest sources untouched.
+  Check: scripts/towns15134-check.mjs (all 5 towns, 0 404s on a static server); towns15106-test ALL PASS; v15-test ALL PASS.
+- Measured (844x390, Chrome, dev server): title/creation screen 60 -> 12 fps; background tab 51-68 -> 0 frames in 3 s;
+  in-play render time unchanged within noise (4x CPU throttle: 15-22 fps both before and after).
