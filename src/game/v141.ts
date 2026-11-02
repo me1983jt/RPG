@@ -9,9 +9,13 @@ export const HOLLOWED = "Hollowed";
  *  (Grok Build art pending); until it lands every kind draws with v2/hollowed-walk. */
 export interface HollowKind { id: string; name: string; hp: number; atk: number; xp: number; speed: number; weight: number; sheet: string; elite?: boolean }
 export const HOLLOW_KINDS: HollowKind[] = [
-  { id: "walker", name: "", hp: 18, atk: 5, xp: 6, speed: 1, weight: 70, sheet: "hollowed" },
-  { id: "bloated", name: "Bloated", hp: 34, atk: 7, xp: 9, speed: .7, weight: 15, sheet: "hollowed-bloated" },
-  { id: "runner", name: "Gaunt", hp: 12, atk: 4, xp: 8, speed: 1.8, weight: 12, sheet: "hollowed-runner" },
+  { id: "walker", name: "", hp: 18, atk: 5, xp: 6, speed: 1, weight: 40, sheet: "hollowed" },
+  // v15.13.2: Grok Build drew these three (v2/hollowed-<kind>-walk.png)
+  { id: "logger", name: "Logger", hp: 30, atk: 8, xp: 9, speed: .85, weight: 12, sheet: "hollowed-logger" },
+  { id: "icefisher", name: "Ice-fisher", hp: 24, atk: 6, xp: 8, speed: .9, weight: 9, sheet: "hollowed-icefisher" },
+  { id: "farmer", name: "Farmer", hp: 16, atk: 5, xp: 6, speed: 1.1, weight: 12, sheet: "hollowed-farmer" },
+  { id: "bloated", name: "Bloated", hp: 34, atk: 7, xp: 9, speed: .7, weight: 8, sheet: "hollowed-bloated" },
+  { id: "runner", name: "Gaunt", hp: 12, atk: 4, xp: 8, speed: 1.8, weight: 7, sheet: "hollowed-runner" },
   { id: "elite", name: "Old", hp: 60, atk: 10, xp: 25, speed: 1.15, weight: 3, sheet: "hollowed-elite", elite: true },
 ];
 export function pickHollowKind(r: number, allowElite = true): HollowKind {

@@ -7,6 +7,8 @@ const want = [
   "v2/skowhegan-mill", "v2/skowhegan-hospital", "v2/skowhegan-store", "v2/skowhegan-hardware", "v2/skowhegan-house", "v2/skowhegan-house2", "v2/skowhegan-house3", "v2/skowhegan-bridge",
   "v2/farm-greenhouse", "v2/farm-barrel", "v2/farm-solar", "v2/farm-lookout", "v2/farm-palisade", "v2/farm-cellar", "v2/farm-bench",
   "v2/biscuit-walk", "v2/biscuit-idle",
+  // v15.13.2: Build Hollowed kinds
+  "v2/hollowed-logger-walk", "v2/hollowed-icefisher-walk", "v2/hollowed-farmer-walk",
   // v15.10: Sarah's pet raccoon, wild raccoons and turtles
   "v2/raccoon-walk", "v2/raccoon-idle", "v2/raccoon-wild-walk", "v2/turtle-walk",
   "items/medicine", "items/bone", "items/steeltrap", "items/greens", "items/water",

@@ -837,7 +837,7 @@ export function RPG() {
                   {(
                     [
                       ["strength", "Strength", hud.strength, "Harder hits"],
-                      ["vigor", "Vigor", hud.vigor, "More life"],
+                      ["vigor", "Health", hud.vigor, "More life"], // v15.13.2: shown as Health (key vigor kept)
                       ["endurance", "Endurance", hud.endurance, "More stamina"],
                       ["intellect", "Intellect", hud.intellect, "Skill points, better prices, sharper talk"],
                       ["perception", "Perception", hud.perception, "See farther. Guns reach farther"],
@@ -1655,6 +1655,9 @@ const ICON_ORDER = ["Talk", "Char", "Pack", "Map", "Auto", "Journal", "Options",
 function BarIcon({ l, art, children }: { l: string; art: boolean; children: ReactNode }) {
   const i = ICON_ORDER.indexOf(l === "Stand" ? "Crouch" : l);
   if (!art || i < 0) return <>{children}</>;
+  // v15.13.2: Build's re-exported Talk and Journal buttons replace those two cells of the strip
+  const own = l === "Talk" ? "/game/hud/btn-talk.png" : l === "Journal" ? "/game/hud/hud-journal.png" : "";
+  if (own) return <span aria-hidden data-bar-icon={l} className="block size-6" style={{ backgroundImage: `url(${own})`, backgroundSize: "100% 100%" }} />;
   return <span aria-hidden className="block size-5" style={{ backgroundImage: "url(/game/hud/btn-icons.png)", backgroundSize: "160px 20px", backgroundPosition: `${-i * 20}px 0` }} />;
 }
 const ENDING_ART = ["harmony", "skowhegan", "pittsfield", "greenville"];

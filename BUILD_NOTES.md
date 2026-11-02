@@ -79,3 +79,18 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
 ## v15.13.1 (Nov 2) — stat display names
 - The Seven renamed (display only): Might (MT), Vigilance (VG), Vigor (VR), Influence (IN), Cunning (CN), Nimble (NB), Fortune (FT).
   Internal ids / save keys unchanged: back, eye, wind, neighborly, knowhow, quick, fortune (data.m7). Header "The Seven".
+
+## v15.13.2 (Nov 2) — Build art merge (build-art-v15.12.3/.4/.5)
+- v2/player-walk.png = Build's hero-walk (14x6, 88x124 cells; v15.12.4). The old v2/justin-walk stays as the fallback (plImg uses player-* first).
+  Standing and running also use player-walk (frame 0 / walk) so the body and new overlays share one grid; gun/axe/hit poses stay on the old justin-* sheets.
+  player-walk is not coat-dyed (the dye blackened its face). Feet re-measured on its 6 rows (it was measured as 4 rows elsewhere and floated).
+- overlay/boots, gloves, trousers = v15.12.5 (14x6 walk grid); boots 7 / trousers 2 stray specks (<4 px) removed. NEW_OVERLAYS in armorLayerNames
+  lets these legs/feet/hands overlays draw; an overlay the same size as the body draws with the body's own transform; N/S facing swap matches blit().
+  Old overlays kept in /workspace/maine-rpg/gb-intake/v15132/backup-old/.
+- Hollowed kinds (v141.ts): logger (30 hp, 8 atk, slow), icefisher (24/6), farmer (16/5, quick); sheets v2/hollowed-{logger,icefisher,farmer}-walk
+  (logger/icefisher from .5, farmer from .4), listed in optional.json; figFamily/figScale handle the 6-row sheets.
+- Goose: biscuit-goose-sheet (v15.12.3) cut to v2/biscuit-walk.png (6 run frames x 6 hex rows) + v2/biscuit-idle.png; drawn at 84.
+- HUD: hud/btn-talk.png and hud/hud-journal.png replace the Talk and Journal cells of the bar icon strip.
+- Rejected: v2/props/notice-board.png (v15.12.3) is a cook pot, not a notice board.
+- Character panel: the old "Vigor" stat (key vigor) is shown as "Health".
+- Test: scripts/v15132-shots.mjs 6 PASS; v15-test ALL PASS; v1513-shots PASS. ART_V 2077.

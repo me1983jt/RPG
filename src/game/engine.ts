@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2076;
+const ART_V = 2077;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -168,7 +168,7 @@ var IMAGES = [
 	"v2/tracks/wolf-left", "v2/tracks/wolf-right",
 	...["wall-wood","wall-stone","wall-metal","gate-wood","gate-stone","gate-metal"].flatMap((n) => [`v14/${n}`, `v14/${n}-dmg`]),
 	"v2/hollowed-walk", "v2/hollowed-walk-atk", "v2/hollowed-walk-dead",
-	// v15.10.12: add "v2/hollowed-bloated-walk", "v2/hollowed-runner-walk", "v2/hollowed-elite-walk" here when Build delivers them
+	// v15.13.2: Build's Hollowed kinds (logger, icefisher, farmer) load through v2/optional.json
 	...["wall-x","spikes","chest","rainbarrel","sandbags","sandbags-x","workbench","wreck","firering","firering-lit","stash","sign-farm","lookout","lookout-x","garden","smokehouse","raincollector","still"].map((n) => `v14/${n}`),
 	"hero",
 	"hero-axe",
@@ -2556,11 +2556,12 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (dogBody) {
 			const tile = tileOf(dogBody.x, dogBody.y);
 			if (visible[tile.ty * MAP_W + tile.tx]) draws.push({ z: bodyZ(dogBody.x, dogBody.y), draw: () => {
-				const frame = dogBody.moving ? Math.floor(dogBody.anim) % 4 : 0;
 				// art hook: public/game/v2/biscuit-walk.png (and biscuit-idle.png) when present, else the coyote sheet
+				// v15.13.2: Build's Goose sheet, cut to 6 run frames x 6 hex rows (88x124 cells) + a 1-frame idle
 				const own = dogBody.moving ? "v2/biscuit-walk" : images.get("v2/biscuit-idle") ? "v2/biscuit-idle" : "v2/biscuit-walk";
+				const frame = dogBody.moving ? Math.floor(dogBody.anim) % (images.get(own) ? sheetCols(images.get(own)) : 4) : 0;
 				shadow193 = true;
-				if (images.get(own)) blit(own, dogBody.x, dogBody.y, 27, true, frame, dogBody.dir, dcx, dcy);
+				if (images.get(own)) blit(own, dogBody.x, dogBody.y, images.get(own).width % 88 === 0 && images.get(own).height === 744 ? 84 : 27, true, frame, dogBody.dir, dcx, dcy); // v15.13.2: Build's Goose sits ~60% of an 88x124 cell
 				else blit("coyote", dogBody.x, dogBody.y, realH("coyote", 27), true, frame, dogBody.dir, dcx, dcy);
 				shadow193 = false;
 				if (q10.dog >= 4 && v3.dog.hp < 30) { const r = worldToScreen(dogBody.x, dogBody.y, dcx, dcy); const p = zoomPoint(r.sx, r.sy); ctx.fillStyle = "#1a1410"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32, 4); ctx.fillStyle = "#c8503c"; ctx.fillRect(p.sx - 16, p.sy - 44 * zoom, 32 * v3.dog.hp / 30, 4); }
@@ -6841,6 +6842,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v13: the player's body. v2/player-<action>.png when it exists, else Justin's gw15 sheet (dyed
 	 * to the creator's hair and cloth in heroSource), else null so callers fall back to the old hero art. */
+	const newWalk15 = () => !asSarah() && !!images.get("v2/player-walk");
 	function plImg(action) {
 		const src = asSarah() ? images.get(`v2/sarah-${action}`) : images.get(`v2/player-${action}`) || images.get(`v2/justin-${action}`);
 		if (!src) return null;
@@ -6850,6 +6852,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	/** v13 armor paper doll: public/game/v2/armor/<piece>-<tier>-<action>.png, stacked feet, legs,
 	 * chest, hands, head over the body, same grid as the body sheet. Missing layers are skipped. Player only. */
+	const NEW_OVERLAYS = new Set(["boots", "gloves", "trousers"]);
 	const ARMOR_ORDER = [["feet", "feetId"], ["legs", "legsId"], ["chest", "coatId"], ["hands", "handsId"], ["head", "headId"]];
 	const TIER_OF = { poor: 1, standard: 2, good: 3, rare: 4 };
 	/** v14.1 paper doll for any humanoid: shared slots (head, chest, legs, feet, hands, back), drawn bottom-up, from
@@ -6894,7 +6897,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (images.get(n)) out.push(n);
 			else if (act !== "walk" && images.get(`v2/armor/${piece}-${tier}-walk`) && (act === "idle" || act === "run")) out.push(`v2/armor/${piece}-${tier}-walk`);
 			// old 4-frame overlays only for chest and head: legs/feet/hands were drawn for the old walk and fight the v2 stride
-			else if (piece === "chest" || piece === "head") { wantOverlay(id); if (images.get(`overlay-${id}`)) out.push(`overlay-${id}`); }
+			// v15.13.2: Build redrew boots, gloves and trousers on the 14x6 walk grid, so those legs/feet/hands overlays draw too
+			else if (piece === "chest" || piece === "head" || NEW_OVERLAYS.has(id)) { wantOverlay(id); if (images.get(`overlay-${id}`)) out.push(`overlay-${id}`); }
 		}
 		// v15.10.10: the back slot (backpack / pack frame) has no v2/armor piece; its overlay sheet goes on last-but-head
 		const back = player.backId;
@@ -6936,6 +6940,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const bimg = body && images.get(body);
 		const img = images.get(n);
 		if (!bimg || !img || !ctx) return;
+		if (dir === 0 || dir === 4) dir = dir === 0 ? 1 : 3; // v15.13.2: same N/S -> diagonal swap blit() does for the body
 		const raw = worldToScreen(player.x, player.y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
 		const lean = lunge ? lungeOf(dir) : { x: 0, y: 0 };
@@ -6948,7 +6953,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const brows = Math.round(bimg.height / (bimg.width / fcols * 124 / 88)) === 6 ? 6 : 8;
 		if (bimg.feet) { const f = bimg.feet[facingRow(dir, brows) * fcols + (frame % fcols)]; if (f) frac = f; }
 		let dh = HERO_H * heroScale(body) * zoom;
-		if (n.startsWith("overlay-")) {
+		// v15.13.2: an overlay cut on the body's own grid (Build's boots/gloves/trousers on the 14x6 walk) draws exactly like the body
+		if (n.startsWith("overlay-") && !(img.width === bimg.width && img.height === bimg.height)) {
 			// v15.10.12: the old overlay sheets were drawn on a figure that fills ~80% of its cell (head .14, feet .94);
 			// scale them to the body's own figure height and stand their feet on the body's foot line
 			const fig = figSpan(bimg);
@@ -7004,7 +7010,11 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (swingAnim > 0 && !work) { act = "walk"; lunge = true; }
 		else if (work && work.swing > .05 && plImg("axe")) { act = "axe"; frame = Math.min(colsOf("axe") - 1, Math.floor((1 - Math.min(1, work.swing / .48)) * colsOf("axe"))); }
 		else if (!moving && gun && using && plImg("gun")) { act = "gun"; frame = Math.floor(performance.now() / ANIM_MS.aim) % colsOf("gun"); }
+		// v15.13.2: with Build's 14x6 walk (v2/player-walk) and no matching idle/run, stand and run on the walk sheet so
+		// the body and the boots/gloves/trousers overlays stay on one grid (old justin-idle/run are a different cut)
+		else if (!moving && newWalk15() && !images.get("v2/player-idle")) { act = "walk"; frame = 0; }
 		else if (!moving && plImg("idle")) { act = "idle"; frame = Math.floor(performance.now() / ANIM_MS.idle) % colsOf("idle"); }
+		else if (moving && v13Running() && newWalk15() && !images.get("v2/player-run")) act = "walk";
 		else if (moving && v13Running() && plImg("run")) act = "run";
 		const name = plImg(act) || plImg("walk");
 		blit(name, player.x, player.y, HERO_H, true, frame, player.dir, drawCamX, drawCamY, lunge);
@@ -7125,7 +7135,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function heroSource(name, img) {
 		if (!player || !img?.width) return img;
-		if (name.startsWith("pl/")) return asSarah() || images.get(`v2/player-${name.slice(3)}`) === img ? img : dyePlayerBody(img, name);
+		if (name.startsWith("pl/")) return asSarah() || images.get(`v2/player-${name.slice(3)}`) === img ? img : dyePlayerBody(img, name); // v15.13.2: Build's player-walk stays undyed (the dye blackens its face)
 		if (!/^(v2\/)?hero/.test(name)) return img;
 		const colors = wornColors();
 		const key = `${name}:${player.look}:${player.coatId}:${player.headId}:${player.legsId}:${player.handsId}:${player.feetId}:${player.backId}`;
@@ -11502,8 +11512,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const footSrc = layer ? images.get(overlayBase) ?? img : img;
 		// v15.7: every sprite stands on its real lowest opaque row (measured once, per frame for sheets), not a
 		// guessed 0.92, so transparent padding under the feet no longer lifts it off the ground.
-		if (footSrc.foot == null && footSrc.width && !footSrc.footTried) {
-			footSrc.footTried = true;
+		// v15.13.2: a 6-row sheet first measured elsewhere on another row count (Build's 14x6 player-walk) is measured again on its own rows
+		if ((footSrc.foot == null && footSrc.width && !footSrc.footTried) || (sheet && footSrc === img && img.rowsSeen && footSrc.feetRows !== rows && footSrc.width)) {
+			footSrc.footTried = true; footSrc.feetRows = rows;
 			try { const m = measurePose(footSrc, sheet, rows); footSrc.foot = m.foot; if (sheet) footSrc.feet = m.feet; } catch { /* tainted/unloaded: keep default */ }
 		}
 		let frac = footSrc.foot ?? (sheet || strips ? .92 : .9);
@@ -13678,7 +13689,7 @@ const SIZE_SEEN = new Map();
 const figCache = new Map();
 function figFamily(name) {
 	if (/^(v2\/)?hero|^pl\/|^overlay-/.test(name)) return null;
-	let m = name.match(/^v2\/(bandit-[a-z]+|hollowed|[a-z]+)-(walk|run|idle|axe|gun|gun-atk|crouch|carry|death|down|hit|talk|walk-atk|walk-dead)$/);
+	let m = name.match(/^v2\/(bandit-[a-z]+|hollowed-(?:logger|icefisher|farmer)|hollowed|[a-z]+)-(walk|run|idle|axe|gun|gun-atk|crouch|carry|death|down|hit|talk|walk-atk|walk-dead)$/);
 	if (m && !/^(wolf|bike|tractor|hero)/.test(m[1])) return { key: "v2/" + m[1], ref: [`v2/${m[1]}-walk`, `v2/${m[1]}-idle`] };
 	m = name.match(/^(npc-[a-z]+|guard-(?:watch-)?[a-z]+|raider(?:-[a-z]+)?|boss-[a-z]+|villager)(?:-atk|-dead)?$/);
 	if (m && !/-dead$/.test(name)) return { key: m[1], ref: [m[1]] };
@@ -13706,7 +13717,8 @@ function figScale(name, drawH, images) {
 	if (frac == null) {
 		const ref = fam.ref.map((r) => images.get(r)).find((im) => im && im.width) || images.get(name);
 		if (!ref || !ref.width) return 1;
-		const rows = sheetRowsOf(fam.ref[0]) || 1;
+		const g6 = Math.round(ref.height / (ref.width / sheetCols(ref) * 124 / 88)); // v15.13.2: 6-row Build sheets
+		const rows = g6 === 6 ? 6 : sheetRowsOf(fam.ref[0]) || 1;
 		frac = measureFig(ref, ref.height / rows);
 		figCache.set(fam.key, frac);
 	}
