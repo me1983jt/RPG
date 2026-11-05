@@ -1079,8 +1079,9 @@ export function RPG() {
             Frame rate cap: {hud.fpsCap ?? 60} fps
           </button>
           <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
-            Low graphics (phone speed): {hud.perfMode ? "On" : "Off"}
+            Low graphics: {hud.perfMode ? "On" : "Off"}{(hud as any).powerSave && (hud as any).perfAuto ? " (power saving)" : (hud as any).perfAuto ? " (auto)" : ""}
           </button>
+          <p className="text-[10px] leading-snug text-muted px-1">Low turns on automatically when the phone is in power saving (Android APK). Tap above to override.</p>
           <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
             Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
           </button>

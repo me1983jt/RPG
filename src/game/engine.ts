@@ -446,7 +446,28 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	const phone193 = typeof navigator !== "undefined" && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820));
 	// v15.10.10 phone speed: weak phones (<=4 cores or <=3 GB RAM) start at 30 fps and a lower render scale
 	const weak1510 = phone193 && (((navigator as any).hardwareConcurrency || 8) <= 4 || ((navigator as any).deviceMemory || 8) <= 3);
-	let perfMode = (() => { try { const v = localStorage.getItem("maine-rpg-perf"); return v ? v === "on" : phone193; } catch { return phone193; } })();
+	// v0.4: Low graphics auto-on when the phone is in power-save (Android WebView bridge), else phones default on.
+	// Manual Options toggle writes maine-rpg-perf and wins over auto.
+	let perfManual = (() => { try { return localStorage.getItem("maine-rpg-perf") !== null; } catch { return false; } })();
+	const powerSave04 = () => {
+		try {
+			const n = (window as any).MaineRpgNative;
+			if (n && typeof n.isPowerSaveMode === "function") return !!n.isPowerSaveMode();
+		} catch {}
+		try {
+			const cap = (window as any).Capacitor;
+			const v = cap?.nativeCallback?.("App", "isPowerSaveMode", {});
+			if (typeof v === "boolean") return v;
+		} catch {}
+		return null;
+	};
+	const defaultPerf04 = () => { const ps = powerSave04(); if (ps === true) return true; return phone193; };
+	let perfMode = (() => { try { const v = localStorage.getItem("maine-rpg-perf"); return v ? v === "on" : defaultPerf04(); } catch { return defaultPerf04(); } })();
+	const refreshPerfAuto04 = () => {
+		if (perfManual) return;
+		const next = defaultPerf04();
+		if (next !== perfMode) { perfMode = next; sync(true); }
+	};
 	/** High-graphics effects actually in use (Performance mode forces the Low look). */
 	const hiFx = () => gfxHigh && !perfMode;
 	let shadow193 = false; // v15.9.3: contact shadows only while the hero, the companion, Goose or an enemy draws
@@ -748,6 +769,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			turnBased,
 			gfxHigh,
 			perfMode,
+			perfAuto: !perfManual,
+			powerSave: powerSave04() === true,
 			showFps,
 			fpsCap,
 			ap,
@@ -5442,9 +5465,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 					const r = worldToScreen(sp.x, sp.y, camX, camY), m = zoomPoint(r.sx, r.sy);
 					const x0 = m.sx + dx * zoom - w * zoom / 2, y1 = m.sy + dy * zoom, y0 = y1 - hgt * zoom;
 					if (x0 > viewW + 20 || x0 + w * zoom < -20 || y0 > viewH + 20 || y1 < -40) return;
-					// fade to ~35% while anyone stands behind it
+					// fade to ~35% while anyone stands behind it (v0.4: only when the house is near the hero)
 					let behind = false;
-					if (art !== "fence" && art !== "sign") for (const b of bodies) {
+					const nearHero = Math.hypot(fx - player.x, fy - player.y) < (perfMode ? 220 : 320);
+					if (nearHero && art !== "fence" && art !== "sign") for (const b of bodies) {
 						if (bodyZ(b.x, b.y) >= bodyZ(fx, fy)) continue;
 						const br = worldToScreen(b.x, b.y, camX, camY), bs = zoomPoint(br.sx, br.sy);
 						if (bs.sx > x0 && bs.sx < x0 + w * zoom && bs.sy < y1 && bs.sy > y0) { behind = true; break; }
@@ -9372,8 +9396,13 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			clearEdges();
 			return;
 		}
-		if (!turnBased) for (const npc of world.npcs) {
-			stepFolk(npc, dt);
+		if (!turnBased) {
+			// v0.4: pause folk AI/anim when far off the hero (animals already use aiFar below)
+			const npcFar = Math.max(viewW, viewH) / Math.max(.3, zoom) * (perfMode ? 1.05 : 1.35);
+			for (const npc of world.npcs) {
+				if (Math.hypot(npc.x - player.x, npc.y - player.y) > npcFar) continue;
+				stepFolk(npc, dt);
+			}
 		}
 		if (!turnBased) stepParty(dt);
 		if (!turnBased) stepProps(dt);
@@ -9381,7 +9410,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		{ const _t = performance.now(); q10Step(dt); pAdd("u:q10Step", _t); }
 		{ const _t = performance.now(); q11Step(dt); pAdd("u:q11Step", _t); }
 		snowAcc += dt;
-		if (snowAcc > .28 && particles.length < 24) {
+		if (snowAcc > (perfMode ? .55 : .28) && particles.length < (perfMode ? 10 : 24)) {
 			snowAcc = 0;
 			const here = tileOf(player.x, player.y);
 			if (inFarm(here.tx, here.ty)) particles.push({
@@ -9396,7 +9425,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			});
 		}
 		const tAI = performance.now();
-		const aiFar = Math.max(viewW, viewH) / Math.max(.3, zoom) * (perfMode ? 1.25 : 1.5);
+		const aiFar = Math.max(viewW, viewH) / Math.max(.3, zoom) * (perfMode ? 1.05 : 1.45);
 		let aiPaused = 0;
 		// v15.9.4: animals and foes think and move on a 20 Hz tick; the renderer interpolates them every frame
 		aiAcc += dt;
@@ -9660,7 +9689,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		return best;
 	}
 	/** v15.9.5: hard particle cap; lower at night and in Performance mode (night is the slow case on phones). */
-	function partCap195() { return perfMode ? (weak1510 ? 35 : 60) : nightShade(clock) > .22 ? 60 : 140; }
+	function partCap195() { return perfMode ? (weak1510 ? 18 : 32) : nightShade(clock) > .22 ? 50 : 110; }
 	function burst(x, y, color, n, big) {
 		n = Math.min(n, Math.max(0, partCap195() - particles.length));
 		for (let i = 0; i < n; i++) {
@@ -11058,7 +11087,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				const tF = performance.now();
 				const tree = prop.kind.startsWith("tree-");
 				const vArt = (prop.kind === "car-sedan" || prop.kind === "car-truck") ? vehicleArt(prop) : null;
-				if (fadeTick && player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))) {
+				// v0.4: fade pick only for props near the hero (far on-screen props skip the math)
+				if (fadeTick && player && !inside && (vArt ? vArt.h > 100 : h > (tree ? 60 : 140))
+					&& Math.hypot(c.x - player.x, c.y - player.y) < (perfMode ? 200 : 280)) {
 					const n = (Math.imul(prop.tx - MAP_OFF, 374761393) ^ Math.imul(prop.ty - MAP_OFF, 668265263)) >>> 0;
 					const scale = tree ? TREE_VARY[0] + n % TREE_VARY[2] * TREE_VARY[1] : 1;
 					const pr = worldToScreen(c.x, c.y, drawCamX, drawCamY);
@@ -12280,6 +12311,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		} else {
 			unlockAudio();
 			pauseAudio(false);
+			refreshPerfAuto04(); // v0.4: re-check Android power-save when returning to the app
 			if (bgPaused) { bgPaused = false; last = performance.now(); acc = 0; if (running) requestAnimationFrame(frame); }
 		}
 	};
@@ -13331,7 +13363,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		setTurnBased,
 		setShowFps(on) { showFps = !!on; try { localStorage.setItem("maine-rpg-fps", showFps ? "on" : "off"); } catch {} sync(true); },
 		setFpsCap(n) { fpsCap = n === 30 ? 30 : 60; capAuto1510 = false; try { localStorage.setItem("maine-rpg-cap2", String(fpsCap)); } catch {} sync(true); },
-		setPerfMode(on) { perfMode = !!on; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
+		setPerfMode(on) { perfMode = !!on; perfManual = true; try { localStorage.setItem("maine-rpg-perf", perfMode ? "on" : "off"); } catch {} sync(true); },
 		setGraphics(high) { gfxHigh = !!high; try { localStorage.setItem("maine-rpg-gfx", gfxHigh ? "high" : "low"); } catch {} sync(true); },
 		endTurn,
 		takeLoot

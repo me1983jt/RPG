@@ -171,7 +171,7 @@ export function CharCreate(props: {
           <div>
             <p className="text-[10px] uppercase tracking-[0.3em] text-[#d8b878]">Northwestern Maine</p>
             <h1 className="font-display text-2xl leading-none text-[#f1e3c0] short:text-xl">Choose who walks out of the woods</h1>
-            <p data-version="0.3" className="text-[10px] text-[#d8b878] opacity-80">v0.3 - Quest town update (story v1.10.5, cameo flags)</p>
+            <p data-version="0.4" className="text-[10px] text-[#d8b878] opacity-80">v0.4 - Lag trims + Ashfall town sync</p>
           </div>
           {props.hasSave ? <button type="button" data-testid="continue-btn" className="cc-btn cc-btn-go" onClick={props.onContinue}>Continue</button> : null}
         </div>

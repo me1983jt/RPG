@@ -145,3 +145,14 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   The repo matched the local /workspace/quest-* folders file-for-file, so the town files are the same as in v0.2.
 - townStory.ts STORY_KEYS: added story.cameo.gus.warned, story.cameo.mira.state, story.cameo.mira.route, story.cameo.mira.hideoutRevealed.
 - Start-screen version line 0.3. No sprite, save-key or orientation change. Smoke: scripts/_v03smoke.mjs, shots/v03/.
+
+## RPG v0.4 (Nov 5) — versionCode 26110501
+- Towns pulled from GitHub me1983jt/quest-rpg-towns @ 1496b25 ("Add quest-ashfall town"): harmony, pittsfield, skowhegan, greenville, castle, ashfall + shared-rules.
+  scripts/copy-town.mjs now copies quest-ashfall into public/towns/ashfall when present (stub otherwise).
+- Lag trims (remaining from Justin's approved list; v0.2 already did 0.7x scale / 30fps / night light stamp):
+  - Pause offscreen NPCs (folk AI) + tighter animal AI radius in Low graphics; fewer weather/farm particles.
+  - Fade / see-through checks only for props and town houses near the hero.
+  - Low graphics auto-on when Android power-save is on (MaineRpgNative.isPowerSaveMode via apk-kit/patch_android.py); Options "Low graphics" still overrides (maine-rpg-perf). Documented on the pause menu.
+  - Sprite-sheet split / on-demand load: skipped (core+lazy already load bosses/atk/death; further splitting risks art).
+- No sprite changes. Landscape fullscreen unchanged. story.* / story.cameo.* keys unchanged. Story features (farm opening, raids, Mira, guards) skipped.
+- Smoke: scripts/_v04smoke.mjs, shots/v04/. APK RPG-v0.4.apk.

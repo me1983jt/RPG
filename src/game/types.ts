@@ -512,6 +512,8 @@ export interface HudSnapshot {
   turnBased: boolean;
   gfxHigh?: boolean;
   perfMode?: boolean;
+  perfAuto?: boolean;
+  powerSave?: boolean;
   showFps?: boolean;
   fpsCap?: number;
   ap: number;
