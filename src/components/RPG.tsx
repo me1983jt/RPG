@@ -3,26 +3,16 @@ import { WM_COLS, WM_LOCS, WM_ROWS } from "@/game/worldmap";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import {
-  Axe,
-  Backpack,
-  BookOpen,
   Columns3,
   Flame,
   Hammer,
   House,
-  MessageCircle,
   Minus,
   Plus,
-  ScrollText,
   DoorOpen,
-  Map as MapIcon,
-  Repeat,
-  Crosshair,
-  ArrowLeftRight,
-  Settings,
-  Footprints,
 } from "lucide-react";
 import { mountGame, type GameApi } from "@/game/engine";
+import { HudBar, HudCorner, HudQuest } from "@/components/CompactHud";
 import { Inventory } from "@/components/Inventory";
 import { CharCreate } from "@/components/CharCreate";
 import { useHud, useModeResult } from "@/game/store";
@@ -71,8 +61,6 @@ export function RPG() {
   }, []);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
-  const weaponHold = useRef(0); // v15.10.6: weapon slot hold timer (-1 = the hold opened the Backpack)
-  const weaponTap = useRef(0); // last weapon-slot tap time, for double-tap = Backpack
   const apiRef = useRef<GameApi | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef(0);
@@ -114,7 +102,8 @@ export function RPG() {
     const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth && window.innerWidth < 700;
     let v: Record<string, boolean> = {};
     try { v = JSON.parse(localStorage.getItem("maine-rpg-hud") || "{}"); } catch { v = {}; }
-    if (portrait) { if (typeof v.quest !== "boolean") v.quest = true; if (typeof v.health !== "boolean") v.health = true; }
+    if (typeof v.quest !== "boolean") v.quest = true;
+    if (portrait) { if (typeof v.health !== "boolean") v.health = true; }
     return v;
   });
   const saveHc = (next: Record<string, boolean>) => { setHc(next); try { localStorage.setItem("maine-rpg-hud", JSON.stringify(next)); } catch { /* private mode */ } };
@@ -124,20 +113,11 @@ export function RPG() {
   const setTrackerOpen = (f: (o: boolean) => boolean) => { setTrackerOpen0((o) => { const n = f(o); saveHc({ ...hcS, track: !n }); return n; }); };
   const [flash, setFlash] = useState<Record<string, number>>({});
   const lastQ = useRef("");
-  const lastHp = useRef(0);
   useEffect(() => {
     if (lastQ.current && hud.questText !== lastQ.current && hc.quest) setFlash((f) => ({ ...f, quest: Date.now() }));
     lastQ.current = hud.questText;
-  }, [hud.questText]);
-  useEffect(() => {
-    if (hc.health && hud.hp < lastHp.current - 0.5) setFlash((f) => ({ ...f, health: Date.now() }));
-    lastHp.current = hud.hp;
-  }, [hud.hp]);
+  }, [hud.questText, hc.quest]);
   useEffect(() => { const t = window.setInterval(() => setFlash((f) => { const n = { ...f }; let ch = false; for (const k in n) if (Date.now() - n[k] > 2400) { delete n[k]; ch = true; } return ch ? n : f; }), 600); return () => window.clearInterval(t); }, []);
-  const fl = (k: string) => (flash[k] ? "animate-pulse ring-2 ring-primary" : "");
-  const MinBtn = ({ k, label, tight }: { k: string; label: string; tight?: boolean }) => (
-    <button type="button" data-hud-min={k} aria-label={`${hc[k] ? "Expand" : "Minimize"} ${label}`} className={`${tight ? "" : "-my-2"} min-h-10 min-w-10 shrink-0 px-1 text-sm font-bold text-primary`} onClick={() => flipHc(k)}>{hc[k] ? "+" : "–"}</button>
-  );
   const mapRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     if (!mapOpen) return;
@@ -147,10 +127,12 @@ export function RPG() {
     return () => window.clearInterval(t);
   }, [mapOpen]);
   const [confirmExit, setConfirmExit] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const devUi = typeof window !== "undefined" && /(?:\?|&)(?:dev|test)=/.test(window.location.search);
   const short = useShortScreen();
   const playing = hud.phase !== "menu";
   const tb = (hud as any).tb15 as Tb15 | undefined;
-  const barArt = useArt("/game/hud/bar-frame.png"), iconArt = useArt("/game/hud/btn-icons.png"), panelArt = useArt("/game/ui/char-panel.png");
+  const panelArt = useArt("/game/ui/char-panel.png");
   const headArt = useArt("/game/ui/head-frame.png"), tradeArt = useArt("/game/ui/trade-panel.png"), mapArt = useArt("/game/ui/worldmap-maine.jpg"), endArt = useArt("/game/ui/ending-harmony.jpg");
   const [mapTab, setMapTab] = useState<"area" | "maine">("area");
 
@@ -191,7 +173,9 @@ export function RPG() {
     } catch {
       /* nothing to save on the main menu */
     }
-    cap?.nativeCallback?.("App", "exitApp", {});
+    if (cap?.isNativePlatform?.()) cap.nativeCallback?.("App", "exitApp", {});
+    else apiRef.current?.tap("menu");
+    setConfirmExit(false);
   }
 
   function worldPointer(e: PointerEvent<HTMLCanvasElement>, type: "move" | "down" | "up") {
@@ -347,65 +331,16 @@ export function RPG() {
               ))}
             </div>
           ) : null}
-          {hc.quest ? (
-            <section data-hud="quest-min" className={`pointer-events-auto ml-[13.5rem] mr-[4.5rem] flex max-w-xs short:ml-[12.5rem] items-center gap-1 self-start plank border border-border bg-surface/95 px-2 py-1 ${fl("quest")}`}>
-              <ScrollText className="size-4 shrink-0 text-primary" aria-hidden />
-              <p className="min-w-0 flex-1 truncate text-xs font-semibold">{hud.questText}</p>
-              <MinBtn k="quest" label="quest panel" />
-            </section>
-          ) : (
-          <section data-hud="quest" className="pointer-events-auto ml-[13.5rem] mr-[4.5rem] max-w-xs self-start plank border border-border bg-surface/95 px-3 py-2 short:ml-[12.5rem] short:px-2 short:py-1">
-            <p className="flex items-center gap-2 text-sm font-bold uppercase text-primary short:hidden">
-              <ScrollText className="size-4" aria-hidden />
-              <span className="flex-1">{hud.region}</span>
-              <MinBtn k="quest" label="quest panel" />
-            </p>
-            <p className="mt-1 line-clamp-2 text-base font-semibold leading-snug short:mt-0 short:line-clamp-1 short:text-sm">{hud.questText}</p>
-            <p className="mt-1 text-sm font-semibold text-primary short:mt-0.5">{hud.clock}</p>
-            <p className="text-sm font-semibold text-fg">{hud.karmaWord}</p>
-            {hud.v13 ? (
-              <div className="mt-1 border-t border-border pt-1 text-xs" data-testid="main-tracker">
-                <p className="font-bold uppercase tracking-widest text-primary">The Long Winter · Act {hud.v13.main.act}</p>
-                <p className="leading-snug short:line-clamp-1"><span className="font-semibold">{hud.v13.main.title}</span><span className="text-muted short:hidden"> · {hud.v13.main.goal}</span></p>
-                <p className="mt-0.5 text-muted" data-testid="weather-line">{hud.v13.weather.name} · {hud.v13.moon.name}{hud.v13.ail.length ? ` · ${hud.v13.ail.map((a: { name: string }) => a.name).join(", ")}` : ""}</p>
-                <div className="mt-0.5 flex gap-1" data-testid="needs-bars">
-                  {([["hunger", "Food", "#c98a4a"], ["thirst", "Water", "#5a8ac0"], ["sleep", "Sleep", "#9a8ac0"]] as const).map(([k, l, c]) => (
-                    <div key={k} className="flex-1" title={`${l} ${Math.round(hud.v13.needs[k])}`}>
-                      <div className="h-1.5 bg-bg"><div className="h-full" style={{ width: `${hud.v13.needs[k]}%`, background: c }} /></div>
-                      <span className="text-[10px] text-muted">{l}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {(() => {
-              const act = hud.journal.filter((e) => !e.done && !e.id.startsWith("q11-season")).slice(0, 3);
-              // v13.2 touch: the tracker toggle sat under open panels and dialogue on phones
-              if (!act.length || journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen) return null;
-              return (
-                <div className="mt-1 border-t border-border pt-1" data-testid="quest-tracker">
-                  <button type="button" className="flex min-h-10 w-full items-center justify-between text-xs uppercase tracking-widest text-primary" onClick={() => setTrackerOpen((o) => !o)}>
-                    Tracking {act.length}{hud.v113?.wind ? ` · wind ${hud.v113.wind}` : ""} <span>{trackerOpen ? "–" : "+"}</span>
-                  </button>
-                  {trackerOpen ? (
-                    <ul className="space-y-0.5">
-                      {act.map((e) => (
-                        <li key={e.id} className="text-xs leading-snug short:line-clamp-1">
-                          <span className="font-semibold">{e.title}</span>
-                          <span className="text-muted short:hidden"> · {e.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </div>
-              );
-            })()}
-            {hud.party ? (
-              <p className="text-xs">
-                {hud.party.name} with you · {hud.party.hp}/{hud.party.maxHp}
-              </p>
-            ) : null}
-            </section>
+          {journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen ? null : (
+            <HudQuest
+              hud={hud}
+              open={!hc.quest}
+              badge={!!flash.quest}
+              onToggle={() => flipHc("quest")}
+              trackerOpen={trackerOpen}
+              onTracker={() => setTrackerOpen((o) => !o)}
+              showTracker={!journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue && !mapOpen}
+            />
           )}
 
           <div className="mt-auto flex min-h-0 flex-col gap-2 overflow-y-auto">
@@ -420,14 +355,11 @@ export function RPG() {
                 Dismount
               </button>
             ) : null}
-            {hud.v113?.dog && hud.phase === "play" ? (
+            {hud.v113?.dog && hud.phase === "play" && hud.v113.dog.hp < 30 && !hud.v113.dog.down ? (
               <div className="pointer-events-auto flex items-center gap-1 self-center" data-testid="dog-cmds">
-                <span className="px-1 text-xs font-semibold text-fg">Goose {hud.v113.dog.down ? "(laid up)" : `${hud.v113.dog.hp}/30`}</span>
-                {hud.v113.dog.hp < 30 && !hud.v113.dog.down ? (
-                  <button type="button" data-testid="dog-heal" className="min-h-10 plank border border-accent bg-surface px-2 text-xs font-semibold" onClick={() => apiRef.current?.dogHeal()}>
-                    Patch up
-                  </button>
-                ) : null}
+                <button type="button" data-testid="dog-heal" className="min-h-10 plank border border-accent bg-surface px-2 text-xs font-semibold" onClick={() => apiRef.current?.dogHeal()}>
+                  Patch Goose up
+                </button>
               </div>
             ) : null}
             {hud.riding && hud.v13?.canTravel ? (
@@ -446,23 +378,6 @@ export function RPG() {
               >
                 Ride
               </button>
-            ) : null}
-            {hud.log.length > 0 && !journalOpen && !mapOpen && !hud.buildOpen && (hc.health || hud.statsOpen || hud.dialogue) ? (
-              // On short (phone landscape) screens the hero stands mid-screen right above this list, so show
-              // only the two newest lines, smaller, at the left edge instead of centred over the hero.
-              <ul
-                className={
-                  short
-                    ? "pointer-events-none max-w-[38%] space-y-0.5 self-start text-left text-xs font-semibold"
-                    : "pointer-events-none max-w-md space-y-1 self-center text-center text-base font-semibold"
-                }
-              >
-                {(short ? hud.log.slice(-2) : hud.log).map((line, i) => (
-                  <li key={hud.logIds?.[(short ? Math.max(0, hud.log.length - 2) : 0) + i] ?? `${line}-${i}`} className={short ? "log-fade plank bg-bg/90 px-2 py-1 text-fg" : "log-fade plank bg-bg/95 px-3 py-1.5 text-fg"}>
-                    {line}
-                  </li>
-                ))}
-              </ul>
             ) : null}
 
             {hud.v141?.store ? (
@@ -893,115 +808,47 @@ export function RPG() {
             ) : null}
             </div>
 
-            <div className={`pointer-events-none z-40 flex flex-wrap items-center gap-1 [&>button]:pointer-events-auto ${journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? "hidden" : ""}`}>
-              {/* v14.1: no body-part tabs in the HUD; real-time hits roll their own location. The Fallout aimed-shot
-                  popup is for v15 turn-based combat and stays off behind AIMED_POPUP. */}
-
-              {hud.v141 ? (
-                <>
-                  {/* v15.10.4: Auto lives in the bottom action bar */}
-                  {/* v15.10.5: Noise is a tall bar beside HP and AP */}
-                </>
-              ) : null}
-{tb?.on ? <Tb15Order tb={tb} /> : null}
-            </div>
-
-            <div className={`pointer-events-none z-40 mt-2 flex w-full max-w-full flex-col gap-2 short:mt-1 short:flex-row short:items-end short:gap-1`}>
-              <div className={`flex min-w-0 flex-1 items-stretch gap-2 ${journalOpen || hud.statsOpen ? "hidden" : ""} ${hud.dialogue ? "short:hidden" : ""}`}>
-                {hc.health ? (
-                  <section data-hud="health-min" className={`pointer-events-auto flex min-w-0 flex-1 items-center gap-2 self-end plank border border-border bg-surface/95 px-2 py-1 ${fl("health")}`}>
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      {([["HP", hud.hp / Math.max(1, hud.maxHp) * 100, "#c4543a"], ["Food", hud.v13?.needs.hunger ?? 100, "#c98a4a"], ["Water", hud.v13?.needs.thirst ?? 100, "#5a8ac0"], ["Sleep", hud.v13?.needs.sleep ?? 100, "#9a8ac0"]] as const).map(([l, v, c]) => (
-                        <div key={l} className="h-1 bg-bg" title={`${l} ${Math.round(v)}`} aria-label={l}><div className="h-full" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: c }} /></div>
-                      ))}
-                    </div>
-                    <span data-hud="hp-text" className="shrink-0 text-[11px] font-semibold tabular-nums text-fg">{Math.ceil(hud.hp)}/{hud.maxHp} · Lv {hud.level}</span>
-                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex shrink-0 gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-6 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[11px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "👁" : j.id === "arms" ? "✋" : "🦵"}</span>)}</span> : null}
-                    <button type="button" className="min-h-10 px-1 text-xs text-primary" onClick={() => apiRef.current?.tap("pause")}>Pause</button>
-                    <MinBtn k="health" label="health panel" />
-                  </section>
-                ) : (
-                <section data-hud="health" data-fobar="1" className={`fobar ${barArt ? "fobar-art" : ""} pointer-events-auto flex min-w-0 flex-1 items-stretch gap-1 self-end p-1`}>
-                  {/* v15.11.0: one Fallout-style bottom interface bar: log, HP/AP, two weapon slots, buttons */}
-                  <div data-fobar="log" className="fobar-screen min-w-[8rem] flex-1 overflow-hidden px-1.5 py-1 text-[11px] leading-tight">
-                    {(hud.log.slice(-3)).map((line, i) => <p key={hud.logIds?.[Math.max(0, hud.log.length - 3) + i] ?? `${line}-${i}`} className="truncate">{"\u203a "}{line}</p>)}
-                    {!hud.log.length ? <p className="opacity-60">{"\u203a "}{hud.name} · {hud.roleTitle}</p> : null}
-                  </div>
-                  <div data-fobar="stats" className="fobar-plate flex w-[7.5rem] shrink-0 flex-col justify-center gap-0.5 px-1.5 py-1 short:w-[6.5rem]">
-                    <div className="flex items-baseline justify-between"><span className="hud-stamp text-[10px]">HP</span><span data-hud="hp-text" className="fobar-digits text-base font-bold tabular-nums leading-none">{Math.ceil(hud.hp)}<span className="text-[10px] opacity-70">/{hud.maxHp}</span></span></div>
-                    <div className="h-1 overflow-hidden bg-black/60" aria-label="Experience"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, (hud.xp / hud.xpNext) * 100))}%` }} /></div>
-                    {tb?.on ? (
-                      <div data-fobar="ap" role="meter" aria-label={`Action points ${tb.ap} of ${tb.maxAp}`} aria-valuenow={tb.ap} aria-valuemax={tb.maxAp} className="flex flex-wrap items-center gap-[3px]">
-                        <span className="hud-stamp mr-0.5 text-[10px]">AP</span>
-                        {Array.from({ length: tb.maxAp ?? 0 }, (_, i) => <span key={i} className={`fobar-light ${i < (tb.ap ?? 0) ? "on" : ""}`} />)}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-[10px] text-muted"><span>Lv {hud.level}</span>{hud.v141 ? <span data-v141="noise" aria-label="Noise" className="flex-1 h-1 bg-black/60"><span className="block h-full" style={{ width: `${hud.v141.noise}%`, background: hud.v141.noise > 70 ? "#b4482e" : hud.v141.noise > 25 ? "#c49a40" : "#8a8a5a" }} /></span> : null}{hud.safe15 ? <span data-safe15="1">Safe</span> : null}</div>
-                    )}
-                    {hud.v141?.inj?.length ? <span data-hud="injury" className="flex gap-0.5">{hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-4 items-center justify-center border border-[#d0644a] bg-[#3a1410] text-[9px] font-bold text-[#f0b0a0]">{j.id === "blind" ? "E" : j.id === "arms" ? "A" : "L"}</span>)}</span> : null}
-                  </div>
-                  <button type="button" data-hud="weapon" data-fobar="slot-a" aria-label={`Attack with ${hud.weaponName || "Empty hands"} (hold or double-tap for Backpack)`} title={hud.weaponName || "Empty hands"} className="hud-metal hud-rivets fobar-slot relative flex w-24 shrink-0 flex-col items-center justify-center gap-0.5 px-1 text-center short:w-20" style={{ touchAction: "manipulation" }} onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={() => { weaponHold.current = window.setTimeout(() => { weaponHold.current = -1; apiRef.current?.togglePack(); }, 550); }}
-                    onPointerUp={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
-                    onPointerLeave={() => { if (weaponHold.current > 0) clearTimeout(weaponHold.current); }}
-                    onClick={() => { if (weaponHold.current === -1) { weaponHold.current = 0; return; } const now = Date.now(); if (now - weaponTap.current < 320) { weaponTap.current = 0; apiRef.current?.togglePack(); return; } weaponTap.current = now; apiRef.current?.tap("attack"); }}>
-                    <span className="absolute left-1 top-0.5 hud-stamp text-[9px]">1</span>
-                    <span className="flex items-center gap-1">{hud.weaponGun ? <Crosshair className="size-6 text-[#e0a040] short:size-5" aria-hidden /> : <Axe className="size-6 text-[#cfc6b0] drop-shadow short:size-5" aria-hidden />}</span>
-                    <span className="line-clamp-1 text-[10px] font-semibold leading-tight text-fg">{hud.weaponName || "Empty hands"}</span>
-                    {tb?.on ? <span className="text-[9px] text-[#e0b050]">{hud.weaponGun ? tb.cost?.gun : tb.cost?.melee} AP{tb.mag ? ` · ${tb.mag.n}/${tb.mag.max}` : ""}</span> : null}
-                  </button>
-                  <button type="button" data-fobar="slot-b" aria-label={`Swap to ${hud.weaponBName || "Empty hands"}`} title={`Swap to ${hud.weaponBName || "Empty hands"}`} className="hud-metal fobar-slot relative flex w-14 shrink-0 flex-col items-center justify-center gap-0.5 px-0.5 text-center opacity-90" style={{ touchAction: "manipulation" }} onClick={() => apiRef.current?.v141("swapSlots")}>
-                    <span className="absolute left-1 top-0.5 hud-stamp text-[9px]">2</span>
-                    <ArrowLeftRight className="size-4 text-[#cfc6b0]" aria-hidden />
-                    <span className="line-clamp-2 text-[9px] leading-tight text-fg">{hud.weaponBName || "Empty hands"}</span>
-                  </button>
-                  {tb?.on ? (
-                    <div data-tb15="bar" className="grid w-[8.5rem] shrink-0 grid-cols-2 gap-1">
-                      {tb.mag ? <button type="button" data-tb15="reload" disabled={!tb.mine} className="fobar-btn h-10 text-[10px] leading-tight disabled:opacity-40" onClick={() => apiRef.current?.v141("tbReload")}>Reload {tb.cost?.reload}AP</button> : <span data-tb15="turn" className={`flex h-10 items-center justify-center text-center text-[10px] font-bold ${tb.mine ? "text-primary" : "text-[#e07a5a]"}`}>{tb.mine ? "Your turn" : tb.cur}</span>}
-                      <button type="button" data-tb15="endcombat" disabled={!tb.mine || !tb.canEnd} className="fobar-btn h-10 text-[10px] leading-tight disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEndCombat")}>End Combat</button>
-                      <button type="button" data-tb15="end" disabled={!tb.mine} className="fobar-btn fobar-red col-span-2 h-10 text-[12px] font-bold disabled:opacity-40" onClick={() => apiRef.current?.v141("tbEnd")}>End Turn</button>
-                    </div>
-                  ) : null}
-                  <div data-hud="menu" className={`grid shrink-0 gap-1 self-end ${tb?.on ? "w-[16.5rem] grid-cols-6" : "w-[24rem] grid-cols-8 short:w-[22rem]"}`}>
-                    {([
-                      ["Talk", <MessageCircle key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("interact")],
-                      ["Char", <ScrollText key="i" className="size-4" aria-hidden />, hud.statsOpen, () => apiRef.current?.toggleStats()],
-                      ["Pack", <Backpack key="i" className="size-4" aria-hidden />, hud.packOpen, () => apiRef.current?.togglePack()],
-                      ["Map", <MapIcon key="i" className="size-4" aria-hidden />, mapOpen, () => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen(false); setMapOpen((o) => !o); }],
-                      ["Auto", <Repeat key="i" className="size-4" aria-hidden />, !!hud.v141?.auto, () => apiRef.current?.v141("auto")],
-                      ["Journal", <BookOpen key="i" className="size-4" aria-hidden />, journalOpen && !hud.statsOpen && !hud.packOpen, () => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen((open) => !(open && !hud.statsOpen && !hud.packOpen)); }],
-                      ["Options", <Settings key="i" className="size-4" aria-hidden />, false, () => apiRef.current?.tap("pause")],
-                      [hud.v141?.crouch ? "Stand" : "Crouch", <Footprints key="i" className="size-4" aria-hidden />, !!hud.v141?.crouch, () => apiRef.current?.v141("crouch")],
-                    ] as const).filter(([l]) => !tb?.on || (l !== "Auto" && l !== "Crouch" && l !== "Stand")).map(([l, icon, on, fn]) => (
-                      <button key={l} type="button" aria-label={l === "Char" ? "Stats" : l === "Pack" ? "Backpack" : l} aria-pressed={on} data-fobar-btn={l} className={`fobar-btn flex h-11 min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold leading-none ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}><BarIcon l={l} art={iconArt}>{icon}</BarIcon>{l}</button>
-                    ))}
-                  </div>
-                </section>
-                )}
-              </div>
-            </div>
+            {journalOpen || hud.statsOpen || hud.packOpen || hud.dialogue || mapOpen || (hud.v13?.main.ending && hud.v13.main.slide < 99) ? null : (
+              <>
+                {tb?.on ? <div className="pointer-events-none"><Tb15Order tb={tb} /></div> : null}
+                <HudBar hud={hud} api={apiRef.current} />
+              </>
+            )}
         </div>
       ) : null}
       {playing && hud.v141?.stick && hud.phase === "play" && !hud.buildOpen && !hud.dialogue && !hud.v141.store ? (
         <Stick141 onMove={(x, y) => apiRef.current?.setStick(x, y)} />
       ) : null}
-      <canvas
-        ref={miniRef}
-        width={132}
-        height={132}
-        aria-label="Minimap"
-        className={playing && !hc.mini ? "pointer-events-none absolute top-[max(0.5rem,env(safe-area-inset-top))] left-[max(0.5rem,env(safe-area-inset-left))] z-10 h-20 w-20 plank hud-frame border border-border bg-bg short:h-[clamp(4.5rem,24vh,5.5rem)] short:w-[clamp(4.5rem,24vh,5.5rem)]" : "hidden"}
-      />
+      <button
+        type="button"
+        data-fobar-btn="Map"
+        data-hud="minimap"
+        aria-label="Open the world map"
+        className={playing && !hc.mini ? "hud-v5-map absolute z-10" : "hidden"}
+        style={{ top: "max(0.5rem, env(safe-area-inset-top))", right: "max(0.5rem, env(safe-area-inset-right))" }}
+        onClick={() => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen(false); setMapOpen(true); }}
+      >
+        <canvas ref={miniRef} width={132} height={132} aria-hidden className="hud-v5-mini pointer-events-none block bg-[#141816]" />
+      </button>
+      {playing && hud.phase === "play" && !mapOpen && !journalOpen && !hud.statsOpen && !hud.packOpen && !hud.dialogue ? (
+        <HudCorner
+          statsOn={hud.statsOpen}
+          journalOn={journalOpen}
+          packOn={hud.packOpen}
+          onStats={() => apiRef.current?.toggleStats()}
+          onJournal={() => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setMapOpen(false); setJournalOpen((open) => !open); }}
+          onPack={() => apiRef.current?.togglePack()}
+        />
+      ) : null}
 
-      {/* v15.11.0: the top-right menu column moved into the bottom interface bar */}
       {playing && hud.phase === "play" && !mapOpen ? (
-        <div data-hud="zoom" className="absolute top-[max(0.5rem,env(safe-area-inset-top))] left-[calc(max(0.5rem,env(safe-area-inset-left))+5.5rem)] z-20 flex flex-row gap-1 short:left-[calc(max(0.5rem,env(safe-area-inset-left))+6rem)]">
-          <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}><Minus className="size-5 short:size-4" aria-hidden /></ActionButton>
-          <ActionButton label="Zoom in" onClick={() => apiRef.current?.nudgeZoom(1.2)}><Plus className="size-5 short:size-4" aria-hidden /></ActionButton>
+        <div data-hud="zoom" className="absolute bottom-[6.4rem] left-[max(0.5rem,env(safe-area-inset-left))] z-20 flex flex-col gap-1">
+          <ActionButton label="Zoom out" onClick={() => apiRef.current?.nudgeZoom(1 / 1.2)}><Minus className="size-4" aria-hidden /></ActionButton>
+          <ActionButton label="Zoom in" onClick={() => apiRef.current?.nudgeZoom(1.2)}><Plus className="size-4" aria-hidden /></ActionButton>
         </div>
       ) : null}
       {playing ? (
-        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className={`absolute z-20 plank border border-border bg-surface/95 text-xs font-bold text-primary ${hc.mini ? "top-[max(0.5rem,env(safe-area-inset-top))] left-[max(0.5rem,env(safe-area-inset-left))] h-10 w-10" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+5.2rem)] left-[max(0.5rem,env(safe-area-inset-left))] h-10 w-10 short:top-[calc(max(0.5rem,env(safe-area-inset-top))+clamp(4.5rem,24vh,5.5rem)+0.3rem)]"}`} onClick={() => flipHc("mini")}>{hc.mini ? "+" : "–"}</button>
+        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className="hud-v5-plate absolute z-20 h-6 w-6 text-[10px] font-bold text-[#cbb892]" style={hc.mini ? { top: "max(0.5rem, env(safe-area-inset-top))", right: "max(0.5rem, env(safe-area-inset-right))" } : { top: "calc(max(0.45rem, env(safe-area-inset-top)) + var(--hud-mini) - 0.15rem)", right: "max(0.28rem, env(safe-area-inset-right))" }} onClick={(e) => { e.stopPropagation(); flipHc("mini"); }}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
         <CharCreate
@@ -1059,34 +906,51 @@ export function RPG() {
               Leave building
             </button>
           ) : null}
-          <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("save")}>
+          <button type="button" data-testid="pause-options" aria-expanded={optionsOpen} className="plank border border-border px-4 py-3 text-left" onClick={() => setOptionsOpen((o) => !o)}>
+            Options
+          </button>
+          {optionsOpen ? (
+            <div className="flex flex-col gap-2" data-testid="pause-options-panel">
+              <button type="button" data-testid="one-thumb" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.v141("stickMode")}>
+                {hud.v141?.stick ? "One-thumb stick: on" : "One-thumb stick: off"}
+              </button>
+              <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.v141("auto")}>
+                Auto-attack: {hud.v141?.auto ? "on" : "off"}
+              </button>
+              <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!(hud as any).tb15?.enabled)}>
+                {(hud as any).tb15?.enabled ? "Turn-based combat: on" : "Turn-based combat: off"}
+              </button>
+              <button type="button" data-testid="fps-cap" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setFpsCap((hud.fpsCap ?? 60) === 60 ? 30 : 60)}>
+                Frame rate cap: {hud.fpsCap ?? 60} fps
+              </button>
+              <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
+                Low graphics: {hud.perfMode ? "On" : "Off"}{(hud as any).powerSave && (hud as any).perfAuto ? " (power saving)" : (hud as any).perfAuto ? " (auto)" : ""}
+              </button>
+              <p className="px-1 text-[10px] leading-snug text-muted">Low turns on automatically when the phone is in power saving (Android APK). Tap above to override.</p>
+              <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
+                Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
+              </button>
+              <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("menu")}>
+                Main menu
+              </button>
+              {devUi ? (
+                <>
+                  <button type="button" data-testid="fps-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setShowFps(!hud.showFps)}>
+                    FPS counter: {hud.showFps ? "On" : "Off"}
+                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" data-testid="hud-collapse-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: true, track: true, health: true, aim: true, mini: true }); setTrackerOpen0(false); }}>Collapse HUD</button>
+                    <button type="button" data-testid="hud-expand-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: false, track: false, health: false, aim: false, mini: false }); setTrackerOpen0(true); }}>Expand HUD</button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          <button type="button" data-testid="pause-save" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("save")}>
             Save
           </button>
-          <div className="flex gap-2">
-            <button type="button" data-testid="hud-collapse-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: true, track: true, health: true, aim: true, mini: true }); setTrackerOpen0(false); }}>Collapse HUD</button>
-            <button type="button" data-testid="hud-expand-all" className="flex-1 plank border border-border px-3 py-3" onClick={() => { saveHc({ quest: false, track: false, health: false, aim: false, mini: false }); setTrackerOpen0(true); }}>Expand HUD</button>
-          </div>
-          <button type="button" data-testid="one-thumb" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.v141("stickMode")}>
-            {hud.v141?.stick ? "One-thumb stick: on" : "One-thumb stick: off"}
-          </button>
-          <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setTurnBased(!(hud as any).tb15?.enabled)}>
-            {(hud as any).tb15?.enabled ? "Turn-based combat: on" : "Turn-based combat: off"}
-          </button>
-          <button type="button" data-testid="fps-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setShowFps(!hud.showFps)}>
-            FPS counter: {hud.showFps ? "On" : "Off"}
-          </button>
-          <button type="button" data-testid="fps-cap" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setFpsCap((hud.fpsCap ?? 60) === 60 ? 30 : 60)}>
-            Frame rate cap: {hud.fpsCap ?? 60} fps
-          </button>
-          <button type="button" data-testid="perf-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setPerfMode(!hud.perfMode)}>
-            Low graphics: {hud.perfMode ? "On" : "Off"}{(hud as any).powerSave && (hud as any).perfAuto ? " (power saving)" : (hud as any).perfAuto ? " (auto)" : ""}
-          </button>
-          <p className="text-[10px] leading-snug text-muted px-1">Low turns on automatically when the phone is in power saving (Android APK). Tap above to override.</p>
-          <button type="button" data-testid="gfx-toggle" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.setGraphics(!(hud.gfxHigh ?? true))}>
-            Graphics: {(hud.gfxHigh ?? true) ? "High" : "Low"}
-          </button>
-          <button type="button" className="plank border border-border px-4 py-3" onClick={() => apiRef.current?.tap("menu")}>
-            Main menu
+          <button type="button" data-testid="pause-exit" className="plank border border-border px-4 py-3" onClick={() => { apiRef.current?.tap("save"); setConfirmExit(true); }}>
+            Exit
           </button>
         </Overlay>
       ) : null}
@@ -1266,15 +1130,6 @@ function useArt(url: string) {
     im.src = url;
   }, [url]);
   return ok;
-}
-const ICON_ORDER = ["Talk", "Char", "Pack", "Map", "Auto", "Journal", "Options", "Crouch"];
-function BarIcon({ l, art, children }: { l: string; art: boolean; children: ReactNode }) {
-  const i = ICON_ORDER.indexOf(l === "Stand" ? "Crouch" : l);
-  if (!art || i < 0) return <>{children}</>;
-  // v15.13.2: Build's re-exported Talk and Journal buttons replace those two cells of the strip
-  const own = l === "Talk" ? "/game/hud/btn-talk.png" : l === "Journal" ? "/game/hud/hud-journal.png" : "";
-  if (own) return <span aria-hidden data-bar-icon={l} className="block size-6" style={{ backgroundImage: `url(${own})`, backgroundSize: "100% 100%" }} />;
-  return <span aria-hidden className="block size-5" style={{ backgroundImage: "url(/game/hud/btn-icons.png)", backgroundSize: "160px 20px", backgroundPosition: `${-i * 20}px 0` }} />;
 }
 const ENDING_ART = ["harmony", "skowhegan", "pittsfield", "greenville"];
 /** v15.12.0: the trail radio (Build's device frame) around the Journal, with Journal / Map / Status tabs on its right side. */
