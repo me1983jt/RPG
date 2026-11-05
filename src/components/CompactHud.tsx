@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Axe, Backpack, BookOpen, Crosshair, Footprints, MessageCircle, ScrollText, Swords, Syringe } from "lucide-react";
+import { Axe, Backpack, BookOpen, Crosshair, ScrollText, Syringe } from "lucide-react";
 import type { GameApi } from "@/game/engine";
 import type { HudSnapshot } from "@/game/types";
 
@@ -52,7 +52,7 @@ export function HudCorner({
   return (
     <div className="hud-v5-corner" data-hud="corner">
       {items.map(([key, label, icon, on, fn]) => (
-        <button key={key} type="button" data-fobar-btn={key} data-hud-btn={label.toLowerCase()} aria-label={label} aria-pressed={on} className={`hud-v5-steel hud-v5-btn ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>
+        <button key={key} type="button" data-fobar-btn={key} data-hud-btn={label.toLowerCase()} aria-label={label} aria-pressed={on} className={`hud-v5-plate hud-v5-btn ${on ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={fn}>
           {icon}
           <span>{label}</span>
         </button>
@@ -81,13 +81,13 @@ export function HudQuest({
   const act = hud.journal.filter((e) => !e.done && !e.id.startsWith("q11-season")).slice(0, 3);
   return (
     <div className="pointer-events-auto self-start" style={{ maxWidth: "min(20rem, calc(100% - var(--hud-mini) - 11rem))" }}>
-      <button type="button" data-hud={open ? "quest" : "quest-min"} aria-expanded={open} className="hud-v5-steel relative flex min-h-10 items-center gap-2 px-3 py-1 text-left" onClick={onToggle}>
+      <button type="button" data-hud={open ? "quest" : "quest-min"} aria-expanded={open} className="hud-v5-plate hud-v5-tab relative text-left" onClick={onToggle}>
         <span className="truncate font-display text-sm uppercase tracking-wide">{hud.region}</span>
         <span aria-hidden className="text-xs opacity-80">{open ? "▾" : "▸"}</span>
         {badge && !open ? <span className="hud-v5-badge" data-hud="quest-badge" aria-label="Quest updated" /> : null}
       </button>
       {open ? (
-        <section className="hud-v5-steel mt-1 max-h-[38vh] overflow-y-auto px-3 py-2 text-sm" data-testid="quest-panel">
+        <section className="hud-v5-plate hud-v5-panel mt-1" data-testid="quest-panel">
           <p className="font-semibold leading-snug">{hud.questText}</p>
           <p className="mt-1 text-xs text-[#d5d0c4]">{hud.clock}</p>
           <p className="text-xs">{hud.karmaWord}</p>
@@ -179,34 +179,30 @@ export function HudBar({ hud, api }: { hud: HudSnapshot; api: Api }) {
     <div data-fobar="1" data-hud="v5bar" className="pointer-events-auto z-40 mt-1 flex w-full flex-col gap-1">
       {hint ? <p data-hud="hint" className="pointer-events-none text-[11px] leading-snug text-[#e6e2d8] [text-shadow:0_1px_2px_#000]">Tap a person to talk, the ground to walk. Talk reaches whoever is closest.</p> : null}
       <div className="flex w-full items-end gap-1.5">
-      <button type="button" data-hud="crouch" data-fobar-btn={crouch ? "Stand" : "Crouch"} aria-pressed={crouch} aria-label={crouch ? "Stand" : "Crouch, sneak"} className={`hud-v5-steel hud-v5-act ${crouch ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={() => api?.v141("crouch")}>
-        <Footprints className="size-4" aria-hidden />
-        <span className="text-[11px] font-bold leading-none">{crouch ? "Stand" : "Crouch"}</span>
-        {crouch ? null : <span className="text-[9px] leading-none opacity-80">Sneak</span>}
-      </button>
-      <div data-hud="meters" className="flex items-end gap-1" aria-hidden={false}>
-        <Meter k="hp" label={`Health ${Math.ceil(hud.hp)} of ${hud.maxHp}`} cls="hud-v5-hp" v={pct(hud.hp, hud.maxHp)} name="HP" />
-        <Meter k="ap" label={`Action points ${apNow} of ${apMax}`} cls="hud-v5-ap" v={pct(apNow, apMax)} name="AP" />
-        <Meter k="xp" label={`Level ${hud.level}, experience ${hud.xp} of ${hud.xpNext}`} cls="hud-v5-xp" v={pct(hud.xp, hud.xpNext)} name="XP" />
-        <Meter k="noise" label={`Noise ${hud.v141?.noise ?? 0}`} cls="hud-v5-noise" v={hud.v141?.noise ?? 0} name="N" />
+      <div className="hud-v5-plate hud-v5-cluster">
+        <button type="button" data-hud="crouch" data-fobar-btn={crouch ? "Stand" : "Crouch"} aria-pressed={crouch} aria-label={crouch ? "Stand" : "Crouch, sneak"} className={`hud-v5-crouch ${crouch ? "on" : ""}`} style={{ touchAction: "manipulation" }} onClick={() => api?.v141("crouch")}>
+          {crouch ? "Stand" : "Crouch"}
+        </button>
+        <div data-hud="meters" className="flex items-end gap-[3px]">
+          <Meter k="hp" label={`Health ${Math.ceil(hud.hp)} of ${hud.maxHp}`} cls="hud-v5-hp" v={pct(hud.hp, hud.maxHp)} name="HP" />
+          <Meter k="ap" label={`Action points ${apNow} of ${apMax}`} cls="hud-v5-ap" v={pct(apNow, apMax)} name="AP" />
+          <Meter k="xp" label={`Level ${hud.level}, experience ${hud.xp} of ${hud.xpNext}`} cls="hud-v5-xp" v={pct(hud.xp, hud.xpNext)} name="XP" />
+          <Meter k="noise" label={`Noise ${hud.v141?.noise ?? 0}`} cls="hud-v5-noise" v={hud.v141?.noise ?? 0} name="N" />
+        </div>
       </div>
       <span data-hud="hp-text" className="sr-only">{Math.ceil(hud.hp)}/{hud.maxHp} · Lv {hud.level}</span>
       {hud.v141?.inj?.length ? (
         <span data-hud="injury" className="mb-1 flex flex-col gap-0.5">
           {hud.v141.inj.map((j: { id: string; name: string; text: string; cure: string }) => (
-            <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-4 items-center justify-center border border-[#8a4034] bg-[#2a1814] text-[9px] font-bold text-[#f0c2b6]">{j.id === "blind" ? "E" : j.id === "arms" ? "A" : "L"}</span>
+            <span key={j.id} title={`${j.name}: ${j.text} ${j.cure}`} aria-label={j.name} className="flex size-4 items-center justify-center border border-[#6b4a30] bg-[#1a120e] text-[9px] font-bold text-[#cbb892]">{j.id === "blind" ? "E" : j.id === "arms" ? "A" : "L"}</span>
           ))}
         </span>
       ) : null}
-      <section data-hud="log" data-fobar="log" className="hud-v5-steel hud-v5-log" aria-label="Log">
-        <div className="flex items-center gap-2 px-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider">
+      <section data-hud="log" data-fobar="log" className="hud-v5-plate hud-v5-log" aria-label="Log">
+        <div className="hud-v5-log-meta">
           <span data-safe15={hud.safe15 ? "1" : "0"} className={hud.safe15 ? "hud-v5-safe" : "hud-v5-danger"}>{hud.safe15 ? "Safe" : "Danger"}</span>
-          <span className="text-[#b7b2a6]">Lv {hud.level}</span>
-          <span className="ml-auto normal-case tracking-normal">
-            <button type="button" data-fobar-btn="Talk" data-hud="talk" aria-label="Talk to the nearest person" className="hud-v5-steel min-h-7 px-2 text-[10px] font-bold" style={{ touchAction: "manipulation" }} onClick={() => api?.tap("interact")}>
-              <MessageCircle className="mr-1 inline size-3" aria-hidden />Talk
-            </button>
-          </span>
+          <span>Lv {hud.level}</span>
+          <button type="button" data-fobar-btn="Talk" data-hud="talk" aria-label="Talk to the nearest person" className="hud-v5-talk" style={{ touchAction: "manipulation" }} onClick={() => api?.tap("interact")}>Talk</button>
         </div>
         <div
           ref={logRef}
@@ -223,51 +219,52 @@ export function HudBar({ hud, api }: { hud: HudSnapshot; api: Api }) {
       </section>
       <div className="flex shrink-0 flex-col items-stretch">
         {tb?.on && tb.mag ? (
-          <button type="button" data-tb15="reload" disabled={!tb.mine} className="hud-v5-steel mb-1 min-h-7 px-1 text-[10px] font-bold disabled:opacity-40" onClick={() => api?.v141("tbReload")}>Reload {tb.cost?.reload ?? ""}AP</button>
+          <button type="button" data-tb15="reload" disabled={!tb.mine} className="hud-v5-plate mb-0.5 min-h-6 px-1 text-[9px] disabled:opacity-40" onClick={() => api?.v141("tbReload")}>Reload {tb.cost?.reload ?? ""}</button>
         ) : null}
-        <button type="button" data-hud="weapon" data-fobar="slot-a" data-weapon-cycle={cycle} aria-pressed={aimed} className="hud-v5-steel hud-v5-act" style={{ touchAction: "manipulation" }}
+        <button type="button" data-hud="weapon" data-fobar="slot-a" data-weapon-cycle={cycle} aria-pressed={aimed} title={hud.weaponName || "Empty hands"} className="hud-v5-plate hud-v5-act" style={{ touchAction: "manipulation" }}
           aria-label={`${aimed ? "Aimed " : ""}${hud.weaponName || "Empty hands"}. Cycles weapon one, weapon two, aimed weapon one, aimed weapon two.`}
           onClick={cycleWeapon}>
-          {gun ? <Crosshair className="size-4 text-[#e2c57a]" aria-hidden /> : <Axe className="size-4" aria-hidden />}
-          <span className="line-clamp-1 text-[10px] font-semibold leading-tight">{hud.weaponName || "Empty hands"}</span>
-          <span className="text-[10px] leading-none text-[#d5d0c4]">
+          {gun ? <Crosshair aria-hidden /> : <Axe aria-hidden />}
+          <span className="text-[9px] leading-none text-[#cbb892]">
             {aimed ? <span className="hud-v5-aim">AIM </span> : null}
-            {gun ? <span className="tabular-nums">{tb?.mag ? `${tb.mag.n}/${tb.mag.max}` : hud.shells}</span> : null}
-            {apCost != null ? <span className="text-[#e2c57a]">{gun ? " · " : ""}{apCost} AP</span> : null}
+            {gun ? <span className="tabular-nums">{tb?.mag ? `${tb.mag.n}/${tb.mag.max}` : hud.shells}</span> : <span className="line-clamp-1 max-w-[3rem]">{hud.weaponName || "Hands"}</span>}
+            {apCost != null ? <span> {apCost}</span> : null}
           </span>
         </button>
       </div>
-      <button type="button" data-hud="item" aria-label={item ? `Use ${item.name}` : "Open backpack"} className="hud-v5-steel hud-v5-act hud-v5-item" style={{ touchAction: "manipulation" }}
+      <button type="button" data-hud="item" title={item ? item.name : "Backpack"} aria-label={item ? `Use ${item.name}` : "Open backpack"} className="hud-v5-plate hud-v5-act hud-v5-item" style={{ touchAction: "manipulation" }}
         onClick={() => { if (item) api?.invUse(item.id); else api?.togglePack(); }}>
-        <Syringe className="size-4" aria-hidden />
-        <span className="text-[10px] font-bold leading-none">Item</span>
-        <span className="line-clamp-2 text-[9px] leading-tight opacity-90">{item ? `${item.name}${item.qty > 1 ? ` ×${item.qty}` : ""}` : "Pack"}</span>
+        <Syringe aria-hidden />
+        <span className="text-[10px] leading-none">Item</span>
       </button>
       {tb?.on ? (
-        <div data-hud="combat" data-tb15="bar" className="flex w-[5.1rem] shrink-0 flex-col gap-1">
-          <button type="button" data-tb15="end" disabled={!tb.mine} className="hud-v5-steel hud-v5-end min-h-9 px-1 text-[11px] font-bold disabled:opacity-40" onClick={() => api?.v141("tbEnd")}>End Turn</button>
-          <button type="button" data-tb15="endcombat" data-hud="combat-break" disabled={!tb.mine || !tb.canEnd} className="hud-v5-steel min-h-9 px-1 text-[10px] font-bold disabled:opacity-40" onClick={() => api?.v141("tbEndCombat")}>Combat</button>
-          <span data-tb15="turn" className="text-center text-[9px] font-bold text-[#d5d0c4]">{tb.mine ? "Your turn" : tb.cur}</span>
+        <div data-hud="combat" data-tb15="bar" className="flex w-[3.35rem] shrink-0 flex-col gap-0.5">
+          <button type="button" data-tb15="end" disabled={!tb.mine} className="hud-v5-plate hud-v5-end min-h-8 px-0.5 text-[10px] font-semibold disabled:opacity-40" onClick={() => api?.v141("tbEnd")}>End Turn</button>
+          <button type="button" data-tb15="endcombat" data-hud="combat-break" disabled={!tb.mine || !tb.canEnd} className="hud-v5-plate min-h-7 px-0.5 text-[10px] disabled:opacity-40" onClick={() => api?.v141("tbEndCombat")}>Combat</button>
+          <span data-tb15="turn" className="text-center text-[8px] text-[#a89070]">{tb.mine ? "Your turn" : tb.cur}</span>
         </div>
       ) : (
-        <button type="button" data-hud="combat" aria-label="Combat" className="hud-v5-steel hud-v5-act" style={{ touchAction: "manipulation" }} onClick={() => api?.v141("tbEngage")}>
-          <Swords className="size-4" aria-hidden />
-          <span className="text-[11px] font-bold">Combat</span>
+        <button type="button" data-hud="combat" aria-label="Combat" className="hud-v5-plate hud-v5-act" style={{ touchAction: "manipulation" }} onClick={() => api?.v141("tbEngage")}>
+          Combat
         </button>
       )}
       {comps.length ? (
-        <div data-hud="companions" className="ml-2 flex items-end gap-1">
+        <div data-hud="companions" className="ml-3 flex items-end gap-1.5">
           {comps.map((c) => (
             <div key={c.id} className="relative">
               {openId === c.id ? (
                 <div className="hud-v5-orders" data-hud-orders={c.id} role="menu">
                   {(["auto", "attack", "defend"] as const).map((m) => (
-                    <button key={m} type="button" role="menuitem" data-order={m} aria-pressed={c.order === m} className={`hud-v5-steel min-h-8 px-1 text-[10px] font-bold capitalize ${c.order === m ? "on" : ""}`} onClick={() => order(c, m)}>{m}</button>
+                    <button key={m} type="button" role="menuitem" data-order={m} aria-pressed={c.order === m} className={`hud-v5-plate capitalize ${c.order === m ? "on" : ""}`} onClick={() => order(c, m)}>{m}</button>
                   ))}
                 </div>
               ) : null}
-              <button type="button" data-hud-companion={c.id} aria-expanded={openId === c.id} aria-label={`${c.name}${c.down ? ", down" : ""}, ${c.order}`} className={`hud-v5-steel hud-v5-port ${c.down ? "down" : ""}`} style={{ touchAction: "manipulation" }} onClick={() => setOpenId((id) => id === c.id ? null : c.id)}>
-                <span aria-hidden>{c.name.slice(0, 1)}</span>
+              <button type="button" data-hud-companion={c.id} data-portrait={c.sheet ? "sprite" : "fallback"} aria-expanded={openId === c.id} aria-label={`${c.name}${c.down ? ", down" : ""}, ${c.order}`} className={`hud-v5-plate hud-v5-port ${c.down ? "down" : ""}`} style={{ touchAction: "manipulation" }} onClick={() => setOpenId((id) => id === c.id ? null : c.id)}>
+                {c.sheet ? (
+                  <span className="hud-v5-facebox" aria-hidden>
+                    <span className={`hud-v5-face hud-v5-face-${c.grid === "dog" ? "dog" : c.grid === "tall" ? "tall" : "folk"}`} style={{ backgroundImage: `url(${c.sheet})` }} />
+                  </span>
+                ) : <span className="hud-v5-fallback" aria-hidden>{c.name.slice(0, 1)}</span>}
               </button>
             </div>
           ))}
@@ -284,7 +281,7 @@ function Meter({ k, label, cls, v, name }: { k: string; label: string; cls: stri
       <div data-meter={k} role="meter" aria-label={label} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100} className="hud-v5-meter" title={label}>
         <i className={cls} style={{ height: `${v}%` }} />
       </div>
-      <span className="text-[8px] font-bold leading-none text-[#d5d0c4]">{name}</span>
+      <span className="hud-v5-mlab">{name}</span>
     </div>
   );
 }

@@ -3626,14 +3626,26 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			toast: v3Toast,
 		};
 	}
+	/** Existing idle sheet for a companion bust. Never the player's own sheet. */
+	const FACE15 = { justin: ["/game/v2/justin-idle.png", "tall"], sarah: ["/game/v2/sarah-idle.png", "folk"], loki: ["/game/v2/loki-idle.png", "folk"], cyndal: ["/game/v2/cyndal-idle.png", "folk"] };
+	function face15(who) {
+		if (who === "goose") return { sheet: "/game/v2/biscuit-idle.png", grid: "dog" };
+		if (who === "raccoon") return { sheet: "/game/v2/raccoon-idle.png", grid: "folk" };
+		const hit = FACE15[who];
+		return hit ? { sheet: hit[0], grid: hit[1] } : { sheet: null, grid: "folk" };
+	}
 	/** v5 HUD: at most two companions who are actually along (never the player). */
 	function companionHud() {
 		const list = [];
-		if (party) list.push({ id: "party", name: party.name, hp: Math.max(0, party.hp), maxHp: party.maxHp || 1, down: party.hp <= 0, order: party.order === "attack" || party.order === "defend" ? party.order : "auto" });
+		const mine = player?.premade || "";
+		if (party) {
+			const who = party.rc15134 && party.rc15134 !== mine ? party.rc15134 : (party.role && party.role !== mine ? party.role : "");
+			list.push({ id: "party", name: party.name, hp: Math.max(0, party.hp), maxHp: party.maxHp || 1, down: party.hp <= 0, order: party.order === "attack" || party.order === "defend" ? party.order : "auto", ...face15(who) });
+		}
 		// Goose counts when the Lost Dog quest has him, including laid up (portrait dims). A stay order with him healthy means he is not along.
-		if (q10.dog >= 4 && (v3.dog.down >= 0 || v3.dog.mode !== "stay")) list.push({ id: "goose", name: "Goose", hp: Math.max(0, v3.dog.hp), maxHp: 30, down: v3.dog.down >= 0, order: v3.dog.order === "attack" || v3.dog.order === "defend" ? v3.dog.order : "auto" });
+		if (q10.dog >= 4 && (v3.dog.down >= 0 || v3.dog.mode !== "stay")) list.push({ id: "goose", name: "Goose", hp: Math.max(0, v3.dog.hp), maxHp: 30, down: v3.dog.down >= 0, order: v3.dog.order === "attack" || v3.dog.order === "defend" ? v3.dog.order : "auto", ...face15("goose") });
 		const petOrder = (l1 as { petOrder?: string }).petOrder;
-		if (list.length < 2 && asSarah() && petBody) list.push({ id: "raccoon", name: "Raccoon", hp: 1, maxHp: 1, down: false, order: petOrder === "attack" || petOrder === "defend" ? petOrder : "auto" });
+		if (list.length < 2 && asSarah() && petBody) list.push({ id: "raccoon", name: "Raccoon", hp: 1, maxHp: 1, down: false, order: petOrder === "attack" || petOrder === "defend" ? petOrder : "auto", ...face15("raccoon") });
 		return list.slice(0, 2);
 	}
 	function v3Choice(id) {
@@ -13551,7 +13563,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!player) return [];
 			party = null;
 			const count = Math.max(0, Math.min(2, n | 0));
-			if (count >= 1) party = { role: "hunter", name: "Mara", hp: down ? 0 : 28, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4, order: "auto" };
+			if (count >= 1) party = { role: "sarah", name: "Sarah", rc15134: player?.premade === "sarah" ? "justin" : "sarah", hp: down ? 0 : 28, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4, order: "auto" };
 			if (count >= 2) {
 				q10.dog = Math.max(q10.dog, 4);
 				v3.dog.down = down ? curDay() + 1 : -1;

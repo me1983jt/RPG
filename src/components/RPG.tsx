@@ -824,7 +824,7 @@ export function RPG() {
         data-fobar-btn="Map"
         data-hud="minimap"
         aria-label="Open the world map"
-        className={playing && !hc.mini ? "hud-v5-steel absolute z-10 p-1" : "hidden"}
+        className={playing && !hc.mini ? "hud-v5-map absolute z-10" : "hidden"}
         style={{ top: "max(0.5rem, env(safe-area-inset-top))", right: "max(0.5rem, env(safe-area-inset-right))" }}
         onClick={() => { if (hud.statsOpen) apiRef.current?.toggleStats(); if (hud.packOpen) apiRef.current?.togglePack(); setJournalOpen(false); setMapOpen(true); }}
       >
@@ -848,7 +848,7 @@ export function RPG() {
         </div>
       ) : null}
       {playing ? (
-        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className="hud-v5-steel absolute z-20 h-8 w-8 text-xs font-bold" style={hc.mini ? { top: "max(0.5rem, env(safe-area-inset-top))", right: "max(0.5rem, env(safe-area-inset-right))" } : { top: "calc(max(0.5rem, env(safe-area-inset-top)) + var(--hud-mini) - 0.4rem)", right: "max(0.35rem, env(safe-area-inset-right))" }} onClick={(e) => { e.stopPropagation(); flipHc("mini"); }}>{hc.mini ? "+" : "–"}</button>
+        <button type="button" data-hud-min="mini" aria-label={hc.mini ? "Show the corner chart" : "Hide the corner chart"} className="hud-v5-plate absolute z-20 h-6 w-6 text-[10px] font-bold text-[#cbb892]" style={hc.mini ? { top: "max(0.5rem, env(safe-area-inset-top))", right: "max(0.5rem, env(safe-area-inset-right))" } : { top: "calc(max(0.45rem, env(safe-area-inset-top)) + var(--hud-mini) - 0.15rem)", right: "max(0.28rem, env(safe-area-inset-right))" }} onClick={(e) => { e.stopPropagation(); flipHc("mini"); }}>{hc.mini ? "+" : "–"}</button>
       ) : null}
       {hud.phase === "menu" ? (
         <CharCreate
