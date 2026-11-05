@@ -540,6 +540,8 @@ export interface HudSnapshot {
   repLine: string;
   canRetag: boolean;
   party: { name: string; hp: number; maxHp: number } | null;
+  /** v5 HUD: up to two companions actually with you (never the player). */
+  companions15?: { id: string; name: string; hp: number; maxHp: number; down: boolean; order: "auto" | "attack" | "defend" }[];
 }
 
 export const PLACES = {

@@ -278,3 +278,65 @@
 .cc-tagged { background: rgba(110,31,25,.16); font-weight: 700; }
 .cc-dot { width: .7rem; height: .7rem; border-radius: 9999px; border: 1.5px solid #3b2a17; background: transparent; flex-shrink: 0; }
 .cc-dot-on { background: #6e1f19; box-shadow: 0 0 4px rgba(110,31,25,.7); }
+
+/* Compact HUD (approved v5): brushed gunmetal, light rust, rivets, chipped corners. Less olive than the old bar. */
+:root { --hud-mini: 7.1rem; }
+@media (min-width: 1200px) and (min-height: 700px) { :root { --hud-mini: 8.5rem; } }
+.hud-v5-mini { width: var(--hud-mini); height: var(--hud-mini); border-radius: 7px 4px 8px 5px; }
+.hud-v5-steel {
+  border-radius: 7px 5px 8px 4px;
+  border: 2px solid #3c4348;
+  color: #e6e2d8;
+  background-color: #5a6166;
+  background-image:
+    repeating-linear-gradient(102deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 5px),
+    radial-gradient(circle at 86% 82%, rgba(150, 82, 48, 0.38), transparent 46%),
+    radial-gradient(circle at 12% 18%, rgba(120, 64, 40, 0.22), transparent 32%),
+    linear-gradient(180deg, #8d949a, #5c6368 48%, #3a4044);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -2px 0 rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.5);
+}
+.hud-v5-steel:not(.absolute) { position: relative; }
+.hud-v5-steel::before {
+  content: ""; position: absolute; inset: 3px; pointer-events: none;
+  background:
+    radial-gradient(circle at 3px 3px, #d5d0c6 0 1.2px, #2a241c 1.7px, transparent 2.4px) top left / 50% 50% no-repeat,
+    radial-gradient(circle at calc(100% - 3px) 3px, #d5d0c6 0 1.2px, #2a241c 1.7px, transparent 2.4px) top right / 50% 50% no-repeat,
+    radial-gradient(circle at 3px calc(100% - 3px), #d5d0c6 0 1.2px, #2a241c 1.7px, transparent 2.4px) bottom left / 50% 50% no-repeat,
+    radial-gradient(circle at calc(100% - 3px) calc(100% - 3px), #d5d0c6 0 1.2px, #2a241c 1.7px, transparent 2.4px) bottom right / 50% 50% no-repeat;
+}
+.hud-v5-btn {
+  min-width: 3.15rem; min-height: 2.7rem; padding: 0.15rem 0.28rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.05rem;
+  font-size: 0.58rem; font-weight: 700; line-height: 1.05; letter-spacing: 0.01em;
+}
+.hud-v5-btn.on { box-shadow: inset 0 2px 4px rgba(0,0,0,0.55); color: #f0d48a; }
+.hud-v5-act { width: 5.1rem; height: 4.5rem; padding: 0.2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; text-align: center; }
+.hud-v5-item { width: 4.15rem; height: 4.5rem; }
+@media (max-height: 420px) {
+  .hud-v5-act, .hud-v5-item { height: 3.9rem; }
+  .hud-v5-act { width: 4.5rem; }
+  .hud-v5-meter { height: 3.9rem !important; }
+}
+.hud-v5-aim { color: #f0d48a; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.12em; }
+.hud-v5-end { outline: 2px solid #e2c57a; color: #f6e6bc; background-image: linear-gradient(180deg, #7a6840, #4a3c24); }
+.hud-v5-log { min-width: 0; flex: 1; display: flex; flex-direction: column; padding: 0.2rem 0.35rem 0.3rem; }
+.hud-v5-log-screen {
+  height: 3.75rem; overflow-y: auto; overscroll-behavior: contain;
+  background: #141816; color: #9dbe8a; border-radius: 3px;
+  box-shadow: inset 0 0 8px #000; padding: 0.1rem 0.35rem;
+  font-family: ui-monospace, monospace; font-size: 0.78rem; line-height: 1.2rem;
+}
+.hud-v5-log-screen p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-v5-meter { width: 0.62rem; height: 4.5rem; border-radius: 2px; background: #141618; border: 1px solid #3c4348; position: relative; overflow: hidden; box-shadow: inset 0 0 4px #000; }
+.hud-v5-meter > i { position: absolute; left: 0; right: 0; bottom: 0; display: block; }
+.hud-v5-hp { background: #c44738; }
+.hud-v5-ap { background: #3c74b0; }
+.hud-v5-xp { background: #c6a24a; }
+.hud-v5-noise { background: #8e9498; }
+.hud-v5-badge { position: absolute; top: -3px; right: -3px; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: #c44738; box-shadow: 0 0 0 1px #1a120e; }
+.hud-v5-port { width: 3.35rem; height: 4.5rem; padding: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 1.35rem; }
+.hud-v5-port.down { filter: grayscale(1) brightness(0.55); }
+.hud-v5-orders { position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 6; display: flex; flex-direction: column; gap: 2px; width: 4.5rem; }
+.hud-v5-safe { color: #d5d0c4; }
+.hud-v5-danger { color: #e0a090; }
+.hud-v5-corner { position: absolute; z-index: 20; top: max(0.5rem, env(safe-area-inset-top)); right: calc(var(--hud-mini) + max(0.7rem, env(safe-area-inset-right)) + 0.35rem); display: flex; gap: 0.3rem; pointer-events: auto; }

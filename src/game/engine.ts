@@ -735,7 +735,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			tb15: tbHud(),
 			town: town ? { id: town.id, src: town.src, n: town.n } : null,
 			journal: (() => { const all = [...journalEntries(quest, questKills, talkState()), ...q10Journal(q10, snow >= 3), ...q11Journal(q11, Q11C()), ...q11JournalExtra()]; const js = asSarah() ? all.map((e) => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, giverText(v)]))) : all; return [...js.filter((e) => !e.done), ...js.filter((e) => e.done)]; })(),
-			log: asSarah() ? log.map(giverText) : log,
+			log: asSarah() ? allLog.map(giverText) : allLog.slice(),
 			buildOpen,
 			recipe,
 			canPlace: canPlaceAt(hoverTile()),
@@ -797,7 +797,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			karmaWord: karmaWord(p?.karma ?? 0),
 			repLine: p ? repLine(p) : "",
 			canRetag: p ? investedTotal(p) === 0 : false,
-			party: party ? { name: party.name, hp: party.hp, maxHp: party.maxHp } : null
+			party: party ? { name: party.name, hp: party.hp, maxHp: party.maxHp } : null,
+			companions15: companionHud(),
 		});
 	}
 	function held(code) {
@@ -1615,7 +1616,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			x: party.x,
 			y: party.y,
 			dir: party.dir || 0,
-			...(party.rc15134 ? { rc15134: party.rc15134, m7: party.m7, tags: party.tags, traits2: party.traits2 } : {})
+			...(party.rc15134 ? { rc15134: party.rc15134, m7: party.m7, tags: party.tags, traits2: party.traits2 } : {}),
+			...(party.order ? { order: party.order } : {}),
 		} : null;
 		data.partyReturn = partyReturn;
 		if (inside) {
@@ -3623,6 +3625,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			wind: COMPASS8[v3.wind],
 			toast: v3Toast,
 		};
+	}
+	/** v5 HUD: at most two companions who are actually along (never the player). */
+	function companionHud() {
+		const list = [];
+		if (party) list.push({ id: "party", name: party.name, hp: Math.max(0, party.hp), maxHp: party.maxHp || 1, down: party.hp <= 0, order: party.order === "attack" || party.order === "defend" ? party.order : "auto" });
+		// Goose counts when the Lost Dog quest has him, including laid up (portrait dims). A stay order with him healthy means he is not along.
+		if (q10.dog >= 4 && (v3.dog.down >= 0 || v3.dog.mode !== "stay")) list.push({ id: "goose", name: "Goose", hp: Math.max(0, v3.dog.hp), maxHp: 30, down: v3.dog.down >= 0, order: v3.dog.order === "attack" || v3.dog.order === "defend" ? v3.dog.order : "auto" });
+		const petOrder = (l1 as { petOrder?: string }).petOrder;
+		if (list.length < 2 && asSarah() && petBody) list.push({ id: "raccoon", name: "Raccoon", hp: 1, maxHp: 1, down: false, order: petOrder === "attack" || petOrder === "defend" ? petOrder : "auto" });
+		return list.slice(0, 2);
 	}
 	function v3Choice(id) {
 		const openD = (d) => { dialogue = d; phase = "dialogue"; sfx("click"); sync(true); return true; };
@@ -12015,6 +12027,14 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const pt = tileOf(player.x, player.y);
 		mctx.fillStyle = "#f0e6d4";
 		mctx.fillRect(pt.tx * sx - 1, pt.ty * sy - 1, 3, 3);
+		// Visible hostiles only: a pip where you can already see them. Unseen enemies stay off the chart.
+		mctx.fillStyle = "#c4543a";
+		for (const e of world.enemies) {
+			if (e.dead || !e.aggro || e.temper === "timid") continue;
+			const t = tileOf(e.x, e.y);
+			if (visible[t.ty * MAP_W + t.tx] !== 1) continue;
+			mctx.fillRect(t.tx * sx - 1, t.ty * sy - 1, 2.5, 2.5);
+		}
 	}
 	function onKeyDown(e) {
 		if (phase === "menu" || phase === "dialogue") return;
@@ -12840,6 +12860,29 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			else if (cmd === "tbEnd") { tbEndPlayerTurn(); return tbHud(); }
 			else if (cmd === "tbEndCombat") { tbEndCombat(); return tbHud(); }
 			else if (cmd === "swapSlots") { swapSlots(); }
+			else if (cmd === "setAim") { if (arg) setAim(String(arg)); }
+			else if (cmd === "tbEngage") {
+				if (!player || !world || phase !== "play") return;
+				if (tb) { tbEndCombat(); return; }
+				const foes = world.enemies.filter((e) => tbHostile(e) && !e.raid && Math.hypot(e.x - player.x, e.y - player.y) < 340);
+				if (foes.length && tbCanStart()) tbStart(foes);
+				else {
+					edges.attack = true;
+					pushLog(foes.length ? "Turn-based fights are off, so you swing at the nearest." : "Nothing hostile is close enough to engage.");
+				}
+			}
+			else if (cmd === "compOrder") {
+				const id = arg?.[0];
+				const order = arg?.[1];
+				if (order !== "auto" && order !== "attack" && order !== "defend") return;
+				if (id === "party" && party) party.order = order;
+				else if (id === "goose" && q10.dog >= 4) v3.dog.order = order;
+				else if (id === "raccoon") (l1 as { petOrder?: string }).petOrder = order;
+				else return;
+				const who = id === "party" ? party.name : id === "goose" ? "Goose" : "The raccoon";
+				pushLog(`${who}: ${order}.`);
+				sync(true);
+			}
 			else if (cmd === "townEnter") return townEnterMsg();
 			else if (cmd === "townMsg") { const ok = arg?.type === "leaveTown" ? leaveTown(arg) : arg?.type === "startQuest" ? townQuest(arg) : false; return { ok }; }
 			else if (cmd === "pack") { packOpen = !packOpen; if (packOpen) { statsOpen = false; buildOpen = false; } sync(true); }
@@ -13502,7 +13545,28 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		// v15.11.1 test: put a companion beside you (real recruits come from talk)
 		// v15.13.4 test: talk to Justin / Sarah (recruit) and report who is where
 		rc15134: (id, what = "join") => { rcCheck15134 = 0; rcTick15134(); const n = world?.npcs.find((x) => x.rc15134 === id); if (n) { openTalk(n); if (what) rcChoice15134(what); } rcCheck15134 = 0; rcTick15134(); return { party: party?.name ?? null, standing: (world?.npcs ?? []).filter((x) => x.rc15134).map((x) => x.rc15134), quests: (l1.tq ?? []).map((q) => q.id) }; },
-		tb15AddParty: () => { if (!player) return null; party = { role: "hunter", name: "Test companion", hp: 30, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4 }; return party.name; },
+		tb15AddParty: () => { if (!player) return null; party = { role: "hunter", name: "Test companion", hp: 30, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4, order: "auto" }; return party.name; },
+		/** Dev hook for the compact HUD: 0, 1, or 2 companions. down dims whoever is shown. Not a player portrait. */
+		hudCompanions: (n, down) => {
+			if (!player) return [];
+			party = null;
+			const count = Math.max(0, Math.min(2, n | 0));
+			if (count >= 1) party = { role: "hunter", name: "Mara", hp: down ? 0 : 28, maxHp: 30, homeMap: mapId, homeId: -77, homeX: player.x, homeY: player.y, x: player.x - 52, y: player.y, dir: 0, frame: 0, anim: 0, cooldown: .4, order: "auto" };
+			if (count >= 2) {
+				q10.dog = Math.max(q10.dog, 4);
+				v3.dog.down = down ? curDay() + 1 : -1;
+				v3.dog.hp = down ? 0 : 30;
+				v3.dog.mode = down ? "stay" : "follow";
+				v3.dog.order = "auto";
+				if (!down) dogBody = { x: player.x + 46, y: player.y + 30, dir: 0, frame: 0, anim: 0, moving: false };
+			} else if (count < 2) {
+				q10.dog = Math.min(q10.dog, 3);
+				if (dogBody && !dogBody.withJustin) dogBody = null;
+			}
+			sync(true);
+			return companionHud();
+		},
+		hudLog: (line) => { pushLog(String(line ?? "")); sync(true); },
 		tb15PartyHex: () => party ? hexOf15(party.x, party.y) : null,
 		tb15Hex: (q, r) => hexXY15({ q, r }),
 		tb15Popup: (id) => { const e = tbFoe(id); if (e && tb) tbPopup(e); return tb?.popup ?? null; },

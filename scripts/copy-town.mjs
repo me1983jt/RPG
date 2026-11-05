@@ -14,8 +14,7 @@ const towns = [
   { id: "greenville", src: process.env.TOWN_GREENVILLE_SRC || "/workspace/quest-greenville" },
   // v15.10.6: the castle (Dixville Notch). Quest RPG has not built it yet, so towns-stub/castle.html (closed gates) stands in
   { id: "castle", src: process.env.TOWN_CASTLE_SRC || "/workspace/quest-castle" },
-  // v0.4: Ashfall (quest-rpg-towns); copied into public/towns when the source exists
-  { id: "ashfall", src: process.env.TOWN_ASHFALL_SRC || "/workspace/quest-ashfall" },
+  // Ashfall belongs to the separate Kid Quest game. It is not copied or launched from this RPG.
 ].map((t) => ({ ...t, stub: stubOf(t.id) }));
 for (const t of towns) {
   const out = join(root, "public/towns", t.id);
