@@ -156,3 +156,9 @@ Pulled Quest RPG's latest five towns (NPC walk cycles for 30/31 NPCs, Justin wal
   - Sprite-sheet split / on-demand load: skipped (core+lazy already load bosses/atk/death; further splitting risks art).
 - No sprite changes. Landscape fullscreen unchanged. story.* / story.cameo.* keys unchanged. Story features (farm opening, raids, Mira, guards) skipped.
 - Smoke: scripts/_v04smoke.mjs, shots/v04/. APK RPG-v0.4.apk.
+
+## RPG v0.4.1 (Nov 5) — versionCode 26110502
+- Towns pulled from GitHub me1983jt/quest-rpg-towns @ 081ac53 ("Ashfall playable wrap: contain-fit (full scene visible)"):
+  harmony, pittsfield, skowhegan, greenville, castle, ashfall + shared-rules. Only ashfall/js/game.js changed vs v0.4
+  (COVER crop -> CONTAIN so the full 640x360 scene is visible). ashfall stays in scripts/copy-town.mjs.
+- No lag / sprite / story / orientation redo. Start-screen version line 0.4.1. Smoke: scripts/_v041smoke.mjs, shots/v041/ (Harmony enter/leave). APK RPG-v0.4.1.apk.
