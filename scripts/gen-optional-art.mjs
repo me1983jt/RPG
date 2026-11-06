@@ -11,6 +11,11 @@ const want = [
   "v2/hollowed-logger-walk", "v2/hollowed-icefisher-walk", "v2/hollowed-farmer-walk",
   // v15.13.3: Build-Redo-3 hero gun poses and Redo-1/2 props
   "v2/player-rifle-aim", "v2/player-rifle-fire", "v2/player-pistol-aim",
+  // accepted combat sheets. Walks are 88x124; the rest are 132x186. Pass-2 pistol-fire only.
+  "v2/player-knife-ready", "v2/player-knife-atk", "v2/player-knife-crouch", "v2/player-knife-walk", "v2/player-knife-crouch-atk",
+  "v2/player-pistol-fire", "v2/player-pistol-reload", "v2/player-pistol-crouch", "v2/player-pistol-walk", "v2/player-pistol-crouch-fire",
+  "v2/player-rifle-reload", "v2/player-rifle-crouch", "v2/player-rifle-walk", "v2/player-rifle-crouch-fire",
+  "v2/bandit-armor-pistol-walk", "v2/bandit-armor-knife-walk", "v2/bandit-armor-rifle-aim", "v2/bandit-armor-rifle-fire", "v2/bandit-armor-pistol-crouch", "v2/bandit-armor-rifle-crouch",
   ...["boulder", "rusty-barrel", "supply-crate", "burnt-campfire", "sandbags", "rain-barrel", "fallen-log"].map((n) => `v2/props/${n}`),
   // v15.10: Sarah's pet raccoon, wild raccoons and turtles
   "v2/raccoon-walk", "v2/raccoon-idle", "v2/raccoon-wild-walk", "v2/turtle-walk",
@@ -23,6 +28,7 @@ const want = [
   ...["walk", "idle", "talk"].map((a) => `v2/marcel-${a}`),
   ...["walk", "idle", "run", "gun", "gun-atk", "axe", "hit", "down", "crouch", "death"].map((a) => `v2/justin-${a}`),
   ...["scout", "armor", "brute", "torch", "gray", "blue"].flatMap((k) => ["walk", "hit"].map((a) => `v2/bandit-${k}-${a}`)),
+  "v2/bandit-armor-axe",
   ...["birch", "bush", "log", "pine", "snag", "spruce"].flatMap((k) => [2, 3].map((i) => `v2/trees/${k}${i}`)),
   "v2/trees/stump1", "v2/trees/stump2", "v2/trees/stump3",
   // v13 hooks: custom player sheets, armor paper-doll layers, the Collector, Harmony buildings

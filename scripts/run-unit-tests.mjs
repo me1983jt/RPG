@@ -7,7 +7,7 @@ const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return
 const mjs = walk("scripts").filter((f) => f.endsWith(".test.mjs"));
 let code = 0;
 if (mjs.length) code = spawnSync(process.execPath, ["--test", ...mjs], { stdio: "inherit" }).status ?? 1;
-const ts = ["src/game/townStory.test.ts", "src/lib/app-data/app-data.test.ts", "src/lib/app-data/readiness-schedule.test.ts", "src/lib/auth/gate-identity.test.ts", "src/lib/auth/sign-in-gate.test.ts", "src/lib/preview-path-prefix.test.ts"];
+const ts = ["src/game/combat-poses.test.ts", "src/game/townStory.test.ts", "src/lib/app-data/app-data.test.ts", "src/lib/app-data/readiness-schedule.test.ts", "src/lib/auth/gate-identity.test.ts", "src/lib/auth/sign-in-gate.test.ts", "src/lib/preview-path-prefix.test.ts"];
 const [maj, min] = process.versions.node.split(".").map(Number);
 if (maj > 22 || (maj === 22 && min >= 6)) code = (spawnSync(process.execPath, ["--experimental-strip-types", "--test", ...ts], { stdio: "inherit" }).status ?? 1) || code;
 else console.log(`(skipping ${ts.length} TypeScript unit test files: Node ${process.versions.node} has no --experimental-strip-types; needs >= 22.6)`);

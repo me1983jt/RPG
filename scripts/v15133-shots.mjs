@@ -34,7 +34,7 @@ let n = await pose("carbine", 2, false, "rifle-aim-a.png"); ok(n.includes("pl/ri
 n = await pose("carbine", 5, false, "rifle-aim-b.png"); ok(n.includes("pl/rifle-aim"), "rifle aim, 2nd direction");
 n = await pose("shotgun", 1, true, "rifle-fire.png"); ok(n.includes("pl/rifle-fire"), `shotgun fires on rifle-fire (${[...new Set(n)].join(",")})`);
 n = await pose("revolver", 6, false, "pistol-aim.png"); ok(n.includes("pl/pistol-aim"), "revolver holds pistol aim");
-n = await pose("revolver", 1, true, "pistol-fire-flash.png"); ok(n.includes("pl/pistol-aim"), "revolver fire = aim + flash");
+n = await pose("revolver", 1, true, "pistol-fire-flash.png"); ok(n.includes("pl/pistol-fire"), "revolver fire uses pass-2 pistol-fire");
 n = await pose("hatchet", 2, true, "melee-unchanged.png"); ok(!n.some((x) => /rifle|pistol/.test(x)), `melee stays on old sheets (${[...new Set(n)].join(",")})`);
 await T("wear1510", { weaponId: "carbine" }, 2); await T("holdAim15", 0);
 // pack with new icons
