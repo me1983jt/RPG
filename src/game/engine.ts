@@ -1,7 +1,7 @@
 // Recovered game engine. Type checks live in the modules this file imports.
 // @ts-nocheck
 /** Art cache-bust: bump after replacing any file in public/game (sheets, overlays, item icons). */
-const ART_V = 2078;
+const ART_V = 2079;
 /** v15.6 camera: screen height of a world unit along the view axis vs. its width (was 0.5, classic 2:1 iso).
  * Lower = the camera sits lower and looks more from the side (3rd person), the ground is more foreshortened and
  * building/character fronts read more. Everything (ground, sprites, depth sort, picking, hexes, fog) projects
@@ -16,6 +16,7 @@ import { POSE } from "@/game/pose-table";
 import { SPRITE_FIT } from "@/game/sprite-fit";
 import { BEAST_FIT, BEAST_IN, FOLK_IN, PX_PER_IN, SIZE_IN, TREE_VARY, sizedPx, townH } from "@/game/sizes";
 import { ART_SCALE, ART_SCALED } from "@/game/art-scale";
+import { banditArmorBase, banditArmorPose, banditWalkBob, blitRowCount, hostileNotices, keepCardinalFacing, playerCombatPose, poseFrameIndex, RELOAD_SEC, shouldOpenTurnCombat, spreadFrame } from "@/game/combat-poses";
 import { JACK_SIGNOFF, SNOW_WOOD, journalEntries, npcLine, objectiveTile, questText, xpNeed } from "@/game/content";
 import { DOG_TRAIL, Q10_SITES, Q10_TEXT, RADIO_SITES, freshQ10, loadQ10, q10Hud, q10Journal, q10Talk } from "@/game/quests10";
 import { ACHIEVEMENTS, FARM_UPGRADES as FARM_UPGRADES2, SKILL_MAX, TRADE_SKILLS, TRAP_KINDS, skillNeed } from "@/game/v113";
@@ -598,6 +599,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	let reach = 0;
 	/** Hero attack strip timer (v19 4-frame swings). */
 	let swingAnim = 0;
+	let swingFull = 0.48;
+	let reloadAnim = 0;
 	let heroLog = null;
 	/** When the hero went down (ms), for the fall animation. */
 	let fellAt = 0;
@@ -7143,9 +7146,9 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	function act0(n) {
 		return n.split("-").slice(2).join("-");
 	}
-	/** v15.13.3: Build-Redo-3 hero gun poses (v2/player-rifle-aim, -rifle-fire 4 frames, -pistol-aim; 132x186, 6 rows).
-	 * Long guns (carbine family: carbines, lever guns, scoped; scatter: shotguns) aim and fire on the rifle sheets;
-	 * the revolver holds the pistol aim (no pistol fire sheet yet: a muzzle flash at the barrel while firing). Melee unchanged. */
+	/** v15.13.3 gun poses, plus the accepted knife / pistol / rifle sheets.
+	 * Long guns use the rifle sheets. The revolver uses pass-2 pistol-fire (recoil), not the pass-1 kick.
+	 * Axes, unarmed, and Sarah stay on the sheets they already had. */
 	const NEW_POSE15 = new Set(["rifle-aim", "rifle-fire", "pistol-aim"]);
 	function newPose(gun, family, using, moving) {
 		if (!gun || asSarah() || work) return "";
@@ -7160,6 +7163,22 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			if (!long && plImg("pistol-aim")) return "pistol-aim";
 		}
 		return "";
+	}
+	let poseReady = false, poseCached = null;
+	function currentCombatPose() {
+		if (!player) return null;
+		const family = GEAR[player.weaponId]?.family;
+		const moving = player.anim !== player.idleAnim || !!player._poseMove;
+		return playerCombatPose({
+			family,
+			sarah: asSarah(),
+			working: !!work,
+			crouched: !!(l1.crouch && !mounted && phase !== "dead"),
+			moving,
+			firing: swingAnim > 0 && !work,
+			reloading: reloadAnim > 0,
+			has: (a) => !!plImg(a)
+		});
 	}
 	function newPoseScale(name) {
 		const w = images.get(plImg("walk")), img = images.get(name);
@@ -7189,13 +7208,19 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const gun = family === "carbine" || family === "revolver" || family === "scatter";
 		const axe = family === "axe" || family === "pry" || family === "pickaxe";
 		const using = drawn > 0 || reach > 0 || swingAnim > 0 || intent?.kind === "attack";
-		const moving = player.anim !== player.idleAnim;
-		player.idleAnim = player.anim;
+		const moving = player.anim !== player.idleAnim || !!player._poseMove;
 		const colsOf = (a) => sheetCols(images.get(plImg(a) || plImg("walk")));
 		let act = "walk";
 		let frame = player.frame;
 		let lunge = false;
+		const posed = flinch ? null : poseReady ? poseCached : currentCombatPose();
+		player.idleAnim = player.anim;
 		if (flinch) { act = flinch.name.slice(3); frame = flinch.frame; }
+		else if (posed) {
+			act = posed.act;
+			const cols = colsOf(act);
+			frame = poseFrameIndex(posed, { cols, anim: player.anim, swingLeft: swingAnim, swingFull, reloadLeft: reloadAnim, nowMs: performance.now() });
+		}
 		else if (newPose(gun, family, using, moving)) { act = newPose(gun, family, using, moving); frame = act === "rifle-fire" ? Math.max(0, Math.min(colsOf(act) - 1, Math.floor((.48 - swingAnim) * 1000 / ANIM_MS.fire))) : 0; }
 		else if (swingAnim > 0 && !work && gun && plImg("gun-atk")) { act = "gun-atk"; frame = Math.min(colsOf("gun-atk") - 1, Math.floor((.48 - swingAnim) * 1000 / ANIM_MS.fire)); }
 		else if (swingAnim > 0 && !work && meleeFrame()) {
@@ -7217,14 +7242,16 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		else if (moving && v13Running() && newWalk15() && !images.get("v2/player-run")) act = "walk";
 		else if (moving && v13Running() && plImg("run")) act = "run";
 		const name = plImg(act) || plImg("walk");
-		const pose15 = NEW_POSE15.has(act);
-		// v15.13.3: Build's 132x186 aim/fire sheets draw at the walk's figure height (both measured from their own first cell)
-		const ph = pose15 ? HERO_H * newPoseScale(name) : HERO_H;
+		const pose15 = posed ? posed.combatCell : NEW_POSE15.has(act);
+		// v15.13.3: Build's 132x186 aim/fire sheets draw at the walk's figure height (both measured from their own first cell).
+		// A kneel uses the standing sheet's height so the shorter figure stays shorter.
+		const scaleName = posed?.scaleFrom ? plImg(posed.scaleFrom) || name : name;
+		const ph = pose15 ? HERO_H * newPoseScale(scaleName) : HERO_H;
 		blit(name, player.x, player.y, ph, true, frame, player.dir, drawCamX, drawCamY, lunge);
 		// v15.13.3: the boots/gloves/trousers and old chest/head overlays are cut for the walk grid and float off the new
 		// aim/fire poses, so they are hidden while the hero holds or fires a gun (they come back on the next step)
 		if (pose15) { armorDrawn = []; paintPoseFlash(act, frame, ph, drawCamX, drawCamY); }
-		else paintArmor(act, frame, player.dir, drawCamX, drawCamY, lunge);
+		else paintArmor(posed && posed.frames === "walk" ? "walk" : act, frame, player.dir, drawCamX, drawCamY, lunge);
 		if (swingAnim > 0 && !work && act === "walk") paintSwingArc();
 		void axe;
 		return true;
@@ -8542,6 +8569,8 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.cooldown = swingOf().wait;
 		reach = .22;
 		swingAnim = .48;
+		swingFull = .48;
+		reloadAnim = 0;
 		return true;
 	}
 	function safeNoFight() { if (!player || !safeAt(player.x, player.y)) return false; if (clock - (safe15.said ?? -99) > 3) { safe15.said = clock; pushLog("Not here. This is a safe zone."); } return true; }
@@ -8586,6 +8615,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const hitMs = t.ms.slice(0, t.hit - 1).reduce((a, b) => a + b, 0);
 		melee = { move, t0: performance.now(), total };
 		swingAnim = total / 1000;
+		swingFull = swingAnim;
 		player.cooldown = Math.max(player.cooldown, total / 1000);
 		return { move, hitMs, total };
 	}
@@ -9121,7 +9151,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		player.invuln = Math.max(0, player.invuln - dt);
 		player.hurt = Math.max(0, player.hurt - dt);
 		reach = Math.max(0, reach - dt);
-		swingAnim = Math.max(0, swingAnim - dt);
+		if (!player._poseFreeze) {
+			swingAnim = Math.max(0, swingAnim - dt);
+			reloadAnim = Math.max(0, reloadAnim - dt);
+		}
 		{ const _t = performance.now(); pendingTick(dt); pAdd("u:pendingTick", _t); }
 		{ const _t = performance.now(); v14Tick(); pAdd("u:v14Tick", _t); }
 		if (edges.build) edges.build = false; // v15.9.5: the Build menu was removed
@@ -9497,7 +9530,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			if (enemy.aggro && homeDist > 520 && !isRaider(enemy)) enemy.aggro = false;
 			const sight = (enemy.kind === "coyote" ? 150 : enemy.kind === "wolf" ? 210 * (nightShade(clock) > .22 ? 1.5 : 1) * (seasonNow() === 3 ? 1.25 : 1) : 190) * (enemy.blind141 ? INJ_FX.enemyBlindSight : 1);
-			if (enemy.temper === "hostile" && !enemy.aggro && dist < noticeRange(sight) && !safeAt(player.x, player.y)) {
+			if (hostileNotices(enemy.temper, !!enemy.aggro, dist, noticeRange(sight), !!safeAt(player.x, player.y))) {
 				enemy.aggro = true;
 				alertPack(enemy);
 			}
@@ -9580,6 +9613,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 				}
 			}
 			if (enemyMoving) enemy.anim += dt * 10;
+			enemy._mv = enemyMoving;
 			enemy.frame = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52) ? 2 : enemyMoving ? Math.floor(enemy.anim) % 4 : 0;
 		}
 		{ const _t = performance.now(); separateEnemies(aiFar); pAdd("u:separateEnemies", _t); }
@@ -11291,6 +11325,20 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						}
 						return;
 					}
+					const armorPose = banditArmorPose({
+						variant: enemy.variant, hollow: !!enemy.hollow, kind: enemy.kind, id: enemy.id ?? 0,
+						moving: !!enemy._mv, attacking: enemy.cooldown > (enemy.elite ? .62 : .52), has: (n) => !!images.get(n)
+					});
+					if (armorPose) {
+						const aim = images.get(armorPose.name);
+						let frame = enemy.frame || 0;
+						if (armorPose.mode === "fire" && aim) {
+							const swingMax = enemy.elite ? .95 : .82, gate = enemy.elite ? .62 : .52;
+							const u = (swingMax - Math.min(swingMax, enemy.cooldown)) / Math.max(.05, swingMax - gate);
+							frame = spreadFrame(u, sheetCols(aim));
+						}
+						blit(armorPose.name, enemy.x, enemy.y, h, true, frame, enemy.dir ?? 0, drawCamX, drawCamY, false);
+					} else {
 					const atk = `${beastSheet(enemy)}-atk`;
 					const aimg = images.get(atk);
 					if (aimg && TALL_COMBAT.has(atk) && enemy.cooldown > .08) {
@@ -11308,6 +11356,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 						const swinging = enemy.cooldown > (enemy.kind === "moose" ? .7 : enemy.elite ? .62 : .52);
 						if (swinging && aimg) blit(atk, enemy.x, enemy.y, h, false, 0, 0, drawCamX, drawCamY, true);
 						else blit(beastSheet(enemy), enemy.x, enemy.y, h, true, enemy.frame, enemy.dir, drawCamX, drawCamY, swinging);
+					}
 					}
 					if (enemy.aggro || enemy.hp < enemy.maxHp || enemy.id === lockedId) bar(enemy.x, enemy.y, h, enemy.hp / enemy.maxHp, drawCamX, drawCamY);
 					} finally { shadow193 = false; if (enemy.variant === "bear") ctx.restore(); }
@@ -11646,7 +11695,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	// (idle → walk, walk → swing...) the old pose is drawn over the new one at 80/60/40/20 % for four frames.
 	let xfRec = null, xfLast = null, xf = null;
 	function xfWrap(fn, dcx, dcy) {
-		const crouch = l1.crouch && !mounted && phase !== "dead";
+		const hurt = player && player.hurt > 0 && !(swingAnim > 0 && !work);
+		poseCached = hurt || phase === "dead" ? null : currentCombatPose();
+		poseReady = true;
+		const crouch = l1.crouch && !mounted && phase !== "dead" && !poseCached?.nativeCrouch;
 		if (crouch) {
 			const f = zoomPoint(worldToScreen(player.x, player.y, dcx, dcy).sx, worldToScreen(player.x, player.y, dcx, dcy).sy);
 			ctx.save(); ctx.translate(f.sx, f.sy); ctx.scale(1.06, .78); ctx.translate(-f.sx, -f.sy);
@@ -11663,6 +11715,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			}
 			xfLast = { sig, calls };
 			if (crouch) ctx.restore();
+			poseReady = false;
 		}
 	}
 	const xfStats = { n: 0 };
@@ -11694,10 +11747,10 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 	}
 	function blit(name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge = false, lift = 0, tilt = 0, flatten = 1, flip = false) {
 		// v14.1: characters use the 6 hex facings; a leftover N/S facing draws its neighbouring diagonal
-		if (sheet && (dir === 0 || dir === 4) && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = dir === 0 ? 1 : 3;
+		if (sheet && (dir === 0 || dir === 4) && !keepCardinalFacing(name) && (/^(v2\/)?hero|^pl\/|^overlay-/.test(name) || figFamily(name))) dir = dir === 0 ? 1 : 3;
 		if (xfRec) xfRec.push([name, x, y, drawH, sheet, frame, dir, dcx, dcy, lunge, lift, tilt, flatten, flip]);
 		const img = images.get(name);
-		if (sheet && img && /^v2\/(bandit-[a-z]+|hollowed)-walk$/.test(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
+		if (sheet && img && banditWalkBob(name) && sheetCols(img) === 8) frame = ((frame || 0) % 4) * 2 + (Math.floor(performance.now() / 110) & 1);
 		if (heroLog && /^((v2\/)?hero|pl\/)/.test(name)) { heroLog.push({ name, frame, dir, ok: !!(img && img.width), cols: img ? sheetCols(img) : 0 }); if (heroLog.length > 400) heroLog.shift(); }
 		const raw = worldToScreen(x, y, dcx, dcy);
 		const foot = zoomPoint(raw.sx, raw.sy);
@@ -11733,7 +11786,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 			const cols = sheetCols(img);
 			// v14.1: new character sheets carry 4 rows (SW, NW, NE, SE); 8-row sheets keep loading via their diagonal rows
 			// v14.1: new character sheets may carry 6 hex rows (NE, E, SE, SW, W, NW) or 4 diagonal rows; read the count off the height
-			if (sheet && img.rowsSeen == null) { const g = Math.round(img.height / (img.width / cols * 124 / 88)); img.rowsSeen = rows === 8 && (g === 6 || g === 4) ? g : 0; img.diag4 = img.rowsSeen === 4; }
+			if (sheet && img.rowsSeen == null) { const n = blitRowCount(img.width, img.height, cols, rows); img.rowsSeen = n === rows ? 0 : n; img.diag4 = n === 4; }
 			if (sheet && img.rowsSeen) rows = img.rowsSeen;
 			sw = img.width / (strips ? 4 : cols);
 			sh = img.height / rows;
@@ -12443,7 +12496,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		if (body.path) body.path = [];
 	}
 	function tbCanStart() {
-		return tbAuto && !(typeof window !== "undefined" && window.__tbOff) && !(player && safeAt(player.x, player.y)) && !inside && phase === "play" && player && world && !mounted;
+		return shouldOpenTurnCombat({ enabled: tbAuto, suppressed: typeof window !== "undefined" && !!window.__tbOff, inSafeZone: !!(player && safeAt(player.x, player.y)), inside: !!inside, playing: phase === "play", hasPlayer: !!player, hasWorld: !!world, mounted: !!mounted, hostileAggroNearby: true });
 	}
 	function tbStart(foes) {
 		const roll = () => 1 + Math.floor(Math.random() * 6);
@@ -12569,6 +12622,7 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		const cost = TB_COST.reload + (player.weaponId === "levergun" ? 1 : 0);
 		if (ap < cost) { pushLog("Not enough action points."); return sync(true); }
 		ap -= cost; tb.mag[player.weaponId] = Math.min(m, shellCount(player));
+		reloadAnim = RELOAD_SEC;
 		pushLog(`Reloaded: ${tb.mag[player.weaponId]} in the gun.`); sfx("click"); sync(true);
 	}
 	function tbEndPlayerTurn() { if (tb && tbMine() && !tb.anim) { tb.popup = null; pushLog("You end your turn."); tbNext(); } }
@@ -13490,6 +13544,36 @@ export function mountGame(canvas: HTMLCanvasElement, mini: HTMLCanvasElement): G
 		wmOpen: () => openWorldMap(),
 		// v15.9: travel through the destination menu (the hex overview is gone). Returns the same summary v154Go used to.
 		wear1510: (fields, dir) => { Object.assign(player, fields); if (dir != null) { player.dir = dir; player.idleAnim = player.anim; } figureKey = ""; sync(true); return armorLayerNames("walk"); },
+		/** Drive an accepted combat pose and report the sheet the loader chose. Does not change rules. */
+		pose15: (patch = {}) => {
+			if (!player) return null;
+			if (patch.weaponId != null) { player.weaponId = patch.weaponId; refreshGear(player); }
+			if (patch.dir != null) player.dir = patch.dir;
+			l1.crouch = !!patch.crouch;
+			player._poseMove = !!patch.moving;
+			player._poseFreeze = !!(patch.fire || patch.reload);
+			if (patch.moving) player.idleAnim = (player.anim || 0) - 1;
+			else player.idleAnim = player.anim;
+			if (patch.fire) { swingAnim = patch.swing ?? 0.4; swingFull = 0.48; reloadAnim = 0; }
+			else swingAnim = 0;
+			if (patch.reload) reloadAnim = RELOAD_SEC * 0.45;
+			else if (!patch.fire) reloadAnim = 0;
+			if (patch.anim != null) player.anim = patch.anim;
+			let bandit = null;
+			if (patch.spawn === "armor") {
+				spawnRaider("armor", { x: player.x + (patch.dx ?? 110), y: player.y + (patch.dy ?? 10) });
+				const e = world.enemies[world.enemies.length - 1];
+				e.aggro = false; e.raid = false; e.temper = "wary";
+				e.dir = patch.edir ?? 6; e._mv = !!patch.emoving;
+				if (patch.eattack) e.cooldown = 0.9;
+				if (patch.eid != null) e.id = patch.eid;
+				bandit = banditArmorPose({ variant: e.variant, hollow: !!e.hollow, kind: e.kind, id: e.id, moving: !!e._mv, attacking: e.cooldown > (e.elite ? .62 : .52), has: (n) => !!images.get(n) });
+				bandit = { id: e.id, name: bandit?.name ?? null, mode: bandit?.mode ?? "legacy" };
+			}
+			const pose = currentCombatPose();
+			figureKey = "";
+			return { act: pose?.act ?? null, native: !!pose?.nativeCrouch, frames: pose?.frames ?? null, dir: player.dir, weapon: GEAR[player.weaponId]?.family ?? "", bandit };
+		},
 		props1510: (kind) => world.props.filter((q) => q.kind === kind).slice(0, 8).map((q) => ({ id: q.id, ...propCenter(q) })),
 		use159: (kind) => { const p = world.props.find((q) => q.kind === kind); if (!p) return null; const c = propCenter(p); player.x = c.x + 60; player.y = c.y + 60; const before = { scrap: player.scrap, hp: player.hp, gas: countOf("gas") }; const r = use159(p); return { r, before, after: { scrap: player.scrap, hp: player.hp, gas: countOf("gas") } }; },
 		skillScores: () => Object.fromEntries(SKILLS.map((k) => [k.id, skillOf(k.id)])),
@@ -13938,6 +14022,8 @@ const SIZE_SEEN = new Map();
 const figCache = new Map();
 function figFamily(name) {
 	if (/^(v2\/)?hero|^pl\/|^overlay-/.test(name)) return null;
+	const armorBase = banditArmorBase(name);
+	if (armorBase) return { key: armorBase, ref: [`${armorBase}-walk`, `${armorBase}-idle`] };
 	let m = name.match(/^v2\/(bandit-[a-z]+|hollowed-(?:logger|icefisher|farmer)|hollowed|[a-z]+)-(walk|run|idle|axe|gun|gun-atk|crouch|carry|death|down|hit|talk|walk-atk|walk-dead)$/);
 	if (m && !/^(wolf|bike|tractor|hero)/.test(m[1])) return { key: "v2/" + m[1], ref: [`v2/${m[1]}-walk`, `v2/${m[1]}-idle`] };
 	m = name.match(/^(npc-[a-z]+|guard-(?:watch-)?[a-z]+|raider(?:-[a-z]+)?|boss-[a-z]+|villager)(?:-atk|-dead)?$/);
