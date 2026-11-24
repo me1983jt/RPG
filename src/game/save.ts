@@ -5,9 +5,12 @@ import type { BeastKind, Player, PropKind } from "@/game/types";
 export const SAVE_KEY = "maine-rpg-save-v2";
 export const SAVE_SLOTS = 3;
 const SLOT_KEY = "maine-rpg-slot";
+function normalizeSlot(n: number): number {
+  return Number.isFinite(n) ? Math.min(SAVE_SLOTS, Math.max(1, Math.round(n))) : 1;
+}
 let slot = 1;
 try {
-  slot = Math.min(SAVE_SLOTS, Math.max(1, Number(localStorage.getItem(SLOT_KEY)) || 1));
+  slot = normalizeSlot(Number(localStorage.getItem(SLOT_KEY)));
 } catch {
   /* no storage */
 }
@@ -18,7 +21,7 @@ export function getSlot(): number {
   return slot;
 }
 export function setSlot(n: number): void {
-  slot = Math.min(SAVE_SLOTS, Math.max(1, Math.round(n) || 1));
+  slot = normalizeSlot(n);
   try {
     localStorage.setItem(SLOT_KEY, String(slot));
   } catch {
@@ -67,7 +70,7 @@ export function autoInfo(): AutoInfo | null {
     if (!raw) return null;
     const d = JSON.parse(raw) as { name?: string; level?: number; savedAt?: number; autoSlot?: number; autoWhere?: string };
     const when = d.savedAt ? new Date(d.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
-    return { slot: Math.min(SAVE_SLOTS, Math.max(1, Number(d.autoSlot) || 1)), where: d.autoWhere || "", label: `${d.name || "Packer"} · Lv ${d.level ?? 1}${when ? " · " + when : ""}` };
+    return { slot: normalizeSlot(Number(d.autoSlot)), where: d.autoWhere || "", label: `${d.name || "Packer"} · Lv ${d.level ?? 1}${when ? " · " + when : ""}` };
   } catch {
     return null;
   }
@@ -79,9 +82,10 @@ export function restoreAutosave(): boolean {
     if (!raw) return false;
     const d = JSON.parse(raw) as SaveData & { autoSlot?: number; autoWhere?: string };
     if (!d || d.v !== 1 || !Array.isArray(d.removed)) return false;
-    setSlot(Number(d.autoSlot) || 1);
+    const target = normalizeSlot(Number(d.autoSlot));
     const { autoSlot: _a, autoWhere: _w, ...rest } = d;
-    localStorage.setItem(keyOf(slot), JSON.stringify(rest));
+    localStorage.setItem(keyOf(target), JSON.stringify(rest));
+    setSlot(target);
     return true;
   } catch {
     return false;
