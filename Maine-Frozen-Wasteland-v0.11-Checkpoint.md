@@ -1,0 +1,2 @@
+# v0.11 partial checkpoint
+Native menu title overlay and background/profession selection panel added to CE source; choices passed to session. Four C++ tests and staging test passed. Limited syntax check with temporary SDL declarations passed. Full configure blocked by fpattern download; SDL2 headers missing. York initialization, native save synchronization, actual UI testing and v0.12 quests pending. Handoff: Maine-Frozen-Wasteland-v0.11-Grok.zip, V11-START.md. No APK built.
