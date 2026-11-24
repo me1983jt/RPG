@@ -1,0 +1,2 @@
+# v0.10 checkpoint
+Actual CE source modified: new-game, reset, clock/map observation and experimental save/load sidecar hooks. Android identity changed. All five DAT archives validated (31,109 entries); five prototype tests and native translation-unit syntax check passed. Full engine configure blocked by missing FetchContent dependencies. York initialization, native character UI, quest actions, transactional saves, remaining roadmap and APK testing pending. Handoff archive: Maine-Frozen-Wasteland-v0.10-Grok.zip; read V10-START.md. No commercial data uploaded.
