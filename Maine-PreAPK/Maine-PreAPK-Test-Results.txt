@@ -1,0 +1,54 @@
+Internal ctest changing into directory: /tmp/maine27-build
+Test project /tmp/maine27-build
+    Start 1: adapter
+1/7 Test #1: adapter ..........................   Passed    0.00 sec
+    Start 2: parity
+2/7 Test #2: parity ...........................   Passed    0.13 sec
+    Start 3: html_regression
+3/7 Test #3: html_regression ..................   Passed    0.31 sec
+    Start 4: state
+4/7 Test #4: state ............................   Passed    0.01 sec
+    Start 5: state_parity
+5/7 Test #5: state_parity .....................   Passed    0.62 sec
+    Start 6: runtime
+6/7 Test #6: runtime ..........................   Passed    0.01 sec
+    Start 7: native_hooks_mock
+7/7 Test #7: native_hooks_mock ................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =   1.08 sec
+PASS 72 runtime origin/profession cases; clock, regions, parity, frame roundtrip and corruption rejection
+PASS actual native callbacks against mock engine file/clock/map APIs; no full engine link
+
+Native changed translation units: syntax only using test SDL declarations (not full native compilation).
+Syntax check: maine/native.cc
+Syntax check: main.cc
+Syntax check: game.cc
+engine/src/game.cc:1430:20: warning: multi-character character constant [-Wmultichar]
+ 1430 |     if (version != 'RIX3') {
+      |                    ^~~~~~
+engine/src/game.cc: In function 'int fallout::gameDbInit()':
+engine/src/game.cc:1371:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1371 |         path_file_name_template = "patch%03d.dat";
+      |                                   ^~~~~~~~~~~~~~~
+Syntax check: loadsave.cc
+
+Pinned dependency check (blocked):
+fpattern 8523173ec252c3b796fcdfca0fcc6329642fbbe3: MISSING
+sdl2 release-2.26.1: MISSING
+zlib v1.3.1: MISSING
+cmake: /usr/bin/cmake
+git: /usr/bin/git
+g++: /usr/bin/g++
+node: /opt/nvm/versions/node/v22.16.0/bin/node
+java: /usr/bin/java
+ANDROID_HOME: not set
+ANDROID_NDK_HOME: not set
+Command after dependencies are obtained and revisions verified:
+cmake -S /mnt/data/Maine-Integration-v0.27-preAPK/engine -B /mnt/data/Maine-Integration-v0.27-preAPK/native-build -DFALLOUT_VENDORED=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_SOURCE_DIR_FPATTERN=/mnt/data/native-deps/fpattern -DFETCHCONTENT_SOURCE_DIR_SDL2=/mnt/data/native-deps/sdl2 -DFETCHCONTENT_SOURCE_DIR_ZLIB=/mnt/data/native-deps/zlib
+Then: cmake --build /mnt/data/Maine-Integration-v0.27-preAPK/native-build
+Missing pinned fpattern; use --fetch on a network-enabled machine.
+
+Private data archive directory validation and SHA-256: pass; see content/private-data-checksums.json.
+No APK or desktop engine binary built.
