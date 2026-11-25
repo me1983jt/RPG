@@ -1,0 +1,45 @@
+name: Build Maine Alpha 27 APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract Maine source
+        run: unzip -q Maine-CE-Alpha-27-HD-Characters-Source.zip -d maine-source
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android tools
+        run: sdkmanager 'platforms;android-32' 'build-tools;32.0.0' 'ndk;23.1.7779620' 'cmake;3.22.1'
+      - name: Regression tests
+        working-directory: maine-source
+        run: |
+          cmake -S . -B build-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-tests --parallel 2
+          ctest --test-dir build-tests --output-on-failure
+      - name: Prepare dependencies
+        working-directory: maine-source
+        run: python3 tools/prepare-native.py "$RUNNER_TEMP/maine-deps" --fetch
+      - name: Build APK
+        working-directory: maine-source/engine/os/android
+        run: bash gradlew --no-daemon -PmaineDeps="$RUNNER_TEMP/maine-deps" assembleDebug
+      - name: Verify APK
+        run: |
+          APK=maine-source/engine/os/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/32.0.0/apksigner" verify --verbose "$APK"
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libfallout2-ce.so'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Maine-Alpha-27-APK
+          path: maine-source/engine/os/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
