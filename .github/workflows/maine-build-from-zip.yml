@@ -7,6 +7,7 @@ on:
       - '.github/workflows/maine-build-from-zip.yml'
       - 'Maine-CE-Alpha-27-HD-Characters-Source.zip'
       - 'Maine-CE-Alpha-28-York-Source.zip'
+      - 'Maine-Alpha30-York-Build-Source.zip'
 permissions:
   contents: read
 jobs:
@@ -17,7 +18,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Extract Maine source
         run: |
-          if [ -f Maine-CE-Alpha-28-York-Source.zip ]; then
+          if [ -f Maine-Alpha30-York-Build-Source.zip ]; then
+            SOURCE=Maine-Alpha30-York-Build-Source.zip
+            echo "MAINE_VERSION=30" >> "$GITHUB_ENV"
+          elif [ -f Maine-CE-Alpha-28-York-Source.zip ]; then
             SOURCE=Maine-CE-Alpha-28-York-Source.zip
             echo "MAINE_VERSION=28" >> "$GITHUB_ENV"
           else
