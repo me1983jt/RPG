@@ -57,6 +57,11 @@ jobs:
       - name: Prepare dependencies
         working-directory: maine-source
         run: python3 tools/prepare-native.py "$RUNNER_TEMP/maine-deps" --fetch
+      - name: Fix native header search path
+        working-directory: maine-source
+        run: |
+          test -f engine/src/maine/snow-terrain.h
+          printf '\nif(TARGET fallout2-ce)\n  target_include_directories(fallout2-ce PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")\nendif()\n' >> engine/CMakeLists.txt
       - name: Build APK
         working-directory: maine-source/engine/os/android
         run: bash gradlew --no-daemon -PmaineDeps="$RUNNER_TEMP/maine-deps" assembleDebug
