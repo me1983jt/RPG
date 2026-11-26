@@ -47,6 +47,10 @@ jobs:
       - name: Regression tests
         working-directory: maine-source
         run: |
+          # Explicit CommonJS extension avoids runtime module-format ambiguity.
+          cp gameplay-core/rules.js gameplay-core/rules.cjs
+          sed -i 's@gameplay-core/rules.js@gameplay-core/rules.cjs@g' tests/parity.cjs
+          node -e "if(typeof require('./gameplay-core/rules.cjs').skillChance !== 'function') process.exit(1)"
           cmake -S . -B build-tests -DCMAKE_BUILD_TYPE=Debug
           cmake --build build-tests --parallel 2
           ctest --test-dir build-tests --output-on-failure
