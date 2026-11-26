@@ -1,0 +1,25 @@
+MAINE: THE FROZEN WASTELAND — BUILD IDEAS AND DIRECTION
+Alpha 30 development target | 25 November 2026
+
+GOAL
+Deliver a stable Android exploration test using Fallout 2 CE and the player's existing licensed game data. Keep Alpha 27 as a fallback. Retain the current project name through Alpha 30; consider a standalone original game afterward.
+
+ALPHA 30 PRIORITIES
+1. York: exterior and four interiors (store, house, garage, municipal building), working entrances, return transitions, walls, furniture, roofs and collision.
+2. Graphics: 2x HD sprites with original isometric geometry, consistent lighting, realistic pixel art and transparent edges. Audit characters, animations, UI, world map, items and effects. Preserve native fallback art.
+3. Doors: create closed/open and intermediate frames for blue, red, wooden and garage doors; validate frame offsets, native interaction and collision before enabling.
+4. Regions: coastal patchy snow, central rural terrain, western mountain forests and northern deep snow. Vary vegetation, architecture and roadside details without breaking map exits.
+5. Android: touch movement, camera, zoom, readable UI, save/load, memory and performance checks.
+6. Packaging: one APK plus one Maine data ZIP; do not distribute original commercial Fallout data. Validate the required Maine patch, register assets and maps, and test a clean installation.
+
+RELEASE GATES
+Archive integrity and automated tests; actual data integration; successful Android build; device launch; York exploration and all four return transitions; door collision; graphics and save/load checks. Do not call the build playable until device testing succeeds.
+
+CURRENT LIMITATIONS
+Development checkpoints exist, but actual game-data integration, native rendering, functional doors and Alpha 30 APK compilation remain unverified. No NPCs or quests in this test. Do not overwrite Alpha 27.
+
+FUTURE STANDALONE DIRECTION
+Separate original project with a free open-source engine such as Godot, original or appropriately licensed artwork, own map format, Android-first controls and bundled assets. Begin with a small York exploration demo; later add inventory, character progression, world travel, dialogue and quests. Automate APK builds through GitHub. Keep the CE project as a separate backup.
+
+WORKFLOW
+Store dated development checkpoints in the RPG Google Drive folder. Commit source changes and build notes to GitHub. Keep private game data out of the repository. Record test results and unresolved blockers with each release.
