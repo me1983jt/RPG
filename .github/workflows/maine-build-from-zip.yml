@@ -1,4 +1,4 @@
-name: Build Maine Alpha 27 APK
+name: Build Maine CE APK
 on:
   workflow_dispatch:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/maine-build-from-zip.yml'
       - 'Maine-CE-Alpha-27-HD-Characters-Source.zip'
+      - 'Maine-CE-Alpha-28-York-Source.zip'
 permissions:
   contents: read
 jobs:
@@ -15,7 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Extract Maine source
-        run: unzip -q Maine-CE-Alpha-27-HD-Characters-Source.zip -d maine-source
+        run: |
+          if [ -f Maine-CE-Alpha-28-York-Source.zip ]; then
+            SOURCE=Maine-CE-Alpha-28-York-Source.zip
+            echo "MAINE_VERSION=28" >> "$GITHUB_ENV"
+          else
+            SOURCE=Maine-CE-Alpha-27-HD-Characters-Source.zip
+            echo "MAINE_VERSION=27" >> "$GITHUB_ENV"
+          fi
+          unzip -q "$SOURCE" -d maine-source
+          test -f maine-source/CMakeLists.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -53,6 +63,6 @@ jobs:
           unzip -l "$APK" | grep 'lib/arm64-v8a/libfallout2-ce.so'
       - uses: actions/upload-artifact@v4
         with:
-          name: Maine-Alpha-27-APK
+          name: Maine-Alpha-${{ env.MAINE_VERSION }}-APK
           path: maine-source/engine/os/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
