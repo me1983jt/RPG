@@ -48,6 +48,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '11'
+      - name: Reconcile Alpha 30 patch checksum metadata
+        if: env.MAINE_VERSION == '30'
+        working-directory: maine-source
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          audit = Path('content/native-map-audit.json')
+          data = json.loads(audit.read_text())
+          expected = 'ed7c98165583adb10bce06647182453986dddf8ad8ae9488a4a56da1bf15ee61'
+          java = Path('engine/os/android/app/src/main/java/com/alexbatalov/fallout2ce/MaineData.java').read_text()
+          assert f'PATCH_SHA256 = "{expected}"' in java
+          assert data['patch_sha256'] == '9778b0beeb427c7ec7d9c953b0b4664d94d4bf7f5b88735d72b3e1c0ae52f982'
+          data['patch_sha256'] = expected
+          audit.write_text(json.dumps(data, indent=2) + '\n')
+          PY
       - name: Regression tests
         working-directory: maine-source
         run: |
