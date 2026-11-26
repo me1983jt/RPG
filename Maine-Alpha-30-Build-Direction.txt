@@ -23,3 +23,6 @@ Separate original project with a free open-source engine such as Godot, original
 
 WORKFLOW
 Store dated development checkpoints in the RPG Google Drive folder. Commit source changes and build notes to GitHub. Keep private game data out of the repository. Record test results and unresolved blockers with each release.
+
+MANDATORY TOWN MAP CONSTRUCTION STANDARD — ALL BUILDS
+All playable settlement maps (York, Kittery and future towns) must use Fallout 2-compatible, full-scale isometric map construction: connected wall segments, floor tiles, working doorways, appropriate roofs/roof visibility, interiors, furniture, collision and walkable navigation. Use the native map tile/object system and verified art/prototype IDs; retain authentic Fallout 2 perspective and character-to-building scale. Do not use miniature/model houses, dollhouse props, printed building icons or world-map settlement markers as substitutes for explorable buildings. Real Maine road and neighborhood geography may inform layouts, but buildings must remain functional at gameplay scale. Before accepting a town map, inspect an in-engine screenshot and test building entry/exit, collision, roof visibility and save/load. Reject placeholder-only maps as unfinished. Apply this standard to all AIs and contributors. Preserve the last working APK while correcting existing York content.
