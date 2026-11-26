@@ -1,0 +1,3 @@
+AI CONTINUATION — verified archive location
+Latest cumulative prototype checkpoint: https://drive.google.com/open?id=1kIRK1CdtyAmfiuFCDww24gcd5Zl8QBBK
+Filename: Maine-Door-Audit-Checkpoint.zip (99 entries). Contains map integration, HD environment pack, terrain, architecture, regional scenery and door audit. Extract separately from Alpha 28 engine source. Read README.txt and AI-CONTINUE.txt. Next: locate private Maine patch, verify native prototypes and integrate actual data; implement door animations only after confirming native frame format. No native testing or new APK confirmed. Preserve Alpha 27. Update this pointer when a newer cumulative archive is verified.
